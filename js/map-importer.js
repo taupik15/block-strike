@@ -164,7 +164,16 @@ const MapImporter=(()=>{
    try{LocalBSP.validateWad(file.buffer);wads.push(file.buffer)}
    catch(err){issues.push(basename(file.path)+': '+err.message)}
   }
-  const data=LocalBSP.parse(bsp.buffer,wads), info=LocalBSP.inspect(bsp.buffer);
+  const info=LocalBSP.inspect(bsp.buffer);
+  let globalTextures=new Map(),globalUsed=[];
+  if(typeof GlobalWads!=='undefined'&&info.externalTextures?.length){
+   const local=new Map();for(const buffer of wads)for(const [name,view] of LocalBSP.validateWad(buffer))local.set(name,view);
+   const wanted=info.externalTextures.filter(name=>(!local.has(name)||!LocalBSP.validWadTexture(local.get(name),name))&&!source.files.some(f=>basename(f.path)===name+'.png'));
+   const resolved=await GlobalWads.resolve(wanted,info.wad,stem(bsp.path),issues);
+   globalTextures=resolved.textures;globalUsed=[...resolved.used];
+  }
+  const data=LocalBSP.parse(bsp.buffer,wads,globalTextures);
+  data.globalWads=globalUsed;
   data.name=source.name;
   // Cache is keyed by the exact BSP bytes, not just filename. New map revisions cannot reuse old routes.
   const digest=await crypto.subtle.digest('SHA-256',bsp.buffer);
@@ -188,11 +197,13 @@ const MapImporter=(()=>{
    const file=source.files.find(f=>ext(f.path)===suffix&&stem(f.path)===mapName);
    if(file)await attempt(file.buffer,type,type+' (imported)',true);
   }
-  if(!data.graph)try{const saved=await LocalAssetCache.get(cacheKey);if(saved?.buffer)await attempt(saved.buffer,saved.type,(saved.origin||saved.type)+' (cached)');}catch(e){issues.push('Waypoint cache unavailable: '+e.message)}
+    let prior=null,priorPreferred=false;
+  if(!data.graph)try{prior=await LocalAssetCache.get(cacheKey);priorPreferred=!!prior?.buffer&&!/GitHub/i.test(prior.origin||'');if(priorPreferred)await attempt(prior.buffer,prior.type,(prior.origin||prior.type)+' (cached)');}catch(e){issues.push('Waypoint cache unavailable: '+e.message)}
   if(!data.graph){
    try{const buffer=await YaPBWaypoints.bundled(mapName);if(buffer)await attempt(buffer,'YaPB GRAPH','YaPB GRAPH (bundled)',true)}
    catch(e){issues.push('Bundled YaPB lookup: '+e.message)}
   }
+  if(!data.graph&&prior?.buffer&&!priorPreferred)await attempt(prior.buffer,prior.type,(prior.origin||prior.type)+' (cached)');
   if(!data.graph&&globalThis.navigator?.onLine!==false){
    try{const buffer=await YaPBWaypoints.download(mapName);await attempt(buffer,'YaPB GRAPH','YaPB GRAPH (GitHub)',true)}
    catch(e){issues.push('YaPB lookup: '+e.message)}
@@ -205,7 +216,7 @@ const MapImporter=(()=>{
   if(!data.navValidation.ok)issues.push('Bot navigation incomplete: spawn/bombsite connectivity not verified. Import matching PWF/GRAPH/NAV.');
   await LocalMapMedia.compile(data,info,source.files,issues);
   // WAD declarations can include unused packages; only warn when a texture remains unresolved.
-  data.warnings.push(...new Set(issues.filter(issue=>data.missing.length||!issue.startsWith('WAD not found:'))));
+  data.warnings.push(...new Set(issues.filter(issue=>!issue.startsWith('WAD not found:')||(data.missing.length&&!globalUsed.includes(basename(issue.slice(15)))))));
   return data;
  }
  async function importMap(catalog,map,loose,progress){
@@ -213,7 +224,7 @@ const MapImporter=(()=>{
   const record={id:ident(map.entry.path),name:map.entry.path.split('/').at(-1).replace(/\.bsp$/i,''),
    path:map.entry.path,mode:map.info.mode,notes:source.notes};
   const data=await compile({...source,name:record.name});
-  record.report={missing:data.missing,warnings:data.warnings,nav:data.navSource,overview:data.overviewPath||null,navRevision:13};
+  record.report={missing:data.missing,warnings:data.warnings,nav:data.navSource,overview:data.overviewPath||null,globalWads:data.globalWads,navRevision:15};
   try{await MapLibrary.save(record,source.files);return record}
   finally{disposePreview(data)}
  }
@@ -248,7 +259,7 @@ const MapImporter=(()=>{
   try{
    if(data.missing.length>=wanted.size)throw Error('Selected WADs did not resolve additional textures. Existing map kept.');
    const {files:oldFiles,...record}=saved;
-   record.notes=notes;record.report={missing:data.missing,warnings:data.warnings,nav:data.navSource,overview:data.overviewPath||null,navRevision:13};
+   record.notes=notes;record.report={missing:data.missing,warnings:data.warnings,nav:data.navSource,overview:data.overviewPath||null,globalWads:data.globalWads,navRevision:15};
    await MapLibrary.save(record,files);return record;
   }finally{disposePreview(data)}
  }

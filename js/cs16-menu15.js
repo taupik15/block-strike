@@ -159,9 +159,10 @@
   id('continueMatchConfig').disabled=importing;
   if(record){
    const {missing,warnings,nav}=record.report||{missing:[],warnings:[],nav:'generated'};
-   id('savedMapReport').textContent=[modeLabel(record.mode),nav+' bot routes',
-    missing.length?'Missing textures: '+missing.join(', '):'',...warnings,
-    record.report?.navRevision!==13?'Saved report from previous version; navigation is rechecked on Start.':''].filter(Boolean).join(' · ');
+   id('savedMapReport').textContent=[modeLabel(record.mode),(record.report?.navRevision===15?nav+' bot routes':'Navigation will be rechecked on Start'),
+    record.report?.navRevision===15&&record.report.globalWads?.length?'Global WAD: '+record.report.globalWads.join(', '):'',
+    record.report?.navRevision===15&&missing.length?'Missing textures: '+missing.join(', '):'',...(record.report?.navRevision===15?warnings:[]),
+    record.report?.navRevision!==15?'Saved report from previous version; navigation is rechecked on Start.':''].filter(Boolean).join(' · ');
   }
   const canvas=id('savedMapOverview'),token=++overviewToken;
   canvas.classList.add('hidden');

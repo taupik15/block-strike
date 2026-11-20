@@ -114,3 +114,6 @@ Source: owner-supplied `cs16_files-02.zip` (same original model source recorded 
 
 ## YaPB GRAPH database (pre26N)
 Source: https://github.com/yapb/graph via user-provided graph-master 2.zip. All original GRAPH bytes preserved in losslessly packed shards. GRAPH data is CC BY-SA 4.0; preserved individual attribution, README and complete licenses under `assets/yapb-graph/`. Other original database materials use the Unlicense as specified in the upstream README. Existing third-party asset rights limitations remain unchanged.
+
+## Universal WAD Manager (pre26AR.2)
+The 23 WAD3 archives from the owner's supplied `CS16-WAD-Collection.zip` (extracted from `cs16_files-01.zip` and `cs16_files-02.zip`) and the separately supplied `halflife.wad` are stored unchanged in lossless raw chunks under `assets/wad/`. `index.json` records each original archive's size, SHA-256, chunk sequence and supported miptexture records. No rights to publicly redistribute these third-party archives have been established. This WAD-inclusive build is for local/private or otherwise authorized use only. Do not publish these assets to GitHub Pages without the appropriate rights.

@@ -173,9 +173,9 @@ function build(){
  cr.forEach((p,i)=>{B(p[0],p[1],1.8,1.2,1.8,i%2?wd:bl,0,1);if(i%3==0)B(p[0],p[1],1.6,1,1.6,i%2?bl:wd,1.2,1)});
  [[-14,2],[14,-2],[0,-20],[0,20]].forEach(p=>B(p[0],p[1],1.2,4,1.2,wl));
 }
-function collide(p,r){
+function collide(p,r,crouch=p===P.pos&&Phase9.crouching){
  for(const o of obs){
-  if(p.y>=o.y2-.35||p.y+(p===P.pos&&Phase9.crouching?1.05:1.7)<=o.y1)continue;
+  if(p.y>=o.y2-.35||p.y+(crouch?1.05:1.7)<=o.y1)continue;
   const cx=Math.max(o.x1,Math.min(p.x,o.x2)),cz=Math.max(o.z1,Math.min(p.z,o.z2)),dx=p.x-cx,dz=p.z-cz,d2=dx*dx+dz*dz;
   if(d2<r*r){
    if(d2>1e-6){const d=Math.sqrt(d2);p.x=cx+dx/d*r;p.z=cz+dz/d*r}
@@ -552,7 +552,7 @@ function tgtFor(b){
 }
 // Nearby living actors only; dead players and the moving actor are excluded.
 function movementActors(self,p){
- const k=window.bspCol?.T.k||.02,near=q=>Math.abs(q.y-p.y)<110*k&&Math.hypot(q.x-p.x,q.z-p.z)<160*k;
+ const k=window.bspCol?.T.k||.02,near=q=>Math.abs(q.y-p.y)<(window.bspCol?110*k:4)&&Math.hypot(q.x-p.x,q.z-p.z)<(window.bspCol?160*k:5);
  const list=bots.filter(b=>b!==self&&!b.dead&&near(b.g.position)).map(b=>({pos:b.g.position.toArray(),crouch:!!b.crouching}));
  if(self!==P&&P.hp>0&&near(P.pos))list.push({pos:P.pos.toArray(),crouch:!!Phase9.crouching});
  return list;
@@ -568,9 +568,9 @@ function botUpdate(b,dt){
   b.visualMount.rotation.y+=(0-b.visualMount.rotation.y)*f;
  }
  if(!b.dead)Phase11.updateBotPose(b,dt);
- if(b.dead){BotTactics15D.clearYield(b,performance.now()/1000);b.dead+=dt;const dying=b.deathClip||'death1';if(b.mixer){if(b.cur!==dying)setAnim(b,dying,true)}else b.g.rotation.x=Math.min(1.5,b.dead*5)*-1;
+ if(b.dead){b.boostPlan=null;LayoutNav.cancelTraffic(b,performance.now()/1000);BotTactics15D.clearYield(b,performance.now()/1000);b.dead+=dt;const dying=b.deathClip||'death1';if(b.mixer){if(b.cur!==dying)setAnim(b,dying,true)}else b.g.rotation.x=Math.min(1.5,b.dead*5)*-1;
   if(b.dead>Math.max(2.5,b.acts?.[dying]?.getClip().duration||0)){disposeBot(b);bots.splice(bots.indexOf(b),1)}return}
- if(b.blinded>0){BotTactics15D.clearYield(b,performance.now()/1000);b.trafficIntent=null;b.aimPitch=0;b.characterGait=null;if(b.mixer)updateCharacterAnimation(b,false,false);b.vel=[0,0];b.blinded=Math.max(0,b.blinded-dt);b.visibleEnemy=null;b.seenId=null;b.noticeElapsed=0;b.los=false;b.cd=Math.max(b.cd,.3);return}
+ if(b.blinded>0){b.boostPlan=null;LayoutNav.cancelTraffic(b,performance.now()/1000);BotTactics15D.clearYield(b,performance.now()/1000);b.trafficIntent=null;b.aimPitch=0;b.characterGait=null;if(b.mixer)updateCharacterAnimation(b,false,false);b.vel=[0,0];b.blinded=Math.max(0,b.blinded-dt);b.visibleEnemy=null;b.seenId=null;b.noticeElapsed=0;b.los=false;b.cd=Math.max(b.cd,.3);return}
  // Scale bot thinking/movement frequency for 24-32 player matches; animation stays smooth.
  b.aiAccum=(b.aiAccum||0)+dt;const interval=Phase10.config.players>24?.085:Phase10.config.players>16?.06:.034;
  if(b.aiAccum<interval)return;const step=Math.min(.16,b.aiAccum);b.aiAccum=Math.max(0,b.aiAccum-step);
@@ -623,8 +623,9 @@ function botUpdate(b,dt){
   else Phase11.decideBotCrouch(b,hasEnemy,order,step);
  }
  if(window.bspCol&&Number.isInteger(bspCol.crouchHead)&&wasCrouching!==!!b.crouching){
-  if(!BSP.changeStance(bspCol,p,wasCrouching,!!b.crouching,!!b.onGround)){b.crouching=wasCrouching;b.crouchTarget=wasCrouching;}
+  if(!BSP.changeStance(bspCol,p,wasCrouching,!!b.crouching,!!b.onGround,movementActors(b,p))){b.crouching=wasCrouching;b.crouchTarget=wasCrouching;}
  }
+ if(!window.bspCol&&wasCrouching&&!b.crouching&&!LayoutNav.canExpand(p,movementActors(b,p))){b.crouching=true;b.crouchTarget=true;}
  b.aimPitch=botVisualAimPitch(b,tg?.pos,tg?.isP?!!Phase9.crouching:!!tg?.bot?.crouching,window.bspCol);
  if(b.crouching)sp/=3;
  b.st-=step;if(b.st<0){b.st=1+rnd()*2;b.strafe=rnd()<.5?-1:1}
@@ -663,21 +664,26 @@ function botUpdate(b,dt){
   const command=LocalBSPNav.jumpCommand(b.localRoute.graph,b,sp,step,performance.now()/1000);
   if(command){mx=command.x;mz=command.z;calibratedJump=command.jump;}
  }
+ // A cooperative boost is a temporary physical manoeuvre, not a GRAPH edge.
+ const boostGraph=activeMapData?.local?.graph;
+ const boost=b.boostPlan||boostGraph&&allowRemote&&goal.y-p.y>=48*bspCol.T.k&&goal.y-p.y<=86*bspCol.T.k&&performance.now()/1000>=(b.boostRetry||0)?LocalBSPNav.boostCommand(boostGraph,b,goal,order.stationId??null,performance.now()/1000,step,sp,movementActors(b,p),bots,!!boostGraph&&allowRemote&&!combatHold&&!b.remoteDoorRoute&&!flight&&!b.routeJump&&!b.routeLadder&&!(window.NAV_BOTS&&window.NavGraph?.graph())):null;
+ if(boost){mx=boost.x;mz=boost.z;calibratedJump=boost.jump;b.routeJumpTarget=null;b.routeJump=false;}
  const commandedMove=Math.hypot(mx,mz)>.05;b.trafficBlocked=false;
- const canYield=pathfinding&&!b.remoteDoorRoute&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&!order.force&&!b.routeJump&&!b.localRoute?.flight&&!b.routeLadder&&!b.crouching&&b.onGround&&b.medium!=='water'&&b.medium!=='ladder'&&!(window.NAV_BOTS&&window.NavGraph?.graph());
- const yielding=BotTactics15D.trafficYield(b,mx,mz,canYield&&!obstacleHold,window.bspCol,bots,performance.now()/1000);
+ b.trafficPriority=!!BombMode.isCarrier?.(b);
+ const canYield=pathfinding&&!b.remoteDoorRoute&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&(!order.force||b.trafficPriority&&order.mode==='plant')&&!b.routeJump&&!b.localRoute?.flight&&!b.routeLadder&&!b.crouching&&b.onGround&&b.medium!=='water'&&b.medium!=='ladder'&&!(window.NAV_BOTS&&window.NavGraph?.graph());
+ const yielding=BotTactics15D.trafficYield(b,mx,mz,canYield&&!boost&&!obstacleHold,window.bspCol,bots,performance.now()/1000);
  if(yielding){mx=yielding.x;mz=yielding.z;}
 
  if(!commandedMove||b.routeJump||b.localRoute?.flight||order.urgent||order.busy)b.trafficPass=null;
- if(commandedMove&&!yielding&&!b.routeJump&&!b.localRoute?.flight){
+ if(!boost&&commandedMove&&!yielding&&!b.routeJump&&!b.localRoute?.flight){
   const space=BotTactics15D.separate(b,bots,pathfinding?.32:1);mx+=space.x;mz+=space.z;
   const steer=activeMapData?.local?BotTactics15D.obstacleSteer(b,mx,mz,step,sp,bspCol,bots,movementActors(b,p)):BotTactics15D.sidestep(b,mx,mz);
   mx=steer.x;mz=steer.z;
  }
  // Waiting for a physical touch door or following a moving ally is not a
  // failed GRAPH edge. Exclude jump, ladder, swim and urgent orders.
- let navigationWait=!!b.trafficYield||obstacleHold||!!b.remoteDoorWaiting;
- if(!yielding&&commandedMove&&pathfinding&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&!b.routeJump&&!b.localRoute?.flight&&!b.routeLadder&&b.medium!=='water'&&b.onGround&&window.bspCol){
+ let navigationWait=!!boost||!!b.trafficYield||b.trafficConvoyWait||obstacleHold||!!b.remoteDoorWaiting;
+ if(!boost&&!yielding&&commandedMove&&pathfinding&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&!b.routeJump&&!b.localRoute?.flight&&!b.routeLadder&&b.medium!=='water'&&b.onGround&&window.bspCol){
   const k=bspCol.T.k,h=BSP.toHammer(bspCol.T,p.toArray()),d=Math.hypot(dx,dz);
   const end=BSP.toHammer(bspCol.T,[p.x+ux*Math.min(d,48*k),p.y,p.z+uz*Math.min(d,48*k)]);
   const hull=b.crouching&&Number.isInteger(bspCol.crouchHead)?{...bspCol,head:bspCol.crouchHead}:bspCol;
@@ -690,15 +696,23 @@ function botUpdate(b,dt){
  // Avoid repeated A* on dynamic targets; obstacle recovery clears cached routes.
  const needsMove=moveLen>.05;let actorContact=false;
  const wantsMove=!combatHold&&!order?.hold&&!order?.busy&&(follow||!hasEnemy)&&goalDistanceSq(goal)>order.radius**2;
- if(needsMove&&!window.bspCol&&!hasEnemy){
+ const layoutTraffic=!window.bspCol?LayoutNav.trafficStep(b,destination,needsMove&&wantsMove&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&(!order.force||b.trafficPriority&&order.mode==='plant')&&!obstacleHold,bots,performance.now()/1000,movementActors(b,p)):null;
+ if(layoutTraffic){
+  navigationWait=true;
+  if(layoutTraffic.point){const d=layoutTraffic.point.clone().sub(p);d.y=0;const len=d.length();if(len>0){const f=Math.min(sp*step,len)/len;actorContact=LayoutNav.moveActor(p,d.x*f,d.z*f,!!b.crouching,movementActors(b,p));}}
+  b.vel=[(p.x-ox)/Math.max(step,.001),(p.z-oz)/Math.max(step,.001)];
+  b.layoutNav=null;
+ }else if(needsMove&&!window.bspCol&&!hasEnemy){
   const v=BSP.accelerate(b.vel,[mx*sp,mz*sp],step,true),speed=Math.hypot(...v);b.vel=v;
-  if(!LayoutNav.step(b,destination,speed,step)){p.x+=v[0]*step;p.z+=v[1]*step;collide(p,.4)}
+  const actors=movementActors(b,p),move=(x,z)=>{const hit=LayoutNav.moveActor(p,x,z,!!b.crouching,actors);actorContact=hit||actorContact;return hit;};
+  if(!LayoutNav.step(b,destination,speed,step,move,actors))move(v[0]*step,v[1]*step);
+  if(step>0)b.vel=[(p.x-ox)/step,(p.z-oz)/step];
  }else if(needsMove&&window.NAV_BOTS&&window.bspCol&&window.NavGraph&&NavGraph.graph()&&!hasEnemy){NavGraph.botStep(b,destination,sp,step)}
- else if(window.bspCol){const verticalDrive=order?.hold||order?.busy||combatHold?0:Math.max(-1,Math.min(1,(destination.y-p.y)/(25*bspCol.T.k)));const st={pos:p.toArray(),vy:b.vy||0,on:!!b.onGround,vel:b.vel,jumpHeld:b.jumpHeld,ladderDetach:b.ladderDetach,climb:verticalDrive,swimVertical:verticalDrive};BSP.moveActor(bspCol,bspCol.T,st,[mx*sp,mz*sp],step,calibratedJump&&b.onGround&&commandedMove&&!combatHold&&!order.hold&&!order.busy,!!b.crouching,movementActors(b,p));actorContact=st.actorContact;if(st.jumped&&b.routeJumpTarget&&b.localRoute){b.localRoute.flight=b.routeJumpTarget;b.localRoute.flightCrouch=!!b.crouching;}p.fromArray(st.pos);b.vy=st.vy;b.onGround=st.on;b.medium=st.medium;b.waterLevel=st.waterLevel;b.vel=st.vel;b.jumpHeld=st.jumpHeld;b.ladderDetach=st.ladderDetach;if(st.landed>580){damageBot(b,BSP.fallDamage(st.landed),'generic',null,false,null,'',0,'fall');if(b.dead)return;}}
- else{const v=BSP.accelerate(b.vel,[mx*sp,mz*sp],step,true);b.vel=v;p.x+=v[0]*step;p.z+=v[1]*step;collide(p,.4)}
+ else if(window.bspCol){const verticalDrive=order?.hold||order?.busy||combatHold?0:Math.max(-1,Math.min(1,(destination.y-p.y)/(25*bspCol.T.k)));const st={pos:p.toArray(),vy:b.vy||0,on:!!b.onGround,vel:b.vel,jumpHeld:b.jumpHeld,ladderDetach:b.ladderDetach,climb:verticalDrive,swimVertical:verticalDrive};BSP.moveActor(bspCol,bspCol.T,st,[mx*sp,mz*sp],step,calibratedJump&&b.onGround&&(commandedMove||!!boost)&&!combatHold&&!order.hold&&!order.busy,!!b.crouching,movementActors(b,p));actorContact=st.actorContact;if(st.jumped&&b.routeJumpTarget&&b.localRoute){b.localRoute.flight=b.routeJumpTarget;b.localRoute.flightCrouch=!!b.crouching;}p.fromArray(st.pos);b.vy=st.vy;b.onGround=st.on;b.medium=st.medium;b.waterLevel=st.waterLevel;b.vel=st.vel;b.jumpHeld=st.jumpHeld;b.ladderDetach=st.ladderDetach;if(st.landed>580){damageBot(b,BSP.fallDamage(st.landed),'generic',null,false,null,'',0,'fall');if(b.dead)return;}}
+ else{const v=BSP.accelerate(b.vel,[mx*sp,mz*sp],step,true);actorContact=LayoutNav.moveActor(p,v[0]*step,v[1]*step,!!b.crouching,movementActors(b,p));if(step>0)b.vel=[(p.x-ox)/step,(p.z-oz)/step];}
  const moved=Math.hypot(p.x-ox,p.z-oz);b.lastMoveSpeed=moved/Math.max(step,.001);
  // Vertical ladder/water movement is real progress; do not blacklist a climbing edge.
- const progress=b.medium==='ladder'||b.medium==='water'||b.localRoute?.flight?Math.hypot(moved,p.y-oy):moved;
+ const progress=boost||b.medium==='ladder'||b.medium==='water'||b.localRoute?.flight?Math.hypot(moved,p.y-oy):moved;
  // Traffic blocks are temporary, not evidence that a GRAPH edge is invalid.
  actorContact=actorContact||b.trafficBlocked;
  b.trafficWait=actorContact&&progress<sp*step*.18?Math.min(2,(b.trafficWait||0)+step):Math.max(0,(b.trafficWait||0)-step);
@@ -1347,16 +1361,20 @@ function moveLayoutActor(st,wish,dt,jump,crouch=false){
  for(let i=0;i<count;i++){
   if(i===0&&edge&&st.on&&!crouch){st.vy=BSP.JUMP*.02;st.on=false;st.jumped=true;}
   const v=BSP.accelerate(st.vel,wish,step,st.on),x=st.pos.x,z=st.pos.z;
-  st.pos.x+=v[0]*step;st.pos.z+=v[1]*step;collide(st.pos,.4);
-  const lim=worldLim();st.pos.x=Math.max(-lim,Math.min(lim,st.pos.x));st.pos.z=Math.max(-lim,Math.min(lim,st.pos.z));
+  const actors=movementActors(st,st.pos);
+  LayoutNav.moveActor(st.pos,v[0]*step,v[1]*step,crouch,actors);
   if(step>0)st.vel=[(st.pos.x-x)/step,(st.pos.z-z)/step];
   const g=ground(st.pos,.4),prev=st.vy||0;st.vy=prev-BSP.GRAV*.02*step;
   let nextY=st.pos.y+(prev+st.vy)*.5*step;
   if(nextY>st.pos.y){const head=crouch?1.05:1.7;for(const o of obs){
    if(st.pos.x>o.x1-.4&&st.pos.x<o.x2+.4&&st.pos.z>o.z1-.4&&st.pos.z<o.z2+.4&&o.y1>=st.pos.y+head&&o.y1<nextY+head){nextY=o.y1-head;st.vy=0;}
   }}
-  st.pos.y=nextY;
-  if(st.pos.y<=g){if(!st.on)st.landed=Math.max(st.landed,-st.vy/.02);st.pos.y=g;st.vy=0;st.on=true;}else st.on=false;
+  const limitedY=LayoutNav.verticalLimit(st.pos,nextY,crouch,actors);
+  const falling=st.vy<=0,impact=falling?-st.vy/.02:0;
+  const bodyFloor=falling&&nextY<st.pos.y&&limitedY>nextY;
+  if(limitedY!==nextY)st.vy=0;
+  st.pos.y=limitedY;
+  if(st.pos.y<=g||bodyFloor){if(!st.on)st.landed=Math.max(st.landed,impact);st.pos.y=Math.max(g,st.pos.y);st.vy=0;st.on=true;}else st.on=false;
  }
  return st;
 }
@@ -1494,7 +1512,7 @@ async function beginMatch(){
    const localMapData=await MapImporter.compile(await MapLibrary.load(selectedMapId));
    activeMapData={id:'local_bsp',name:localMapData.name,local:localMapData,spawn:localMapData.spawn};
    // Refresh stale warnings from maps imported before automatic GRAPH support.
-   MapLibrary.updateReport(selectedMapId,{missing:localMapData.missing,warnings:localMapData.warnings,nav:localMapData.navSource,overview:localMapData.overviewPath||null,navRevision:13}).catch(()=>{});
+   MapLibrary.updateReport(selectedMapId,{missing:localMapData.missing,warnings:localMapData.warnings,nav:localMapData.navSource,overview:localMapData.overviewPath||null,globalWads:localMapData.globalWads,navRevision:15}).catch(()=>{});
 
   }else{
    const r=await fetch('assets/maps/'+selectedMapId+'.json');if(!r.ok)throw new Error('Map tidak ditemukan');activeMapData=await r.json();

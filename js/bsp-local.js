@@ -41,6 +41,11 @@ const LocalBSP=(()=>{
   if(width<1||height<1||width>1024||height>1024)return null;
   return {name,width,height,view};
  }
+ function validWadTexture(view,name){
+  const info=textureInfo(view);if(!info||info.name.toLowerCase()!==name)return false;
+  const {width,height}=info,size=width*height,offset=integer(view,24),mip=integer(view,36);
+  return offset>=40&&mip>=40&&offset+size<=view.byteLength&&mip+Math.max(1,(width>>3)*(height>>3))+2+768<=view.byteLength;
+ }
  function decodeTexture(info,name){
   if(!info)return null;
   const {view,width,height}=info,size=width*height,offset=integer(view,24),mip=integer(view,36);
@@ -136,13 +141,24 @@ const LocalBSP=(()=>{
  function breakableHealth(e){
   const hp=Number(e.health);return e.classname==='func_breakable'&&Number.isFinite(hp)&&hp>0&&hp<=100000&&Number(e.spawnflags||0)===0&&!e.targetname&&!e.target&&!e.master&&!e.killtarget&&Number(e.explodemagnitude||0)===0&&Number.isInteger(Number(e.material||0))&&Number(e.material||0)>=0&&Number(e.material||0)<=8&&Number(e.material||0)!==7&&Number(e.delay||0)===0?hp:0;
  }
- function parse(buffer,wadBuffers=[]){
+ function brushOpacity(e){
+  const mode=Number(e.rendermode||0),amount=Number(e.renderamt??0);
+  return [1,2,3,5].includes(mode)?Math.max(0,Math.min(1,Number.isFinite(amount)?amount/255:0)):1;
+ }
+ // GoldSrc bomb targets directly fire trigger-only breakables on detonation.
+ function bombBreakable(e,targets){
+  if(e.classname!=='func_breakable'||Number(e.spawnflags)!==1||!e.targetname||!targets.some(t=>t.target===e.targetname)||e.target||e.master||e.killtarget||Number(e.delay||0)!==0||Number(e.explodemagnitude||0)!==0)return 0;
+  return breakableHealth({...e,spawnflags:0,targetname:null});
+ }
+ function parse(buffer,wadBuffers=[],globalTextures=new Map()){
   const lumps=lumpsOf(buffer);
   const [entity,planes,tex,verts,,nodes,texinfo,faces,lighting,clipnodes,leaves,,edges,surfedges,models]=lumps;
   const files=entities(entity),external=wadDirectory(wadBuffers);
+  for(const [name,view] of globalTextures)if(!external.has(name)||!validWadTexture(external.get(name),name))external.set(name,view);
   const model=i=>slice(models,i*64,64);
   const world=model(0),head=integer(world,40),crouchHead=integer(world,48);
-  const T={c:1,s:0,k:.02};
+  // Preserve GoldSrc handedness in the right-handed Y-up renderer.
+  const T={c:1,s:0,k:.02,zSign:-1};
   const planeBuffer=new Float32Array(planes.byteLength/20*4);
   for(let i=0;i<planeBuffer.length/4;i++){
    const values=vec(planes,i*20);values.push(real(planes,i*20+12));
@@ -165,6 +181,7 @@ const LocalBSP=(()=>{
    const parts=(e.origin||'').trim().split(/\s+/).map(Number);
    return parts.length===3&&parts.every(Number.isFinite)?parts:null;
   };
+  const spawnEntities={CT:files.filter(e=>e.classname==='info_player_start'&&point(e)),T:files.filter(e=>e.classname==='info_player_deathmatch'&&point(e))};
   const spawnTeams={
    CT:files.filter(e=>e.classname==='info_player_start').map(point).filter(Boolean),
    T:files.filter(e=>e.classname==='info_player_deathmatch').map(point).filter(Boolean)
@@ -185,7 +202,7 @@ const LocalBSP=(()=>{
   const sites=targets.map(e=>{
    const hint=[e.targetname,e.target].filter(Boolean).map(s=>s.match(/(?:site|target|^|[_ -])([ab])(?:$|[_ -])/i)).find(Boolean);
    const zone=bounds(e);if(zone.hull1>=0)validateNode(zone.hull1);
-   return {...zone,id:hint?.[1].toUpperCase(),triggerClip:zone.hull1>=0?clip:null};
+   return {...zone,target:e.target||null,id:hint?.[1].toUpperCase(),triggerClip:zone.hull1>=0?clip:null};
   });
   for(const id of ['A','B']){
    if(!sites.length||sites.some(s=>s.id===id))continue;
@@ -206,7 +223,8 @@ const LocalBSP=(()=>{
    for(let i=0;i<count;i++){pn[i]=integer(nodes,i*24);if(pn[i]<0||pn[i]>=planeBuffer.length/4)valid=false;c0[i]=child(nodes.getInt16(i*24+4,true));c1[i]=child(nodes.getInt16(i*24+6,true));}
    if(valid){const state=new Uint8Array(count);function check(n,depth=0){if(n<0)return true;if(depth>256||state[n]===1)return false;if(state[n]===2)return true;state[n]=1;const ok=check(c0[n],depth+1)&&check(c1[n],depth+1);state[n]=2;return ok;}if(check(pointHead))pointClip={pf:planeBuffer,pn,c0,c1};}
   }
-  const col={clip,T,pointClip,pointHead,head,standHead:head,crouchHead,spawnTeams,spawns:[...spawnTeams.CT,...spawnTeams.T],breakables,
+  const spawnYaw=Object.fromEntries(Object.entries(spawnEntities).map(([team,entities])=>[team,entities.map(e=>{const a=(Number(e.angles?.trim().split(/\s+/)[1]??e.angle)||0)*Math.PI/180;const f=BSP.toGame(T,[Math.cos(a),Math.sin(a),0]);return Math.atan2(-f[0],-f[2]);})]));
+  const col={clip,T,spawnYaw,pointClip,pointHead,head,standHead:head,crouchHead,spawnTeams,spawns:[...spawnTeams.CT,...spawnTeams.T],breakables,
    ladders:files.filter(e=>e.classname==='func_ladder').map(bounds),water:files.filter(e=>e.classname==='func_water').map(bounds),
    buyzones:files.filter(e=>e.classname==='func_buyzone').map(e=>({...bounds(e),team:e.team==='1'?'T':e.team==='2'?'CT':null})),local:true};
   const textures=texturesOf(tex);
@@ -237,7 +255,7 @@ const LocalBSP=(()=>{
     const {positions,uvs,uv2}=batches.get(key);
     for(let k=1;k<n-1;k++)for(const n of [0,k,k+1]){
      const p=poly[n],[s,t]=uv[n];
-     positions.push((p[0]+origin[0])*T.k,(p[2]+origin[2])*T.k,(p[1]+origin[1])*T.k);
+     positions.push(...BSP.toGame(T,p.map((v,i)=>v+origin[i])));
      uvs.push(s/(info?.width||64),t/(info?.height||64));
      if(light)uv2.push(...light.uv(s,t));
     }
@@ -245,14 +263,14 @@ const LocalBSP=(()=>{
   }
   addFaces(world,[0,0,0],-1,1,true);
   for(const e of solids){
-   const opacity=['1','2','4','5'].includes(e.rendermode)?Math.max(.04,Math.min(1,Number(e.renderamt)/255||1)):1;
+   const opacity=brushOpacity(e);
    let door=-1;
    const triggers=e.classname==='func_door'?doorTriggers(e,files,bounds,validateNode):[];
    const buttons=doorButtons(e,files,brushCollision);
    if(e.classname==='func_door'&&(!e.targetname||triggers.length||buttons.length)){
     const d=bounds(e),angle=Number(e.angle)||0,radians=angle*Math.PI/180;
     const dir=angle===-1?[0,0,1]:angle===-2?[0,0,-1]:[Math.cos(radians),Math.sin(radians),0];
-    d.movedir_h=dir;d.movedir_g=[dir[0],dir[2],dir[1]];
+    d.movedir_h=dir;d.movedir_g=BSP.toGame({...T,k:1},dir);
     d.distance=Math.max(1,dir.reduce((n,x,i)=>n+Math.abs(x)*(d.maxs[i]-d.mins[i]-2),0)-(Number(e.lip)||8));
     d.speed=Math.max(10,Math.min(700,Number(e.speed)||100));
     d.wait=e.wait!=null?Number(e.wait)||0:3;
@@ -263,8 +281,8 @@ const LocalBSP=(()=>{
     const entry=brushCollision.get(e),d=rotatingDoor(e,entry);
     if(d){door=doors.length;doors.push({d,entry,entity:e});entry.yaw=0;entry.rotatingDoor={distance:d.distance,twoWay:d.twoWay};}
    }
-   let destructible=-1;const hp=breakableHealth(e);
-   if(hp){const entry=brushCollision.get(e);if(entry&&!entry.destructible){entry.destructible=true;destructible=destructibles.length;destructibles.push({entry,hp,material:Number(e.material||0)});}}
+   let destructible=-1;const triggerHp=bombBreakable(e,targets),hp=triggerHp||breakableHealth(e);
+   if(hp){const entry=brushCollision.get(e);if(entry&&!entry.destructible){entry.destructible=true;destructible=destructibles.length;destructibles.push({entry,hp,material:Number(e.material||0),bombTarget:triggerHp?e.targetname:null});}}
    addFaces(model(Number(e.model.slice(1))),point(e)||[0,0,0],door,opacity,false,destructible);
   }
   if(files.some(e=>e.classname==='func_breakable')&&destructibles.length<files.filter(e=>e.classname==='func_breakable').length)warnings.push('Unsupported breakable entities remain static.');
@@ -319,5 +337,5 @@ const LocalBSP=(()=>{
   if(zone.triggerClip){const q=h.map((n,i)=>n-zone.origin[i]);return BSP.traceAll({clip:zone.triggerClip,head:zone.hull1},q,q).startsolid}
   return true;
  }
- return {read,mount,parse,inspect,inSite,doorTriggers,doorButtons,rotatingDoor,breakableHealth,validateWad:buffer=>wadDirectory([buffer]),wadNames:buffer=>wadDirectory([buffer]).keys()};
+ return {read,mount,parse,inspect,inSite,brushOpacity,bombBreakable,doorTriggers,doorButtons,rotatingDoor,breakableHealth,validWadTexture,validateWad:buffer=>wadDirectory([buffer]),wadNames:buffer=>wadDirectory([buffer]).keys()};
 })();
