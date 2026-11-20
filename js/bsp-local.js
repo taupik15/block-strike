@@ -138,8 +138,10 @@ const LocalBSP=(()=>{
   if(Math.hypot(...[0,1].map(i=>Math.max(Math.abs(entry.mins[i]),Math.abs(entry.maxs[i]))))>256)return null;
   return {...entry,rotating:true,twoWay:true,distance,speed,wait,targetname:null,triggers:[]};
  }
+ // A GoldSrc targetname permits relay/bomb activation, but does not prevent gunfire.
+ // Trigger-only spawnflag 1 is still excluded by this helper.
  function breakableHealth(e){
-  const hp=Number(e.health);return e.classname==='func_breakable'&&Number.isFinite(hp)&&hp>0&&hp<=100000&&Number(e.spawnflags||0)===0&&!e.targetname&&!e.target&&!e.master&&!e.killtarget&&Number(e.explodemagnitude||0)===0&&Number.isInteger(Number(e.material||0))&&Number(e.material||0)>=0&&Number(e.material||0)<=8&&Number(e.material||0)!==7&&Number(e.delay||0)===0?hp:0;
+  const hp=Number(e.health);return e.classname==='func_breakable'&&Number.isFinite(hp)&&hp>0&&hp<=100000&&Number(e.spawnflags||0)===0&&!e.target&&!e.master&&!e.killtarget&&Number(e.explodemagnitude||0)===0&&Number.isInteger(Number(e.material||0))&&Number(e.material||0)>=0&&Number(e.material||0)<=8&&Number(e.material||0)!==7&&Number(e.delay||0)===0?hp:0;
  }
  function brushOpacity(e){
   const mode=Number(e.rendermode||0),amount=Number(e.renderamt??0);
@@ -282,7 +284,7 @@ const LocalBSP=(()=>{
     if(d){door=doors.length;doors.push({d,entry,entity:e});entry.yaw=0;entry.rotatingDoor={distance:d.distance,twoWay:d.twoWay};}
    }
    let destructible=-1;const triggerHp=bombBreakable(e,targets),hp=triggerHp||breakableHealth(e);
-   if(hp){const entry=brushCollision.get(e);if(entry&&!entry.destructible){entry.destructible=true;destructible=destructibles.length;destructibles.push({entry,hp,material:Number(e.material||0),bombTarget:triggerHp?e.targetname:null});}}
+   if(hp){const entry=brushCollision.get(e);if(entry&&!entry.destructible){entry.destructible=true;destructible=destructibles.length;destructibles.push({entry,hp,material:Number(e.material||0),bombTarget:triggerHp?e.targetname:null,bombTrigger:!triggerHp&&e.targetname&&targets.some(t=>t.target===e.targetname)?e.targetname:null});}}
    addFaces(model(Number(e.model.slice(1))),point(e)||[0,0,0],door,opacity,false,destructible);
   }
   if(files.some(e=>e.classname==='func_breakable')&&destructibles.length<files.filter(e=>e.classname==='func_breakable').length)warnings.push('Unsupported breakable entities remain static.');

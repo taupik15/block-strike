@@ -698,12 +698,13 @@ const Phase9=(()=>{
  }
  function presets(type){
   const layouts={
+   classic:{fire:[92,71],ads:[84,52],jump:[93,92],rel:[84,71],swap:[93,37],buybtn:[76,92],grenadeBtn:[76,71],grenadeTypeBtn:[76,51],crouchBtn:[84,92],walkBtn:[23,65],pickupBtn:[76,31],nvgBtn:[18,8],radioBtn:[84,25],scoreBtn:[84,10],dropBtn:[24,8],flashBtn:[36,8],settingsGameBtn:[30,8],teamBtn:[43,8]},
    two:{fire:[90,70],ads:[78,76],jump:[88,91],rel:[78,55],swap:[93,47],buybtn:[65,92],grenadeBtn:[63,68],grenadeTypeBtn:[62,51],crouchBtn:[77,91],walkBtn:[24,24],pickupBtn:[64,35],nvgBtn:[51,92],radioBtn:[92,27],scoreBtn:[84,27],dropBtn:[36,9],flashBtn:[55,9],settingsGameBtn:[45,9],teamBtn:[7,91]},
    three:{fire:[88,24],ads:[77,69],jump:[89,90],rel:[90,69],swap:[91,47],buybtn:[70,91],grenadeBtn:[65,73],grenadeTypeBtn:[65,54],crouchBtn:[77,90],walkBtn:[20,68],pickupBtn:[64,33],nvgBtn:[53,91],radioBtn:[83,26],scoreBtn:[76,26],dropBtn:[36,9],flashBtn:[55,9],settingsGameBtn:[45,9],teamBtn:[7,91]},
    four:{fire:[13,24],ads:[77,65],jump:[90,85],rel:[90,66],swap:[90,47],buybtn:[68,92],grenadeBtn:[63,72],grenadeTypeBtn:[63,52],crouchBtn:[77,88],walkBtn:[18,55],pickupBtn:[64,33],nvgBtn:[53,91],radioBtn:[83,26],scoreBtn:[76,26],dropBtn:[36,9],flashBtn:[55,9],settingsGameBtn:[45,9],teamBtn:[7,91]}
   };
   const current=layouts[type];if(!current)return;
-  for(const id of controls){if(!current[id])continue;config[id]={x:current[id][0],y:current[id][1],size:id==='fire'?66:50,opacity:.78}}
+  for(const id of controls){if(!current[id])continue;config[id]={x:current[id][0],y:current[id][1],size:id==='fire'?64:(!['nvgBtn','scoreBtn','radioBtn','dropBtn','flashBtn','settingsGameBtn','teamBtn'].includes(id)?48:40),opacity:.7}}
   applyControls();
  }
  function openEditor(){

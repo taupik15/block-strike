@@ -226,7 +226,7 @@ window.BSPBreakables=(()=>{
   let destroyed=0;for(const [mesh,damage,point] of pending)if(hit(mesh,damage,point))destroyed++;
   return destroyed;
  }
- function bombExplode(target){if(!target)return 0;let count=0;for(const item of items)if(item.bombTarget===target&&destroy(item,item.meshes[0]?.mesh,null))count++;return count;}
+ function bombExplode(target){if(!target)return 0;let count=0;for(const item of items)if((item.bombTarget===target||item.bombTrigger===target)&&destroy(item,item.meshes[0]?.mesh,null))count++;return count;}
  function reset(){effects.length=0;for(const item of items){item.health=item.hp;if(!item.entry.destroyed)continue;item.entry.destroyed=false;for(const {mesh,raycast} of item.meshes){mesh.visible=true;if(raycast&&!rays.includes(mesh))rays.push(mesh);}dirty=true;}refresh();}
  // Find a visible shootable brush on the intended final walking leg. Never
  // alter live collision while probing, or accept a wall/second brush behind it.
