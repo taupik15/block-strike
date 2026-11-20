@@ -1566,6 +1566,25 @@ function newGame(){
 }
 $('q').onchange=e=>{Q=+e.target.value;if(R)applyQ()};
 $('sn').onchange=e=>SENS=+e.target.value;
+// Imported BSPs must preserve the GoldSrc X/Y/Z axes and the camera's screen-right.
+// Check the actual loaded API rather than trusting a release label or a zSign field.
+function verifyLocalOrientation(data){
+ const T=data?.col?.T,k=T?.k;
+ const fail=()=>{throw Error('BSP orientation mismatch: reload the matching map modules (X,Z,-Y). Imported maps are safe.')};
+ if(!(k>0)||T.zSign!==-1||data.col.orientationId!=='goldsrc-x-z-neg-y')fail();
+ const close=(a,b)=>Array.isArray(a)&&a.length===3&&a.every((n,i)=>Number.isFinite(n)&&Math.abs(n-b[i])<1e-7);
+ const basis=[[1,0,0],[0,1,0],[0,0,1]],expected=[[k,0,0],[0,0,-k],[0,k,0]];
+ for(let i=0;i<3;i++)if(!close(BSP.toGame(T,basis[i]),expected[i])||!close(BSP.toHammer(T,expected[i]),basis[i]))fail();
+ for(const team of ['CT','T']){
+  const poses=data.col.spawnYaw?.[team],spawns=data.col.spawnTeams?.[team];
+  const entities=data.files.filter(e=>e.classname===(team==='CT'?'info_player_start':'info_player_deathmatch')&&e.origin&&e.origin.trim().split(/\s+/).length===3&&e.origin.trim().split(/\s+/).map(Number).every(Number.isFinite));
+  if(!poses?.length||poses.length!==spawns?.length||entities.length!==poses.length)fail();
+  for(let i=0;i<poses.length;i++){
+   const a=(Number(entities[i].angles?.trim().split(/\s+/)[1]??entities[i].angle)||0)*Math.PI/180,y=poses[i];
+   if(!close([-Math.sin(y),0,-Math.cos(y)],[Math.cos(a),0,-Math.sin(a)]))fail();
+  }
+ }
+}
 async function beginMatch(){
  if(matchLoading)return;matchLoading=true;running=false;
  try{
@@ -1582,6 +1601,7 @@ async function beginMatch(){
   RuntimeHealth.stage?.('startup map');if(selectedMapId.startsWith('saved:')){
    $('loadStatus').textContent='Memeriksa navigasi peta…';
    const localMapData=await MapImporter.compile(await MapLibrary.load(selectedMapId));
+   verifyLocalOrientation(localMapData);
    activeMapData={id:'local_bsp',name:localMapData.name,local:localMapData,spawn:localMapData.spawn};
    // Refresh stale warnings from maps imported before automatic GRAPH support.
    MapLibrary.updateReport(selectedMapId,{missing:localMapData.missing,warnings:localMapData.warnings,nav:localMapData.navSource,overview:localMapData.overviewPath||null,globalWads:localMapData.globalWads,navRevision:15}).catch(()=>{});

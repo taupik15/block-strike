@@ -224,7 +224,7 @@ const LocalBSP=(()=>{
    if(valid){const state=new Uint8Array(count);function check(n,depth=0){if(n<0)return true;if(depth>256||state[n]===1)return false;if(state[n]===2)return true;state[n]=1;const ok=check(c0[n],depth+1)&&check(c1[n],depth+1);state[n]=2;return ok;}if(check(pointHead))pointClip={pf:planeBuffer,pn,c0,c1};}
   }
   const spawnYaw=Object.fromEntries(Object.entries(spawnEntities).map(([team,entities])=>[team,entities.map(e=>{const a=(Number(e.angles?.trim().split(/\s+/)[1]??e.angle)||0)*Math.PI/180;const f=BSP.toGame(T,[Math.cos(a),Math.sin(a),0]);return Math.atan2(-f[0],-f[2]);})]));
-  const col={clip,T,spawnYaw,pointClip,pointHead,head,standHead:head,crouchHead,spawnTeams,spawns:[...spawnTeams.CT,...spawnTeams.T],breakables,
+  const col={clip,T,orientationId:'goldsrc-x-z-neg-y',spawnYaw,pointClip,pointHead,head,standHead:head,crouchHead,spawnTeams,spawns:[...spawnTeams.CT,...spawnTeams.T],breakables,
    ladders:files.filter(e=>e.classname==='func_ladder').map(bounds),water:files.filter(e=>e.classname==='func_water').map(bounds),
    buyzones:files.filter(e=>e.classname==='func_buyzone').map(e=>({...bounds(e),team:e.team==='1'?'T':e.team==='2'?'CT':null})),local:true};
   const textures=texturesOf(tex);

@@ -1,6 +1,6 @@
 /* Runtime watchdog: local diagnostics, bounded recovery, no telemetry uploads. */
 const RuntimeHealth=(()=>{
- const VERSION='pre26AR.8',label=document.getElementById('runtimeHealth'),toggle=document.getElementById('runtimeHealthToggle');
+ const VERSION='pre26AR.9',label=document.getElementById('runtimeHealth'),toggle=document.getElementById('runtimeHealthToggle');
  let enabled=false,lost=false,halted=false,stageName='startup',fault=null,warningUntil=0,frameAt=0,updateAt=0,updateMs=0,renderMs=0,renderOK=false,frameGap=0,frameAverage=0,updateAverage=0,renderAverage=0,failUpdate=0,failRender=0,lastPaint=-Infinity,frames=0,bound=null;
  const clock=()=>performance.now();
  let lifecycleReason=null,lifecycleAt=0;
@@ -44,6 +44,14 @@ const RuntimeHealth=(()=>{
   const count=typeof bots!=='undefined'?bots.length:0;
   const lines=[`BS ${VERSION} | ${map} | ${count} bots`,`${frameAverage>0?(1000/frameAverage).toFixed(0):'-'} FPS | frame ${frameGap.toFixed(0)} ms | sim ${updateAverage.toFixed(1)} | render ${renderAverage.toFixed(1)} ms`, `pos ${pos} | stick ${input} | tex ${r?.info?.memory?.textures??'-'} | geo ${r?.info?.memory?.geometries??'-'}`,`draw ${drawCalls} | DPR ${r?.getPixelRatio?.()?.toFixed(2)??'-'}`];
   lines.push(`ticks ${simOKCount} | frames ${renderOKCount} / ${frames}`);
+  const col=typeof window!=='undefined'?window.bspCol:null;
+  if(col?.local&&p&&typeof BSP!=='undefined'){
+   try{const T=col.T,b=BSP.toGame(T,[0,1,0]),h=BSP.toHammer(T,p.toArray()),yaw=typeof P!=='undefined'&&Number.isFinite(P.yaw)?P.yaw:0;
+    const f=BSP.toHammer(T,[-Math.sin(yaw),0,-Math.cos(yaw)]),heading=(Math.atan2(f[1],f[0])*180/Math.PI+360)%360;
+    lines.push(`BSP ${col.orientationId||'legacy?'} | Y->Z ${Math.sign(b[2])} | H ${h.map(n=>n.toFixed(0)).join(',')} | yaw ${heading.toFixed(0)}`);
+    const team=typeof playerTeam!=='undefined'?playerTeam:null,sp=col.spawnTeams?.[team]?.[0];if(sp)lines.push(`Spawn ${team} H ${sp.join(',')} | map axis checked`);
+   }catch(_){lines.push('BSP orientation diagnostics unavailable');}
+  }
   if(lastSlow)lines.push(`Slow stage: ${lastSlow}`);
   if(lifecycleReason)lines.push(`Lifecycle paused: ${lifecycleReason} (${Math.round(now-lifecycleAt)} ms). Tap to recover controls.`);
   if(lost)lines.push('WebGL context lost. Waiting for browser recovery. Reload if unavailable.');

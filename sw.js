@@ -11,16 +11,20 @@ function localKey(url) {
  const u = new URL(url); u.search = ''; u.hash = '';
  return allowed.has(u.href) ? u.href : null;
 }
+function criticalHash(key){
+ const path=key.startsWith(scope)?key.slice(scope.length):'';
+ return (typeof OFFLINE_CRITICAL_HASHES!=='undefined'?OFFLINE_CRITICAL_HASHES[path]:null)||(path==='js/bsp-local-nav.js'&&typeof OFFLINE_NAV_SHA256!=='undefined'?OFFLINE_NAV_SHA256:null);
+}
 async function fetchResource(key) {
  // Request the exact release of the navigation/core pair rather than a stale CDN URL.
- const critical = ['js/bsp-local-nav.js','js/game-core.js','js/runtime-health.js'].some(path=>key===absolute(path));
+ const expected=criticalHash(key),critical=!!expected||['js/bsp-local-nav.js','js/game-core.js','js/runtime-health.js'].some(path=>key===absolute(path));
  const requestURL = critical ? key+'?v='+encodeURIComponent(OFFLINE_BUILD) : key;
  const response = await fetch(requestURL,{cache:'reload',credentials:'same-origin'});
  if (!response.ok || response.status !== 200 || response.redirected ||
      (key !== absolute('index.html') && /text\/html/i.test(response.headers.get('content-type')||''))) throw Error('Resource unavailable: '+key);
- if(key===absolute('js/bsp-local-nav.js')&&typeof OFFLINE_NAV_SHA256!=='undefined'&&self.crypto?.subtle){
+ if(expected&&self.crypto?.subtle){
   const digest=new Uint8Array(await self.crypto.subtle.digest('SHA-256',await response.clone().arrayBuffer()));
-  if(Array.from(digest,b=>b.toString(16).padStart(2,'0')).join('')!==OFFLINE_NAV_SHA256)throw Error('Navigation module does not match release: '+OFFLINE_BUILD);
+  if(Array.from(digest,b=>b.toString(16).padStart(2,'0')).join('')!==expected)throw Error('Critical module does not match release: '+key+' '+OFFLINE_BUILD);
  }
  return response;
 }
@@ -70,7 +74,7 @@ self.addEventListener('activate',event=>event.waitUntil((async()=>{
 async function respond(req,key){
  const cache=await caches.open(cacheName);let response=await cache.match(key);
  const range=req.headers.get('range');
- if(!response){try{response=await fetchResource(key);}catch(_){return fetch(req);}try{await cache.put(key,response.clone());}catch(_){/* Quota failure must not break online play. */}}
+ if(!response){try{response=await fetchResource(key);}catch(e){if(criticalHash(key))throw e;return fetch(req);}try{await cache.put(key,response.clone());}catch(_){/* Quota failure must not break online play. */}}
  if(!range)return response;
  const match=/^bytes=(\d*)-(\d*)$/.exec(range);if(!match)return fetch(req);
  const blob=await response.blob(),size=blob.size;
@@ -83,7 +87,7 @@ self.addEventListener('fetch',event=>{
  const req=event.request;if(req.method!=='GET')return;
  const u=new URL(req.url);let key=localKey(req.url);
  if(req.mode==='navigate'&&(u.href===scope||u.pathname===new URL(scope).pathname&&u.origin===new URL(scope).origin))key=absolute('index.html');
- if(key)event.respondWith(respond(req,key).catch(()=>fetch(req)));
+ if(key)event.respondWith(respond(req,key).catch(()=>criticalHash(key)?new Response('Module update incomplete',{status:503}):fetch(req)));
 });
 let preparing=null;
 self.addEventListener('message',event=>{
