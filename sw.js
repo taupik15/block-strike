@@ -1,3 +1,4 @@
+/* AR.11.1 named breakable glass hotfix. */
 /* Versioned, project-scoped offline cache. Never caches imported maps or remote URLs. */
 importScripts('offline-assets.js');
 const scope = self.registration.scope;
