@@ -3,7 +3,7 @@ const heldModels={},heldLoads={},equipmentLoads={};
 const BOT_POOLS={CT:['m4a1','aug','mp5','usp','awp','famas','p90'],T:['ak47','galil','mac10','glock18','scout','elite','mp5']};
 function loadHeld(id){
  if(heldModels[id])return Promise.resolve(heldModels[id]);
- return heldLoads[id]||(heldLoads[id]=new Promise((ok,no)=>new THREE.GLTFLoader().load('assets/models/held/'+id+'.glb',g=>{heldModels[id]=g;ok(g)},undefined,no)).catch(e=>{delete heldLoads[id];throw e}));
+ return heldLoads[id]||(heldLoads[id]=loadMatchModel('assets/models/held/'+id+'.glb').then(g=>{heldModels[id]=g;return g}).catch(e=>{delete heldLoads[id];throw e}));
 }
 // Attach rigid GoldSrc bone-local geometry, not the source scene/root.
 function botBone(body,name){return name&&(body?.getObjectByName(name)||body?.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name)))}
@@ -15,7 +15,7 @@ function attachHeldMeshes(b,g,accept=()=>true){
   const size=o.geometry.boundingBox.getSize(new THREE.Vector3());
   const extent=Math.max(size.x,size.y,size.z)*.025;
   if(!Number.isFinite(extent)||extent<.005||extent>1.5)return;
-  const mesh=o.clone();mesh.frustumCulled=false;mesh.castShadow=true;
+  const mesh=o.clone();mesh.frustumCulled=!mesh.isSkinnedMesh;mesh.castShadow=true;
   // Held and dropped p_/w_ assets use the same Hammer scale. The character
   // rig is authored at .028; compensate once, about the grip's local origin.
   const rig=b.body.getObjectByName('CS16ClassicArmature')||b.body.getObjectByName('Armature');
@@ -46,7 +46,7 @@ function equipBot(b,i,preferredId=null){
  }).catch(e=>console.warn('Held model failed',id,e));
 }
 function loadCharacterEquipment(id){
- return equipmentLoads[id]||(equipmentLoads[id]=new Promise((ok,no)=>new THREE.GLTFLoader().load('assets/models/equipment/'+id+'.glb?v=16.4G',g=>ok(g.scene),undefined,no)).catch(e=>{delete equipmentLoads[id];console.warn('Character equipment unavailable',id,e);return null}));
+ return equipmentLoads[id]||(equipmentLoads[id]=loadMatchModel('assets/models/equipment/'+id+'.glb?v=16.4G').then(g=>g.scene).catch(e=>{delete equipmentLoads[id];console.warn('Character equipment unavailable',id,e);return null}));
 }
 function syncBotGear(b){
  if(!b.body)return;
@@ -59,7 +59,7 @@ function syncBotGear(b){
    source.traverse(o=>{if(!o.isMesh)return;const bone=botBone(b.body,o.userData.attachBone);if(!bone)return;
     // Bodygroup geometry uses exactly the same local coordinates as the
     // existing player skeleton. No weapon scale correction or extra offsets.
-    const m=o.clone();m.castShadow=true;m.frustumCulled=false;bone.add(m);b.gearMeshes.push(m);
+    const m=o.clone();m.castShadow=true;m.frustumCulled=!m.isSkinnedMesh;bone.add(m);b.gearMeshes.push(m);
    });
   });
  }
@@ -98,15 +98,15 @@ function resetInputs(){
  resetPadPointers();document.dispatchEvent(new Event('blockstrike:reset-controls'));if(typeof Phase9!=='undefined')Phase9.releaseControls();
 }
 function requestLock(){try{const p=$('pad').requestPointerLock?.();p?.catch?.(()=>{})}catch(e){}}
-function inputBlocked(){return document.hidden||!running||!$('buyMenu').classList.contains('hidden')||!$('menu').classList.contains('hidden')||(typeof Phase13!=='undefined'&&(Phase13.isSpectating()||Phase13.visibleOverlay()))}
+function inputBlocked(){return document.hidden||!running||RuntimeHealth.blocked()||!$('buyMenu').classList.contains('hidden')||!$('menu').classList.contains('hidden')||(typeof Phase13!=='undefined'&&(Phase13.isSpectating()||Phase13.visibleOverlay()))}
 function syncAim(){
  GoldSrcSprites.scope(cur());
  const sniper=aiming&&['awp','scout','g3sg1','sg550'].includes(cur());
  $('scopeOverlay').classList.toggle('hidden',!sniper);$('scopeOverlay').classList.toggle('active',sniper);
- $('scopeOverlay').setAttribute('aria-hidden',String(!sniper));
+ const overlay=$('scopeOverlay');if(overlay.getAttribute('aria-hidden')!==String(!sniper))overlay.setAttribute('aria-hidden',String(!sniper));
  $('cross').classList.toggle('hidden',sniper);
  document.body.classList.toggle('has-scope',!!scopeLevels(cur()));if(vm)vm.visible=!sniper;
- if(!aiming&&cam){cam.fov=baseFov;cam.updateProjectionMatrix()}
+ if(!aiming&&cam&&cam.fov!==baseFov){cam.fov=baseFov;cam.updateProjectionMatrix()}
 }
 let shotgunReload=null;
 function clipDuration(name,fallback){const a=vm?.userData.weaponAnimation?.actions[name];return a?a.getClip().duration:fallback}
@@ -133,7 +133,7 @@ function updateReload(dt){
  }
  if(reloading>0){reloading-=dt;if(reloading<=0){reloading=0;const key=cur()==='shield'?Phase9.shieldPistol():cur(),st=A[key],n=Math.max(0,Math.min(W[key].mag-st.mag,st.res));st.mag+=n;st.res-=n;hud()}}
 }
-function pauseToMenu(){WeaponModes15C.cancel();Phase10.closeRadio();Phase10.resetVoices();resetWeaponVoices();CS16SFX.reset?.();running=false;reloadSfxToken++;resetInputs();aiming=false;syncAim();$('buyMenu').classList.add('hidden');$('menu').classList.remove('hidden');document.body.classList.remove('playing');if(document.pointerLockElement)document.exitPointerLock()}
+function pauseToMenu(){LocalMapMedia.pauseAmbient?.();WeaponModes15C.cancel();Phase10.closeRadio();Phase10.resetVoices();resetWeaponVoices();CS16SFX.reset?.();running=false;reloadSfxToken++;resetInputs();aiming=false;syncAim();$('buyMenu').classList.add('hidden');$('menu').classList.remove('hidden');document.body.classList.remove('playing');if(document.pointerLockElement)document.exitPointerLock()}
 document.addEventListener('pointerlockchange',()=>{if(!document.pointerLockElement)resetInputs()});
 
 function disposeFallback(g){if(g&&!g.userData.weaponAnimation)g.traverse(o=>{o.geometry?.dispose();[].concat(o.material||[]).forEach(m=>m.dispose())})}
@@ -150,7 +150,7 @@ function placeMapSpawns(){
  };
  const ct=list('CT'),t=list('T'),counts={CT:playerTeam==='CT'?1:0,T:playerTeam==='T'?1:0},used={CT:[],T:[]};
  const own=playerTeam==='CT'?ct:t;
- if(own.length){P.pos.copy(own[0]);used[playerTeam].push(P.pos.clone())}
+ if(own.length){P.pos.copy(own[0]);P.yaw=bspCol.spawnYaw?.[playerTeam]?.[0]??P.yaw;used[playerTeam].push(P.pos.clone())}
  // GoldSrc BSP maps may provide fewer native spawn entities than the requested
  // 2..32 players. Stagger surplus slots with headroom and separation checks,
  // rather than blindly stacking several bots at exactly the same coordinate.
@@ -172,5 +172,5 @@ function placeMapSpawns(){
   console.warn('Tahap10: no distinct BSP spawn near',team,index);
   seen.push(point.clone());return point.clone();
  }
- bots.forEach(b=>{const pos=spawnFor(b.team);if(pos)b.g.position.copy(pos);b.nav=null});
+ bots.forEach(b=>{const index=counts[b.team],pos=spawnFor(b.team);if(pos)b.g.position.copy(pos);const angles=bspCol.spawnYaw?.[b.team];if(angles?.length)b.g.rotation.y=angles[index%angles.length];b.nav=null});
 }

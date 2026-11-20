@@ -81,8 +81,8 @@ $('settingsBtn').onclick=()=>$('settingsScreen').classList.remove('hidden');
 $('creditsBtn').onclick=()=>$('creditsScreen').classList.remove('hidden');
 $('selectMapBtn').onclick=$('go').onclick;
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).classList.add('hidden'));
-$('pauseBtn').onclick=()=>{pauseToMenu();$('resumeBtn').classList.toggle('hidden',over)};
-$('resumeBtn').onclick=()=>{if(!R||over)return;$('menu').classList.add('hidden');document.body.classList.add('playing');running=true;t0=performance.now();resetInputs()};
+$('pauseBtn').onclick=()=>{pauseToMenu();$('resumeBtn').classList.toggle('hidden',over||RuntimeHealth.halted())};
+$('resumeBtn').onclick=()=>{if(!R||over||RuntimeHealth.blocked())return;$('menu').classList.add('hidden');document.body.classList.add('playing');running=true;t0=performance.now();resetInputs()};
 $('volume').oninput=e=>masterVolume=+e.target.value;
 const classicModelsField=$('classicModels');
 if(classicModelsField){

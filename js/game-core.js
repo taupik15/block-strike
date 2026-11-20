@@ -82,8 +82,19 @@ const RELOAD_SOUNDS={
  xm1014:[['m3_insertshell.wav',0],['m3_insertshell.wav',620],['m3_pump.wav',1260]],
  m249:[['m249_boxout.wav',0],['m249_boxin.wav',650],['m249_coverup.wav',1250],['m249_chain.wav',1650]]
 };
-function requestOriginalSound(name){if(!AC||originalAudio[name]||originalSoundLoading[name])return;originalSoundLoading[name]=true;fetch('assets/sounds/weapons/'+name).then(r=>r.ok?r.arrayBuffer():null).then(b=>b&&AC.decodeAudioData(b)).then(buf=>{if(buf)originalAudio[name]=buf}).catch(()=>{}).finally(()=>{delete originalSoundLoading[name]})}
-function loadOriginalSounds(){if(!AC||originalSoundsRequested)return;originalSoundsRequested=true;const reloadFiles=Object.values(RELOAD_SOUNDS).flat().map(x=>x[0]);const extras=['grenade_hit2.wav','grenade_hit3.wav','glock18-2.wav','famas-2.wav','famas-burst.wav','generic_reload.wav','knife_slash1.wav','knife_stab.wav','knife_hit1.wav','knife_hit2.wav','knife_hit3.wav','knife_hit4.wav','knife_hitwall1.wav','knife_slash2.wav','knife_deploy1.wav','headshot2.wav','pinpull.wav','sg_explode.wav','hegrenade-1.wav','hegrenade-2.wav','flashbang-1.wav','flashbang-2.wav','grenade_hit1.wav','dryfire_pistol.wav','dryfire_rifle.wav','usp_unsil-1.wav','m4a1_unsil-1.wav','usp_silencer_on.wav','usp_silencer_off.wav','m4a1_silencer_on.wav','m4a1_silencer_off.wav','ric_metal-1.wav','ric_conc-1.wav','c4_beep1.wav','c4_beep2.wav','c4_beep3.wav','c4_beep4.wav','c4_beep5.wav','c4_click.wav','c4_disarm.wav','c4_disarmed.wav','c4_plant.wav','c4_explode1.wav'];const cueFiles=Object.values(WeaponPresentation).flatMap(asset=>Object.values(asset.sound).flat().map(cue=>cue[1]));const files=[...new Set([...cueFiles,...Object.values(W).map(w=>w.sound).filter(Boolean),...reloadFiles,...extras])];files.forEach(requestOriginalSound)}
+const originalSoundQueue=[];let soundLoadsActive=0;
+function pumpOriginalSounds(){
+ while(AC&&soundLoadsActive<4&&originalSoundQueue.length){
+  const name=originalSoundQueue.shift();soundLoadsActive++;
+  fetch('assets/sounds/weapons/'+name).then(r=>r.ok?r.arrayBuffer():null).then(b=>b&&AC.decodeAudioData(b)).then(buf=>{if(buf)originalAudio[name]=buf}).catch(()=>{}).finally(()=>{delete originalSoundLoading[name];soundLoadsActive--;pumpOriginalSounds()});
+ }
+}
+function requestOriginalSound(name,preload=false){
+ if(!AC||originalAudio[name])return;
+ if(originalSoundLoading[name]){if(!preload){const i=originalSoundQueue.indexOf(name);if(i>0){originalSoundQueue.splice(i,1);originalSoundQueue.unshift(name);}}return;}
+ originalSoundLoading[name]=true;if(preload)originalSoundQueue.push(name);else originalSoundQueue.unshift(name);pumpOriginalSounds();
+}
+function loadOriginalSounds(){if(!AC||originalSoundsRequested)return;originalSoundsRequested=true;const reloadFiles=Object.values(RELOAD_SOUNDS).flat().map(x=>x[0]);const extras=['grenade_hit2.wav','grenade_hit3.wav','glock18-2.wav','famas-2.wav','famas-burst.wav','generic_reload.wav','knife_slash1.wav','knife_stab.wav','knife_hit1.wav','knife_hit2.wav','knife_hit3.wav','knife_hit4.wav','knife_hitwall1.wav','knife_slash2.wav','knife_deploy1.wav','headshot2.wav','pinpull.wav','sg_explode.wav','hegrenade-1.wav','hegrenade-2.wav','flashbang-1.wav','flashbang-2.wav','grenade_hit1.wav','dryfire_pistol.wav','dryfire_rifle.wav','usp_unsil-1.wav','m4a1_unsil-1.wav','usp_silencer_on.wav','usp_silencer_off.wav','m4a1_silencer_on.wav','m4a1_silencer_off.wav','ric_metal-1.wav','ric_conc-1.wav','c4_beep1.wav','c4_beep2.wav','c4_beep3.wav','c4_beep4.wav','c4_beep5.wav','c4_click.wav','c4_disarm.wav','c4_disarmed.wav','c4_plant.wav','c4_explode1.wav'];const cueFiles=Object.values(WeaponPresentation).flatMap(asset=>Object.values(asset.sound).flat().map(cue=>cue[1]));const files=[...new Set([...cueFiles,...Object.values(W).map(w=>w.sound).filter(Boolean),...reloadFiles,...extras])];files.forEach(name=>requestOriginalSound(name,true))}
 const activeVoices=new Set(),voicePriority=new WeakMap();
 function reserveSoundVoice(priority){
  while(activeVoices.size>=16){let old=null;for(const voice of activeVoices)if((voicePriority.get(voice)||0)<=priority&&(!old||(voicePriority.get(voice)||0)<(voicePriority.get(old)||0)))old=voice;
@@ -116,6 +127,15 @@ async function waitForLoadTasks(tasks){
  if(failed)throw failed.reason;
  return results.map(r=>r.value);
 }
+// Limit simultaneous GLTF fetch, image decoding and parser work across startup loaders.
+const matchModelQueue=[];let matchModelActive=0;
+function loadMatchModel(url){return new Promise((resolve,reject)=>{matchModelQueue.push({url,resolve,reject});pumpMatchModels()})}
+function pumpMatchModels(){
+ while(matchModelActive<4&&matchModelQueue.length){
+  const job=matchModelQueue.shift();matchModelActive++;
+  Promise.resolve().then(()=>new Promise((ok,no)=>new THREE.GLTFLoader().load(job.url,ok,undefined,no))).then(job.resolve,job.reject).finally(()=>{matchModelActive--;pumpMatchModels()});
+ }
+}
 let CT,builtMapId=null,worldReady=Promise.resolve();
 function rebuildWorld(){
  // Detach transient objects with shared GLTF/sprite resources BEFORE the
@@ -125,7 +145,7 @@ function rebuildWorld(){
  if(playerAvatar){S.remove(playerAvatar);playerAvatar.traverse(o=>{if(o.isSkinnedMesh)o.skeleton.dispose()});playerAvatar=null}
  bots.forEach(disposeBot);bots.length=0;const geos=new Set(),mats=new Set(),textures=new Set();
  for(const o of S.children.slice()){if(o===cam)continue;o.shadow?.dispose();o.traverse(m=>{if(m.geometry)geos.add(m.geometry);for(const mat of [].concat(m.material||[])){mats.add(mat);for(const v of Object.values(mat))if(v?.isTexture)textures.add(v)}});S.remove(o)}
- geos.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());if(CT)textures.add(CT);textures.forEach(t=>{if(!releasedTextures?.has(t))t.dispose()});obs.length=0;obsM.length=0;build();
+ geos.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());if(CT)textures.add(CT);textures.forEach(t=>{if(!releasedTextures?.has(t))t.dispose()});obs.length=0;obsM.length=0;R.renderLists?.dispose();build();
 }
 function build(){
  window.bspCol=null;window.bspSky=null;window.NavGraph?.clear();window.BSPDoors?.clear();window.BSPBreakables?.clear();LayoutNav.reset();worldReady=Promise.resolve();S.userData.rayMeshes=obsM;
@@ -199,10 +219,7 @@ function ensureWeaponModel(k){return ensureWeaponAsset(weaponAssetName(k))}
 function ensureWeaponAsset(asset){
  if(weaponModels[asset])return Promise.resolve(weaponModels[asset]);
  if(weaponModelLoads[asset])return weaponModelLoads[asset];
- return weaponModelLoads[asset]=new Promise((resolve,reject)=>new THREE.GLTFLoader().load('assets/models/weapons/'+asset+'.glb',g=>{
-  weaponModels[asset]=g;
-  resolve(g);
- },undefined,err=>{delete weaponModelLoads[asset];console.warn('Weapon model failed to load:',asset,err);reject(err)}));
+ return weaponModelLoads[asset]=loadMatchModel('assets/models/weapons/'+asset+'.glb').then(g=>{weaponModels[asset]=g;return g}).catch(err=>{delete weaponModelLoads[asset];console.warn('Weapon model failed to load:',asset,err);throw err});
 }
 async function preloadViewmodels(){
  const assets=[...new Set([
@@ -359,12 +376,12 @@ function preloadCT(done){
  (ctWait=ctWait||[]).push(done);
  if(ctState===1)return;
  ctState=1;loadedClassicCharacterMode=original;
- const L=new THREE.GLTFLoader();const jobs=[...CTN.map(n=>['ct',n]),...TN.map(n=>['t',n])];let left=jobs.length;
+ const jobs=[...CTN.map(n=>['ct',n]),...TN.map(n=>['t',n])];let left=jobs.length;
  const fin=()=>{if(--left===0){ctState=2;const w=ctWait;ctWait=null;w.forEach(f=>f())}};
  jobs.forEach(([d,n])=>{
   const fallback='assets/models/'+d+'/'+n+'.glb?v=3';
   const target=(d==='ct'?CTC:TC);
-  const load=(url,retry)=>L.load(url,g=>{target[n]=g;fin()},undefined,()=>retry?load(fallback,false):fin());
+  const load=(url,retry)=>loadMatchModel(url).then(g=>{target[n]=g;fin()},()=>retry?load(fallback,false):fin());
   load(original?'assets/models/cs16-classic/'+d+'/'+n+'.glb?v=16.4.7-anim1':fallback,original);
  });
 }
@@ -417,7 +434,7 @@ function mkModel(team,x,z,gl,classId=''){
   ['arm',.19,.59,.35,-.385,1.14,0],['arm',.19,.59,.35,.385,1.14,0]
  ];
  if(typeof NativeHitboxes==='undefined'||!NativeHitboxes.attach(b,classId,THREE,pm))for(const [part,w,h,d,x,y,z] of proxies){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),pm);
-  m.position.set(x,y,z);m.userData={part,bot:b};visualMount.add(m);b.parts.push(m)}
+  m.position.set(x,y,z);m.visible=false;m.userData={part,bot:b};visualMount.add(m);b.parts.push(m)}
  root.position.set(x,0,z);S.add(root);bots.push(b);return b;
 }
 // Separate the native gait's pelvis/legs from weapon-specific upper body.
@@ -444,7 +461,7 @@ function activateCharacterAction(b,action){b.retiredActions?.delete(action);}
 function setCharacterGait(b,name){
  const clip=b.characterClips?.get(name),previous=b.gaitAction;
  if(!clip){retireCharacterAction(b,previous,.12);b.gaitAction=null;return;}
- const action=b.mixer.clipAction(characterMask(clip,false));
+ const masked=characterMask(clip,false),action=previous?.getClip()===masked?previous:b.mixer.clipAction(masked);
  if(action!==previous){const phase=previous?previous.time/previous.getClip().duration:0;
   activateCharacterAction(b,action);action.reset().setLoop(THREE.LoopRepeat,Infinity).setEffectiveWeight(1).play();action.time=phase*clip.duration;
   if(previous){action.fadeIn(.12);retireCharacterAction(b,previous,.12)}else action.fadeIn(.12);
@@ -528,9 +545,26 @@ function startRound(){
  const spawn=activeMapData?.spawn?.[playerTeam==='CT'?'ct':'t'];P.pos.set(spawn?.[0]??0,spawn?.[1]??0,spawn?.[2]??(playerTeam==='CT'?26:-26));
  if(window.bspCol)P.pos.y=BSP.snapSpawn(bspCol,P.pos.x,P.pos.z);P.yaw=playerTeam==='CT'?0:Math.PI;
  P.hp=100;P.nextBotFootstep=0;buyTime=window.PhaseMenu15?.rules.buyTime??15;roundTime=window.PhaseMenu15?.rules.roundSeconds??120;freezeLeft=window.PhaseMenu15?.rules.freezeTime??6;
- P.vy=0;P.vel=[0,0];P.viewMotion={};P.waterLevel=0;P.recoil=null;P.hitSlow=1;P.lastKnifeAt=null;P.resumeZoom=null;P.jumpHeld=false;P.ladderDetach=0;P.on=false;placeMapSpawns();BombMode.roundStart();say('ROUND '+round+' · '+Phase10.config.players+' PLAYERS · '+Phase10.config.difficulty.toUpperCase());hud();
+ P.vy=0;P.vel=[0,0];P.viewMotion={};P.waterLevel=0;P.recoil=null;P.hitSlow=1;P.lastKnifeAt=null;P.resumeZoom=null;P.jumpHeld=false;P.ladderDetach=0;P.on=false;placeMapSpawns();primeSpawnCamera();staggerBotTicks();BombMode.roundStart();say('ROUND '+round+' · '+Phase10.config.players+' PLAYERS · '+Phase10.config.difficulty.toUpperCase());hud();
 }
 
+// Establish a valid camera even before the first gameplay tick (and after a round reset).
+function primeSpawnCamera(){
+ cam.position.set(P.pos.x,P.pos.y+(window.bspCol?.56:1.6),P.pos.z);
+ cam.rotation.set(P.pitch,P.yaw,0,'YXZ');cam.updateMatrixWorld(true);
+}
+function botTickInterval(players){return players>24?.085:players>16?.06:.034;}
+function staggerBotTicks(){
+ const interval=botTickInterval(Phase10.config.players),count=Math.max(1,bots.length);
+ bots.forEach((b,i)=>{b.aiAccum=-interval*i/count;});
+}
+function takeBotStep(b,dt,players){
+ const interval=botTickInterval(players);b.aiAccum=(b.aiAccum||0)+dt;
+ if(b.aiAccum+1e-9<interval)return 0;
+ // Preserve phase remainder instead of synchronizing every bot to the same frame.
+ const elapsed=Math.floor((b.aiAccum+1e-9)/interval)*interval;
+ b.aiAccum=Math.max(0,b.aiAccum-elapsed);return Math.min(.16,elapsed);
+}
 function groundSoundSurface(position){
  if(!window.bspCol)return 'dirt';
  // Only sampled when a step is emitted, not each render/AI tick.
@@ -542,7 +576,7 @@ function los(b,tp){
  const col=window.bspCol,eye=col?28*col.T.k:1.5,duck=col?(Number.isInteger(col.crouchHead)?16*col.T.k:.18):.55;
  const targetCrouch=tp===P.pos?!!Phase9.crouching:!!bots.find(x=>x.g.position===tp)?.crouching;
  const o=V(b.g.position.x,b.g.position.y+eye-(b.crouching?duck:0),b.g.position.z),t=V(tp.x,tp.y+eye-(targetCrouch?duck:0),tp.z),d=t.clone().sub(o),L=d.length();
- ray.set(o,d.normalize());ray.far=L;return ray.intersectObjects(obsM).length==0;
+ ray.set(o,d.normalize());ray.far=L;return typeof BSPVisuals==='undefined'?ray.intersectObjects(obsM).length===0:!BSPVisuals.occluded(ray,obsM);
 }
 function tgtFor(b){
  const p=b.g.position;let best=null,bd=Infinity;
@@ -572,8 +606,7 @@ function botUpdate(b,dt){
   if(b.dead>Math.max(2.5,b.acts?.[dying]?.getClip().duration||0)){disposeBot(b);bots.splice(bots.indexOf(b),1)}return}
  if(b.blinded>0){b.boostPlan=null;LayoutNav.cancelTraffic(b,performance.now()/1000);BotTactics15D.clearYield(b,performance.now()/1000);b.trafficIntent=null;b.aimPitch=0;b.characterGait=null;if(b.mixer)updateCharacterAnimation(b,false,false);b.vel=[0,0];b.blinded=Math.max(0,b.blinded-dt);b.visibleEnemy=null;b.seenId=null;b.noticeElapsed=0;b.los=false;b.cd=Math.max(b.cd,.3);return}
  // Scale bot thinking/movement frequency for 24-32 player matches; animation stays smooth.
- b.aiAccum=(b.aiAccum||0)+dt;const interval=Phase10.config.players>24?.085:Phase10.config.players>16?.06:.034;
- if(b.aiAccum<interval)return;const step=Math.min(.16,b.aiAccum);b.aiAccum=Math.max(0,b.aiAccum-step);
+ const step=takeBotStep(b,dt,Phase10.config.players);if(!step)return;
  if(roundWait||(typeof freezeLeft!=='undefined'&&freezeLeft>0))return;
  b.cd=Math.max(0,(b.cd||0)-step);b.combatRecoil=Combat12.recoverRecoil(b.combatRecoil,step,!!(b.burst&&b.visibleEnemy));
  if(b.reloadLeft>0)Combat12.advanceBotReload(b,W[b.weaponId],step);
@@ -1288,11 +1321,13 @@ addEventListener('keydown',e=>{if(e.code==='Tab'&&running&&!inputBlocked()&&!e.t
 addEventListener('keyup',e=>{if(e.code==='Tab')setScoreboard(false)});
 addEventListener('blur',()=>setScoreboard(false));
 /* HUD */
+let hudAmmoMarkup=null;
 function hud(){
  const k=cur()==='shield'?Phase9.shieldPistol():cur(),st=A[k],enemyTeam=playerTeam==='CT'?'T':'CT',alive=bots.filter(b=>!b.dead&&b.team===enemyTeam).length;
  $('top').textContent='RONDE '+round+'  |  CT '+(bots.filter(b=>b.team==='CT'&&!b.dead).length+(playerTeam==='CT'&&P.hp>0?1:0))+'  |  T '+(bots.filter(b=>b.team==='T'&&!b.dead).length+(playerTeam==='T'&&P.hp>0?1:0))+'  |  KILL '+kills;
  $('hpt').textContent=Math.ceil(P.hp);$('hpf').style.width=P.hp+'%';$('hpf').style.background=P.hp>50?'#4f4':P.hp>25?'#fc3':'#f44';
- $('ammo').innerHTML=BombMode.selected?.()?'<small>C4</small>':(k==='knife'?'':reloading?'<b class="rl">RELOAD</b>':'<b>'+st.mag+'</b><i>/'+st.res+'</i>')+'<small>'+W[k].n+'</small>';
+ const ammoMarkup=BombMode.selected?.()?'<small>C4</small>':(k==='knife'?'':reloading?'<b class="rl">RELOAD</b>':'<b>'+st.mag+'</b><i>/'+st.res+'</i>')+'<small>'+W[k].n+'</small>';
+ if(hudAmmoMarkup!==ammoMarkup){$('ammo').innerHTML=ammoMarkup;hudAmmoMarkup=ammoMarkup;}
  if(sbOpen)renderScoreboard();
  $('economy').textContent='$'+money;$('roundclock').textContent=freezeLeft>0?'FREEZE '+Math.ceil(freezeLeft):BombMode.planted()?'BOMB LIVE':buyTime>0?'BUY '+Math.ceil(buyTime):Math.ceil(roundTime)+'s';$('armor').textContent='ARMOR '+Math.ceil(armor)+(helmet?' · HELMET':'');Phase9.updateHud();BombMode.hud();GoldSrcSprites.hud(BombMode.selected?.()?'c4':k,helmet,armor>0);GoldSrcSprites.equipment(grenades);
 }
@@ -1382,12 +1417,15 @@ function update(dt){
  Phase13.updateBlood(dt); // reset decal work budget before player and bot shots
  const frozen=freezeLeft>0;
  const clocks=Economy45.tickRound(freezeLeft,buyTime,roundTime,dt,BombMode.planted(),roundWait>0);freezeLeft=clocks.freeze;buyTime=clocks.buy;roundTime=clocks.time;
- if(frozen&&!freezeLeft){say('GO GO GO');resetInputs()}
+ // Freeze gate locks movement/attacks, not the physical gesture. Keep a held joystick alive.
+ if(frozen&&!freezeLeft)say('GO GO GO');
  if(buyTime<=0&&!$('buyMenu').classList.contains('hidden'))closeBuyMenu();
  BSPBreakables.refresh();
  updateBreakableFX();
  if(window.bspCol)BSPDoors.update(dt,P.hp>0?BSP.toHammer(bspCol.T,P.pos.toArray()):null,bots.filter(b=>!b.dead).map(b=>BSP.toHammer(bspCol.T,b.g.position.toArray())));
  if(!Phase13.isSpectating()){
+ RuntimeHealth.stage('player');
+ if(![P.pos.x,P.pos.y,P.pos.z,P.pitch,P.yaw,jx,jy].every(Number.isFinite))throw Error('Non-finite player state');
  const analog=BSP.analog(jx,jy);let mx=(K.d-K.a)+analog[0],mz=(K.w-K.s)-analog[1];const n=Math.hypot(mx,mz);if(n>1){mx/=n;mz/=n}
  const defuseLocked=!!BombMode.humanDefusing?.();
  if(!defuseLocked)Phase9.updateCrouch(dt);const scale=window.bspCol?.T.k||.02;
@@ -1421,8 +1459,9 @@ function update(dt){
  vm.position.set(motion.x,motion.y,0);
  vm.rotation.set(0,0,0);
  }
- GoldSrcSprites.update(dt);Phase9.update(dt);Phase10.updateFX(dt);if(!frozen)bots.slice().forEach(b=>botUpdate(b,dt));
- if(!frozen)BombMode.update(dt);Phase13.updateSpectator(dt);BombMode.updateProgressHud?.();
+ RuntimeHealth.stage('effects');GoldSrcSprites.update(dt);Phase9.update(dt);Phase10.updateFX(dt);
+ if(!frozen){RuntimeHealth.stage('bots');for(const b of bots.slice()){RuntimeHealth.stage('bot '+(b.botId||b.team));botUpdate(b,dt);}}
+ RuntimeHealth.stage('objective');if(!frozen)BombMode.update(dt);Phase13.updateSpectator(dt);BombMode.updateProgressHud?.();
  for(let i=tr.length-1;i>=0;i--){const t=tr[i];t.t-=dt;if(t.t<=0){removeTracer(t);tr.splice(i,1)}}
  for(let i=pt.length-1;i>=0;i--){const p=pt[i];p.t-=dt;p.v.y-=(p.gravity??12)*dt;p.m.position.addScaledVector(p.v,dt);if(p.spin){p.m.rotation.x+=p.spin*dt;p.m.rotation.z+=p.spin*.6*dt;}if(p.t<=0){removeParticle(p);pt.splice(i,1)}}
  if(!BombMode.active())Phase13.checkRoundEnd();
@@ -1433,7 +1472,7 @@ function update(dt){
  if(dmgA>0){dmgA-=dt;$('dmg').style.opacity=Math.max(0,dmgA)}
  if(hitT>0){hitT-=dt;if(hitT<=0)$('cross').classList.remove('hit')}
  if(msgT>0){msgT-=dt;if(msgT<=0)$('msg').style.opacity=0}
- hudT-=dt;if(hudT<=0){hudT=.15;radar();hud()}
+ RuntimeHealth.stage('HUD timer');hudT-=dt;if(hudT<=0){hudT=.15;RuntimeHealth.stage('radar');radar();RuntimeHealth.stage('HUD');hud()}
 }
 let firedLatch=false;
 // Tahap 13: Shift walk (CS 1.6), no sprint speed bonus.
@@ -1453,35 +1492,52 @@ function renderActiveViewmodel(){
  try{
   const fov=ViewmodelCalibration[subject.userData.viewAsset]?.[0]||65;
   if(viewCamera.fov!==fov){viewCamera.fov=fov;viewCamera.updateProjectionMatrix()}
-  R.autoClear=false;R.clearDepth();R.render(viewScene,viewCamera);
+  R.autoClear=false;R.clearDepth();R.render(viewScene,viewCamera);return true;
  }finally{for(const child of hidden)child.visible=true;R.autoClear=true}
 }
 function loop(t){
  requestAnimationFrame(loop);
- if(document.hidden||inputSuspended){t0=t;return}
- // Some WebKit suspensions omit blur/visibility events. Never apply stale input on a resumed frame.
- if(t0>0&&t-t0>1000){resumeGameplayInput(t,true);return}
- const dt=Math.max(0,Math.min(.05,(t-t0)/1000));t0=t;
- if(running)update(dt);
- if(R)LocalMapMedia.update(activeMapData?.local,dt);
- if(R){
-  if(window.bspSky)window.bspSky.position.copy(cam.position);
-  R.autoClear=true;R.render(S,cam);
-  renderActiveViewmodel();
+ if(document.hidden||inputSuspended){t0=t;RuntimeHealth.lifecycleWait?.(document.hidden?'hidden':'input suspended');return}
+ const elapsed=t0>0?Math.max(0,t-t0):0;t0=t;
+ if(!running||matchLoading||!R){RuntimeHealth.idle();return;}
+ if(RuntimeHealth.blocked())return;
+ RuntimeHealth.lifecycleWait?.(null);
+ // Foreground jank is not a page suspension. Drop excess elapsed time instead
+ // of invalidating active touch/keyboard ownership or running huge catch-up steps.
+ const dt=Math.min(.05,elapsed/1000);
+ RuntimeHealth.begin(t,elapsed);
+ let updateOK=true;
+ try{RuntimeHealth.stage('update');update(dt)}catch(error){updateOK=false;RuntimeHealth.fail('simulation',error)}
+ if(updateOK&&!RuntimeHealth.contextLost()){try{RuntimeHealth.stage('map media');LocalMapMedia.update(activeMapData?.local,dt)}catch(error){updateOK=false;RuntimeHealth.fail('media',error)}}
+ RuntimeHealth.updated();
+ // A simulation exception must not suppress the world render. Keep the last
+ // valid frame visible and surface the failing subsystem, not a silent black HUD.
+ if(!RuntimeHealth.contextLost()){
+  try{
+   RuntimeHealth.stage('world render');if(window.bspSky)window.bspSky.position.copy(cam.position);
+   R.autoClear=true;R.render(S,cam);RuntimeHealth.countDraws();
+   RuntimeHealth.stage('viewmodel render');if(renderActiveViewmodel())RuntimeHealth.countDraws();
+   RuntimeHealth.rendered();
+  }catch(error){RuntimeHealth.fail('render',error)}
+  finally{R.autoClear=true;}
  }
+ RuntimeHealth.end(t,updateOK);
 }
 /* SETUP */
 function applyQ(){
  const mobile=matchMedia('(pointer: coarse)').matches;
- R.setPixelRatio(Math.min(devicePixelRatio||1,[1,1.5,2][Q],mobile?1.5:2));resizeGameViewport();
- R.shadowMap.enabled=Q==2;sun.castShadow=Q==2;S.traverse(o=>{if(o.material)o.material.needsUpdate=true});
+ const ratio=Math.min(devicePixelRatio||1,[1,1.5,2][Q],mobile?1.5:2);RuntimeHealth.configureResolution(ratio,mobile);resizeGameViewport();
+ const shadows=Q===2,changed=R.shadowMap.enabled!==shadows;R.shadowMap.enabled=shadows;sun.castShadow=shadows;if(changed)S.traverse(o=>{for(const mat of [].concat(o.material||[]))mat.needsUpdate=true});
 }
 function resizeGameViewport(){
  const canvas=$('c'),w=Math.max(1,canvas.clientWidth||innerWidth),h=Math.max(1,canvas.clientHeight||innerHeight);
- cam.aspect=viewCamera.aspect=w/h;cam.updateProjectionMatrix();viewCamera.updateProjectionMatrix();R.setSize(w,h,false);
+ if(!R||!cam||!viewCamera)return;
+ if(cam.aspect!==w/h||viewCamera.aspect!==w/h){cam.aspect=viewCamera.aspect=w/h;cam.updateProjectionMatrix();viewCamera.updateProjectionMatrix();}
+ const size=R.getSize(new THREE.Vector2());if(size.x!==w||size.y!==h)R.setSize(w,h,false);
 }
 function init(){
  R=new THREE.WebGLRenderer({canvas:$('c'),antialias:Q>0,powerPreference:'high-performance'});R.outputEncoding=THREE.sRGBEncoding;
+ RuntimeHealth.bindCanvas($('c'));
  S=new THREE.Scene();cam=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,150);S.add(cam);Phase13.bindLight(cam);
  viewScene=new THREE.Scene();viewCamera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.01,10);
  viewScene.add(new THREE.HemisphereLight(0xffffff,0x887766,1.3));const vl=new THREE.DirectionalLight(0xffffff,.7);vl.position.set(-1,2,3);viewScene.add(vl);
@@ -1500,14 +1556,19 @@ function newGame(){
 $('q').onchange=e=>{Q=+e.target.value;if(R)applyQ()};
 $('sn').onchange=e=>SENS=+e.target.value;
 async function beginMatch(){
- if(matchLoading)return;matchLoading=true;running=false;resetInputs();
- Q=+$('q').value;SENS=+$('sn').value;
- if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();NB=AC.createBuffer(1,AC.sampleRate*.3,AC.sampleRate);const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=rnd()*2-1}catch(e){}}
- if(AC?.state==='suspended')AC.resume();loadOriginalSounds();
- $('loadBack').classList.add('hidden');$('loadingScreen').classList.remove('hidden');$('loadStatus').textContent='Memuat peta, model dan suara…';
+ if(matchLoading)return;matchLoading=true;running=false;
  try{
-  await GoldSrcSprites.ready();
-  if(selectedMapId.startsWith('saved:')){
+  RuntimeHealth.reset();RuntimeHealth.stage?.('startup controls');
+  $('loadBack').classList.add('hidden');$('loadingScreen').classList.remove('hidden');$('loadStatus').textContent='Memuat peta, model dan suara…';
+  resetInputs();LocalMapMedia.pauseAmbient?.();
+  Q=+$('q').value;SENS=+$('sn').value;
+  RuntimeHealth.stage?.('startup audio');
+  if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();NB=AC.createBuffer(1,AC.sampleRate*.3,AC.sampleRate);const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=rnd()*2-1}catch(e){}}
+  // Safari may reject audio resume; audio permission must not strand map loading.
+  if(AC?.state==='suspended'||AC?.state==='interrupted')try{AC.resume()?.catch?.(()=>{})}catch(_){}
+  loadOriginalSounds();
+  RuntimeHealth.stage?.('startup sprites');await GoldSrcSprites.ready();
+  RuntimeHealth.stage?.('startup map');if(selectedMapId.startsWith('saved:')){
    $('loadStatus').textContent='Memeriksa navigasi peta…';
    const localMapData=await MapImporter.compile(await MapLibrary.load(selectedMapId));
    activeMapData={id:'local_bsp',name:localMapData.name,local:localMapData,spawn:localMapData.spawn};
@@ -1517,16 +1578,23 @@ async function beginMatch(){
   }else{
    const r=await fetch('assets/maps/'+selectedMapId+'.json');if(!r.ok)throw new Error('Map tidak ditemukan');activeMapData=await r.json();
   }
-  await waitForLoadTasks([new Promise(ok=>preloadCT(ok)),preloadViewmodels(),GrenadeFX15B.preload(),...BOT_POOLS.CT.concat(BOT_POOLS.T).map(loadHeld),loadHeld('shield').catch(()=>null)]);
+  RuntimeHealth.stage?.('startup models');await waitForLoadTasks([new Promise(ok=>preloadCT(ok)),preloadViewmodels(),GrenadeFX15B.preload(),...BOT_POOLS.CT.concat(BOT_POOLS.T).map(loadHeld),loadHeld('shield').catch(()=>null)]);
   if(activeMapData.local?.mode==='bomb'){
    await ensureWeaponModel('c4');
    await waitForLoadTasks([Phase9.loadWorldModel('c4'),Phase9.loadWorldModel('backpack'),Phase9.loadWorldModel('thighpack'),loadCharacterEquipment('bomb-carrier'),loadCharacterEquipment('defuse-kit'),loadHeld('c4').catch(()=>null)]);
    ['c4_click','c4_plant','c4_beep1','c4_beep2','c4_beep3','c4_beep4','c4_beep5','c4_disarm','c4_disarmed','c4_explode1'].forEach(name=>requestOriginalSound(name+'.wav'));
   }
-  BombMode.prepare(activeMapData.local);
+  RuntimeHealth.stage?.('startup world');BombMode.prepare(activeMapData.local);
   if(!R)init();else{rebuildWorld();applyQ()}await worldReady;
-  newGame();createPlayerClass();$('teamScreen').classList.add('hidden');$('matchConfigScreen').classList.add('hidden');$('classScreen').classList.add('hidden');$('menu').classList.add('hidden');$('loadingScreen').classList.add('hidden');document.body.classList.add('playing');running=true;t0=performance.now();
- }catch(e){console.error(e);$('loadStatus').textContent='Gagal memuat: '+e.message;$('loadBack').classList.remove('hidden')}
+  if(!window.bspCol)LayoutNav.prepare();
+  RuntimeHealth.stage?.('startup round');newGame();createPlayerClass();$('loadStatus').textContent='Menyiapkan render pertama…';
+  // Give loading UI a paint opportunity; draw the world before exposing the gameplay HUD.
+  await new Promise(resolve=>requestAnimationFrame(resolve));
+  if(RuntimeHealth.contextLost())throw Error('WebGL context lost during map startup');
+  RuntimeHealth.stage?.('startup first render');R.autoClear=true;try{R.render(S,cam);renderActiveViewmodel()}finally{R.autoClear=true}
+  if(RuntimeHealth.contextLost())throw Error('WebGL context lost during first render');
+  $('teamScreen').classList.add('hidden');$('matchConfigScreen').classList.add('hidden');$('classScreen').classList.add('hidden');$('menu').classList.add('hidden');$('loadingScreen').classList.add('hidden');document.body.classList.add('playing');running=true;t0=performance.now();
+ }catch(e){running=false;document.body.classList.remove?.('playing');$('loadingScreen').classList.remove('hidden');$('loadStatus').textContent='Gagal memuat: '+String(e?.message||e);$('loadBack').classList.remove('hidden');RuntimeHealth.fail('startup',e)}
  finally{matchLoading=false}
 }
 let matchLoading=false;
@@ -1647,7 +1715,7 @@ for(const type of ['touchend','touchcancel'])addEventListener(type,e=>{if(e.touc
 addEventListener('pagehide',resetPadPointers);
 document.addEventListener('mousemove',e=>{if(document.pointerLockElement&&!inputBlocked()){P.yaw-=e.movementX*SENS*.5;P.pitch-=e.movementY*SENS*.5}});
 const kmap={KeyW:'w',KeyA:'a',KeyS:'s',KeyD:'d',ArrowUp:'w',ArrowLeft:'a',ArrowDown:'s',ArrowRight:'d'};
-addEventListener('keydown',e=>{if(e.code==='Escape'){if(Phase13.visibleOverlay()||Phase13.isSpectating())return;if(!$('buyMenu').classList.contains('hidden'))closeBuyMenu();else if(running){pauseToMenu();$('resumeBtn').classList.toggle('hidden',over)}return}if(inputBlocked())return;if(kmap[e.code])K[kmap[e.code]]=1;if(e.code==='Space')jmp=true;if(e.code==='ShiftLeft'||e.code==='ShiftRight')walkHeld=true;if(e.code==='KeyR')reload();if(e.code==='KeyB')openBuyMenu();if(e.code==='KeyG'&&!e.repeat)Phase9.throwGrenade(true);if(e.code==='KeyH'&&!e.repeat)Phase9.cycleGrenade();if(e.code==='KeyN')Phase9.toggleNightVision();if(e.code==='KeyE'&&!e.repeat){if(!(BombMode.holdUse?.(true)??BombMode.hold(true)))Phase9.useNearby()}
+addEventListener('keydown',e=>{if(e.code==='Escape'){if(Phase13.visibleOverlay()||Phase13.isSpectating())return;if(!$('buyMenu').classList.contains('hidden'))closeBuyMenu();else if(running){pauseToMenu();$('resumeBtn').classList.toggle('hidden',over||RuntimeHealth.halted())}return}if(inputBlocked())return;if(kmap[e.code])K[kmap[e.code]]=1;if(e.code==='Space')jmp=true;if(e.code==='ShiftLeft'||e.code==='ShiftRight')walkHeld=true;if(e.code==='KeyR')reload();if(e.code==='KeyB')openBuyMenu();if(e.code==='KeyG'&&!e.repeat)Phase9.throwGrenade(true);if(e.code==='KeyH'&&!e.repeat)Phase9.cycleGrenade();if(e.code==='KeyN')Phase9.toggleNightVision();if(e.code==='KeyE'&&!e.repeat){if(!(BombMode.holdUse?.(true)??BombMode.hold(true)))Phase9.useNearby()}
 if(e.code==='KeyJ'&&!e.repeat)Phase9.dropPlayerWeapon();if(e.code==='Digit5'&&!e.repeat&&BombMode.hasHumanC4?.()){BombMode.selectC4();return;}if(e.code==='ControlLeft'||e.code==='ControlRight')Phase9.setCrouchInput(true);if(e.code==='KeyO'){openBuyMenu();renderBuyTab('equipment')}if(/^Digit[1-5]$/.test(e.code)){const target=Phase14C.keyIndex(inventory,+e.code[5],W);if(target>=0)setW(target)}});
 addEventListener('keyup',e=>{if(e.code==='KeyG')Phase9.commitGrenade();if(e.code==='KeyE'){if(BombMode.holdUse)BombMode.holdUse(false);else BombMode.hold(false)};if(kmap[e.code])K[kmap[e.code]]=0;if(e.code==='Space')jmp=false;if(e.code==='ShiftLeft'||e.code==='ShiftRight')walkHeld=false;if(e.code==='ControlLeft'||e.code==='ControlRight')Phase9.setCrouchInput(false)});
 Phase14E.install(document);
@@ -1676,7 +1744,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)suspendGame
 function recoverBeforeInput(e){
  if(document.hidden)return;
  const time=performance.now();
- if(inputSuspended||(t0>0&&time-t0>1000))resumeGameplayInput(time,true);
+ if(inputSuspended)resumeGameplayInput(time,true);
  if(e.isTrusted!==false&&AC&&(AC.state==='suspended'||AC.state==='interrupted'))AC.resume().catch(()=>{});
 }
 for(const type of ['pointerdown','keydown','touchstart'])addEventListener(type,recoverBeforeInput,{capture:true,passive:true});

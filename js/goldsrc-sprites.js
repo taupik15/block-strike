@@ -80,7 +80,7 @@ const GoldSrcSprites=(()=>{
   icon('scopeOverlay',weapon(id,'zoom')||['sniper_scope']);
   if(!scope)return;
   scope.classList.toggle('has-arc',!!scopeMask);
-  scope.style.setProperty('--goldsrc-arc',scopeMask?'url('+scopeMask+')':'');
+  const arc=scopeMask?'url('+scopeMask+')':'';if(scope.style.getPropertyValue('--goldsrc-arc')!==arc)scope.style.setProperty('--goldsrc-arc',arc);
  }
  function buildScopeMask(){
   const names=['scope_arc_nw','scope_arc_ne','scope_arc_sw','scope_arc'];

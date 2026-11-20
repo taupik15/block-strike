@@ -31,6 +31,7 @@
 <body>
 
 <canvas id="c"></canvas>
+<aside id="runtimeHealth" hidden aria-live="off" style="position:fixed;z-index:2000;left:max(5px,env(safe-area-inset-left));top:max(5px,env(safe-area-inset-top));max-width:min(75vw,540px);padding:5px 8px;background:#151b12ed;color:#e6d7a5;font:11px/1.35 monospace;white-space:pre-wrap;overflow-wrap:anywhere;pointer-events:none;border:1px solid #87937a"></aside>
 <button id="pauseBtn" aria-label="Main menu">MENU</button><div id="pad"></div><div id="jb"></div><div id="jk"></div>
 <canvas id="radar" class="ui" width="96" height="96"></canvas>
 <div id="top" class="ui"></div>
@@ -143,6 +144,8 @@
    </section>
    <section class="cs-options-panel hidden" data-options-panel="video">
     <h3>Video / HUD</h3>
+    <button type="button" id="runtimeHealthToggle" aria-pressed="false">Show performance diagnostics</button><p class="cs-help">Shows FPS, frame time, position, input and last engine error. Errors also appear automatically during a match. No data is transmitted.</p>
+    <button type="button" id="runtimeHealthLastFault" disabled>Show / hide last saved engine fault</button><pre id="runtimeHealthHistory" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px"></pre>
     <button type="button" id="fullscreenToggle">Enter fullscreen</button><p id="fullscreenStatus" class="cs-help" role="status">Fullscreen support depends on your browser.</p>
     <button type="button" id="offlinePrepare" disabled>Prepare Offline (±245 MB)</button><p id="offlineCacheStatus" class="cs-help" role="status">Menyiapkan cache aplikasi…</p>
     <label class="cs-field"><span>GoldSrc sprites — optional local override</span><input id="goldsrcSpriteFile" type="file" accept=".zip,application/zip"></label>
@@ -249,7 +252,7 @@
 <script src="js/vendor/three.min.js"></script>
 <script src="js/vendor/GLTFLoader.js"></script>
 <script src="js/vendor/SkeletonUtils.js"></script>
-<script src="js/bsp-render.js?v=16.4.7-pre26E"></script>
+<script src="js/bsp-render.js?v=16.4.7-pre26AR.7"></script>
 <script src="js/bsp-physics.js?v=16.4.7-pre26AR.2"></script>
 <script src="js/bsp-local.js?v=16.4.7-pre26AR.2"></script>
 <script src="js/local-cache.js?v=16.4.7-pre25B"></script>
@@ -260,7 +263,7 @@
 <script src="js/map-library.js?v=16.4.7-pre25B"></script>
 <script src="js/global-wads.js?v=16.4.7-pre26AR.2"></script>
 <script src="js/map-importer.js?v=16.4.7-pre26AR.2"></script>
-<script src="js/goldsrc-sprites.js?v=16.4.7-pre18"></script>
+<script src="js/goldsrc-sprites.js?v=16.4.7-pre26AR.7"></script>
 <script src="js/modes/bomb.js?v=16.4.7-pre26AR.2"></script>
 <script src="js/bsp-doors.js?v=16.4.7-pre26AR.2"></script>
 <script>window.NAV_BOTS=true; /* Tahap 7B: aktifkan A* nav untuk bot (T→CT sudah jalan, CT→T masih fallback) */</script>
@@ -277,15 +280,16 @@
 <script src="js/weapon-calibration.js?v=16.4.7-pre26F"></script>
 <script src="js/economy-rules.js?v=16.4.7-pre5"></script>
 <script src="js/native-hitboxes.js?v=16.4.7-pre12"></script>
-<script src="js/game-core.js?v=16.4.7-pre26AR.2"></script>
-<script src="js/game-systems8.js?v=16.4.7-pre26AR.2"></script>
+<script src="js/runtime-health.js?v=16.4.7-pre26AR.7"></script>
+<script src="js/game-core.js?v=16.4.7-pre26AR.7"></script>
+<script src="js/game-systems8.js?v=16.4.7-pre26AR.7"></script>
 <script src="js/grenade14d.js?v=16.4.7-pre23H"></script>
 <script src="js/grenade-fx15b.js?v=16.4.7-pre23H"></script>
 <script src="js/game-systems9.js?v=16.4.7-pre26AQ"></script>
 <script src="js/game-systems10.js?v=16.4.7-pre26S"></script>
 <script src="js/game-systems11.js?v=16.4.7-pre12"></script>
-<script src="js/classic-ui.js?v=16.4.7-pre19"></script>
-<script src="js/layout-nav.js?v=16.4.7-pre26AQ"></script>
+<script src="js/classic-ui.js?v=16.4.7-pre26AR.7"></script>
+<script src="js/layout-nav.js?v=16.4.7-pre26AR.7"></script>
 <script src="js/spectator15e.js"></script>
 <script src="js/game-systems13.js?v=16.4.7-pre26K"></script>
 <script src="js/game-systems14b.js"></script>

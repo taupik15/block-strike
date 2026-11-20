@@ -96,6 +96,7 @@ window.loadBspWorld = function (dir, scene) {
         }
         // Rigid BSP geometry: precompute local raycast bounds once.
         geo.computeBoundingBox();geo.computeBoundingSphere();
+        BSPVisuals.prepareSight(geo);
         const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial(opts));
         scene.add(mesh);scene.userData.rayMeshes?.push(mesh);
       });
@@ -110,6 +111,48 @@ window.loadBspWorld = function (dir, scene) {
 /* Shared Three.js presentation for geometry produced by the local importer. */
 const BSPVisuals=(()=>{
  const size=1024;
+ // Immutable, non-indexed BSP triangles: compact block bounds for boolean LOS.
+ // No render geometry mutation, hit ordering, collision or damage changes.
+ const sightBlocks=new WeakMap();
+ function prepareSight(geo){
+  const pos=geo.attributes.position;
+  if(geo.index||!pos||pos.itemSize!==3||pos.count<192||pos.count%3)return;
+  const blocks=[],v=new THREE.Vector3();
+  for(let first=0;first<pos.count;first+=96){
+   const end=Math.min(pos.count,first+96),box=new THREE.Box3();
+   for(let i=first;i<end;i++)box.expandByPoint(v.fromBufferAttribute(pos,i));
+   // Tiny padding makes the broadphase conservative at shared triangle edges.
+   box.expandByScalar(1e-5);blocks.push({first,end,box});
+  }
+  sightBlocks.set(geo,{pos,version:pos.version,blocks});
+ }
+ const sightScratch={inverse:new THREE.Matrix4(),ray:new THREE.Ray(),a:new THREE.Vector3(),b:new THREE.Vector3(),c:new THREE.Vector3(),hit:new THREE.Vector3(),sphere:new THREE.Sphere(),hits:[]};
+ function occluded(caster,meshes){
+  const q=sightScratch;
+  for(const obj of meshes){
+   const geo=obj.geometry,entry=geo&&sightBlocks.get(geo);
+   // Native path for procedural boxes, animated or custom meshes and atypical draw ranges.
+   if(!entry||obj.children.length||obj.raycast!==THREE.Mesh.prototype.raycast||obj.material?.side!==THREE.DoubleSide||obj.material===undefined||obj.isSkinnedMesh||geo.index||geo.attributes.position!==entry.pos||entry.version!==entry.pos.version||geo.drawRange.start!==0||geo.drawRange.count!==Infinity||!geo.boundingSphere||!geo.boundingBox){
+    q.hits.length=0;caster.intersectObject(obj,true,q.hits);if(q.hits.length){q.hits.length=0;return true;}continue;
+   }
+   if(!obj.layers.test(caster.layers))continue;
+   q.sphere.copy(geo.boundingSphere).applyMatrix4(obj.matrixWorld);
+   if(!caster.ray.intersectsSphere(q.sphere))continue;
+   q.inverse.copy(obj.matrixWorld).invert();q.ray.copy(caster.ray).applyMatrix4(q.inverse);
+   if(!q.ray.intersectsBox(geo.boundingBox))continue;
+   for(const block of entry.blocks){
+    if(!q.ray.intersectsBox(block.box))continue;
+    for(let i=block.first;i<block.end;i+=3){
+     q.a.fromBufferAttribute(entry.pos,i);q.b.fromBufferAttribute(entry.pos,i+1);q.c.fromBufferAttribute(entry.pos,i+2);
+     if(!q.ray.intersectTriangle(q.a,q.b,q.c,false,q.hit))continue;
+     const d=q.hit.applyMatrix4(obj.matrixWorld).distanceTo(caster.ray.origin);
+     if(d>=caster.near&&d<=caster.far)return true;
+    }
+   }
+  }
+  return false;
+ }
+
  function lightmaps(data){
   const pages=[];
   let limited=false, nonStatic=false;
@@ -153,7 +196,7 @@ const BSPVisuals=(()=>{
   geo.setAttribute('uv',new THREE.BufferAttribute(uvs,2));
   if(uv2)geo.setAttribute('uv2',new THREE.BufferAttribute(uv2,2));
   // Bounds remain local, so translated doors and moving brushes retain correct raycasts.
-  geo.computeBoundingBox();geo.computeBoundingSphere();
+  geo.computeBoundingBox();geo.computeBoundingSphere();prepareSight(geo);
   const water=/^[!*]/.test(name),transparent=water||opacity<1;
   const mesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map,lightMap:lightmap||null,
    color:map?0xffffff:water?0x477f86:0x9b9586,side:THREE.DoubleSide,
@@ -176,5 +219,5 @@ const BSPVisuals=(()=>{
   box.rotation.y=rotation;box.renderOrder=-1;box.frustumCulled=false;
   scene.add(box);window.bspSky=box;return box;
  }
- return {lightmaps,mesh,mountSky};
+ return {lightmaps,mesh,mountSky,prepareSight,occluded};
 })();
