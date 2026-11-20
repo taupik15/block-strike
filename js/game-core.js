@@ -1503,6 +1503,7 @@ function renderActiveViewmodel(){
  try{
   const fov=ViewmodelCalibration[subject.userData.viewAsset]?.[0]||65;
   if(viewCamera.fov!==fov){viewCamera.fov=fov;viewCamera.updateProjectionMatrix()}
+  viewCamera.position.y=shieldViewCameraY(subject);
   R.autoClear=false;R.clearDepth();R.render(viewScene,viewCamera);return true;
  }finally{for(const child of hidden)child.visible=true;R.autoClear=true}
 }

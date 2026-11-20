@@ -30,19 +30,34 @@ const ViewmodelCalibration=Object.freeze({
  xm1014:[61,.01,-0.08,-.195],
  m249:[60,.01,-0.052,-.201],
  knife:[65,0,-0.025,-.08],
- // Shield rigs are mirrored as a whole by Phase13.applyHand. Keep the
- // shield-up centerline and remove the old rightward calibration offset.
- shield_usp:[75,0,-.16,-.34],
- shield_glock18:[75,0,-.16,-.34],
- shield_p228:[75,0,-.16,-.34],
- shield_fiveseven:[75,0,-.16,-.34],
- shield_deagle:[75,0,-.16,-.34],
- shield_knife:[75,0,-.16,-.34],
- shield_hegrenade:[65,0,-.16,-.60],
- shield_flashbang:[65,0,-.16,-.60],
- shield_smokegrenade:[65,0,-.16,-.60],
+ // Shield rigs are mirrored as a whole by Phase13.applyHand.
+ // Close foreground framing: narrow only the view camera FOV, keeping
+ // native scale, depth and animation intact. Forearms exit the frame.
+ shield_usp:[36,0,-.08,-.34],
+ shield_glock18:[36,0,-.08,-.34],
+ shield_p228:[36,0,-.08,-.34],
+ shield_fiveseven:[36,0,-.08,-.34],
+ shield_deagle:[36,0,-.08,-.34],
+ shield_knife:[36,0,-.08,-.34],
+ shield_hegrenade:[32,0,-.08,-.60],
+ shield_flashbang:[32,0,-.08,-.60],
+ shield_smokegrenade:[32,0,-.08,-.60],
  c4:[65,0,0,-.14],
  hegrenade:[65,0,0,-.17],
  flashbang:[65,0,0,-.16],
  smokegrenade:[65,0,0,-.17]
 });
+
+// The raised pose has a lower sight slot than the down pose. Move only the
+// view camera during the authored transition; never the world camera or aim.
+function shieldViewCameraY(subject){
+ const data=subject?.userData;
+ if(!data?.viewAsset?.startsWith('shield_'))return 0;
+ const state=data.weaponAnimation||data.animation;
+ const name=state?.activeName;
+ if(name==='shield_idle')return -.08;
+ if(name!=='shield_up'&&name!=='shield_down')return 0;
+ const action=state.activeAction,duration=action?.getClip()?.duration||0;
+ const progress=duration>0?Math.max(0,Math.min(1,action.time/duration)):1;
+ return -.08*(name==='shield_up'?progress:1-progress);
+}
