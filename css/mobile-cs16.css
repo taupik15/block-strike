@@ -1,0 +1,107 @@
+/* BLOCK STRIKE AR.11: original CS-mobile-inspired touch surface.
+ * Loaded after all legacy HUD styles. No sprite or copyrighted UI assets.
+ * Hit targets remain the existing input elements; safe-area-aware and editor-safe.
+ */
+@media (pointer: coarse) and (orientation: landscape) {
+  body.playing:not(.pc) > .btn,
+  body.playing:not(.pc) > .game-utility,
+  body.playing:not(.pc) > #pauseBtn {
+    box-sizing: border-box;
+    border: 1.5px solid rgba(232,237,222,.57) !important;
+    border-radius: 50% !important;
+    background: rgba(37,49,43,.26) !important;
+    color: rgba(247,248,238,.95) !important;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.075), 0 1px 4px rgba(0,0,0,.24) !important;
+    text-shadow: 0 1px 2px #141817;
+    padding: 0 !important;
+    backdrop-filter: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    justify-content: center;
+    align-items: center;
+  }
+  body.playing:not(.pc) > .btn svg,
+  body.playing:not(.pc) > .game-utility svg,
+  body.playing:not(.pc) > #pauseBtn svg {
+    width: 53% !important;
+    height: 53% !important;
+    stroke-width: 1.8;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.5));
+    pointer-events:none;
+  }
+  body.playing:not(.pc) > #fire svg {width: 56% !important;height:56% !important;transform:none !important}
+  body.playing:not(.pc) > .btn:active,
+  body.playing:not(.pc) > .game-utility:active,
+  body.playing:not(.pc) > .btn.active,
+  body.playing:not(.pc) > .game-utility.active {
+    background: rgba(187,195,164,.32) !important;
+    border-color: rgba(254,254,244,.96) !important;
+    color: #fff !important;
+  }
+  /* A large thumb-zone marker lives BELOW actual buttons and receives no events.
+     The real joystick still appears at the touch origin and keeps its pointer owner. */
+  body.playing:not(.pc) > #pad::after {
+    content:"";position:fixed;left:calc(var(--safe-l) + 14px);
+    bottom:calc(var(--safe-b) + 23px);width:112px;height:112px;
+    border-radius:50%;border:1.5px solid rgba(241,243,233,.28);
+    background:radial-gradient(circle,rgba(246,246,240,.13) 0 8px,transparent 9px 28px,rgba(20,27,24,.14) 72%);
+    box-shadow:inset 0 0 0 1px rgba(243,246,237,.07);
+    pointer-events:none;opacity:.75;
+  }
+  body.playing:not(.pc) > #jb {
+    border:1.5px solid rgba(246,248,240,.62);background:rgba(35,45,43,.29);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);
+  }
+  body.playing:not(.pc) > #jk {background:rgba(231,238,226,.42);border:1px solid #ffffff92}
+
+  /* Right-hand cluster: independent buttons, clear gaps and a stable open look zone.
+     Coordinates use the safe-right/bottom vars already defined by the game. */
+  body.playing:not(.pc) > #fire {right:var(--safe-r);bottom:80px;width:64px !important;height:64px !important}
+  body.playing:not(.pc) > #jump {right:var(--safe-r);bottom:11px;width:52px !important;height:52px !important}
+  body.playing:not(.pc) > #swap {right:var(--safe-r);bottom:154px;width:49px !important;height:49px !important}
+  body.playing:not(.pc) > #rel {right:calc(var(--safe-r) + 72px);bottom:92px;width:48px !important;height:48px !important}
+  body.playing:not(.pc) > #ads {right:calc(var(--safe-r) + 72px);bottom:151px;width:48px !important;height:48px !important}
+  body.playing:not(.pc) > #crouchBtn {right:calc(var(--safe-r) + 72px);bottom:11px;width:49px !important;height:49px !important}
+  body.playing:not(.pc) > #grenadeBtn {right:calc(var(--safe-r) + 134px);bottom:88px;width:46px !important;height:46px !important}
+  body.playing:not(.pc) > #grenadeTypeBtn {right:calc(var(--safe-r) + 134px);bottom:151px;width:46px !important;height:46px !important}
+  body.playing:not(.pc) > #pickupBtn {right:calc(var(--safe-r) + 134px);bottom:214px;width:46px !important;height:46px !important}
+  body.playing:not(.pc) > #buybtn {right:calc(var(--safe-r) + 134px);bottom:11px;width:49px !important;height:49px !important}
+  body.playing:not(.pc) > #walkBtn {left:calc(var(--safe-l) + 144px);bottom:75px;width:46px !important;height:46px !important}
+  body.playing:not(.pc) > #nvgBtn {right:auto;left:calc(var(--safe-l) + 108px);top:10px;bottom:auto;width:40px !important;height:40px !important}
+  body.playing:not(.pc):not(.spectating) > #dropBtn {right:auto;left:calc(var(--safe-l) + 157px);top:10px;bottom:auto;width:40px !important;height:40px !important}
+  body.playing:not(.pc):not(.spectating) > #settingsGameBtn {right:auto;left:calc(var(--safe-l) + 206px);top:10px;bottom:auto;width:40px !important;height:40px !important}
+  body.playing:not(.pc):not(.spectating) > #flashBtn {right:auto;left:calc(var(--safe-l) + 255px);top:10px;bottom:auto;width:40px !important;height:40px !important}
+  body.playing:not(.pc):not(.spectating) > #teamBtn {right:auto;left:calc(var(--safe-l) + 304px);top:10px;bottom:auto;width:40px !important;height:40px !important}
+  body.playing:not(.pc) > #radioBtn {right:calc(var(--safe-r) + 2px);top:75px;bottom:auto;width:44px !important;height:44px !important}
+  body.playing:not(.pc) > #scoreBtn {right:calc(var(--safe-r) + 2px);top:24px;bottom:auto;width:44px !important;height:44px !important}
+  body.playing:not(.pc) > #pauseBtn {right:calc(var(--safe-r) + 4px);top:5px;bottom:auto;width:40px !important;height:40px !important}
+  /* Pause lives in the corner. Score moves left so these buttons never overlap. */
+  body.playing:not(.pc) > #scoreBtn {right:calc(var(--safe-r) + 57px);top:7px}
+  body.playing:not(.pc) > #radioBtn {right:calc(var(--safe-r) + 57px);top:60px}
+
+  body.playing:not(.pc) > #radar {left:var(--safe-l);top:max(7px,env(safe-area-inset-top));width:76px;height:76px;border:1.5px solid #e9e9db80;background:#0c1718a6;box-shadow:0 1px 6px #0005}
+  body.playing:not(.pc) > #jb {z-index:9}
+  body.playing:not(.pc) > #jk {z-index:10}
+  body.playing:not(.pc) > #chips {right:calc(var(--safe-r) + 118px);max-width:min(32vw,calc(100vw - 510px));gap:3px}
+  body.playing:not(.pc) > #hp {left:var(--safe-l);bottom:calc(var(--safe-b) + 2px)}
+  body.playing:not(.pc) > #armor {left:calc(var(--safe-l) + 98px);bottom:calc(var(--safe-b) + 7px)}
+  body.playing:not(.pc) > #ammo {bottom:calc(var(--safe-b) + 2px)}
+  body.playing:not(.pc) > #grenadeTypeBtn::after {font-size:8px;right:-4px;bottom:-3px}
+  /* An editing session must stay visible and draggable, regardless of preset. */
+  body.layout-edit.playing:not(.pc) > .btn {opacity:.8;}
+}
+/* Compact landscape phones: shrink the cluster instead of overlapping the radar/HUD. */
+@media (pointer:coarse) and (orientation:landscape) and (max-height:370px) {
+  body.playing:not(.pc) > #fire {bottom:64px;width:56px !important;height:56px !important}
+  body.playing:not(.pc) > #jump {bottom:7px;width:46px !important;height:46px !important}
+  body.playing:not(.pc) > #swap {bottom:130px;width:44px !important;height:44px !important}
+  body.playing:not(.pc) > #rel {bottom:76px;width:43px !important;height:43px !important}
+  body.playing:not(.pc) > #ads {bottom:130px;width:43px !important;height:43px !important}
+  body.playing:not(.pc) > #crouchBtn {bottom:7px;width:44px !important;height:44px !important}
+  body.playing:not(.pc) > #grenadeBtn {bottom:75px;width:43px !important;height:43px !important}
+  body.playing:not(.pc) > #grenadeTypeBtn {bottom:130px;width:43px !important;height:43px !important}
+  body.playing:not(.pc) > #pickupBtn {bottom:185px;width:43px !important;height:43px !important}
+  body.playing:not(.pc) > #buybtn {bottom:7px;width:44px !important;height:44px !important}
+}
