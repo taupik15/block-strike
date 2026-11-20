@@ -36,7 +36,12 @@ const BotTactics15D=(()=>{
    const dx=b.g.position.x-p.x,dz=b.g.position.z-p.z,a=dx*ux+dz*uz,l=Math.abs(dx*uz-dz*ux);
    if(a<=0||a>80*k||l>24*k)continue;
    const v=(b.vel?.[0]||0)*ux+(b.vel?.[1]||0)*uz;
-   if(v<=20*k)continue; // stationary or opposing bot: ordinary obstacle recovery
+   // A stopped leader waiting for an allied refuge is not an invitation to push.
+   if(v<=20*k){
+    const st=b.trafficYield,intent=b.trafficIntent;
+    if(st?.passer===b&&['back','side'].includes(st.phase)&&intent&&intent.x*ux+intent.z*uz>.7)factor=Math.min(factor,clamp((a-40*k)*3/speed,0,1));
+    continue;
+   }
    factor=Math.min(factor,clamp((v+Math.max(0,a-40*k)*3)/speed,.0,1));
   }
   return factor;
@@ -62,14 +67,21 @@ const BotTactics15D=(()=>{
  }
  // Bounded right-of-way for opposing allied traffic. Only a verified, supported
  // retreat and side pocket are used; the live actor hull is never disabled.
+ function clearJunction(bot,now){
+  const st=bot.trafficJunction;if(!st)return;
+  for(const b of st.members||[st.passer,st.waiter])if(b.trafficJunction===st){
+   b.trafficJunction=null;b.trafficConvoyWait=false;b.trafficPass=null;b.junctionRetry=now+.5;
+  }
+ }
  function clearYield(bot,now){
+  clearJunction(bot,now);
   const state=bot.trafficYield;if(!state)return;
-  for(const b of [state.yielder,state.passer])if(b.trafficYield===state){
+  for(const b of [state.yielder,state.passer,state.rear?.bot].filter(Boolean))if(b.trafficYield===state){
    b.trafficYield=null;b.trafficPass=null;b.trafficIntent=null;b.trafficMeet=null;b.trafficRetry=now+1;
    if(b.localRoute){b.localRoute.until=0;b.localRoute.directCheck=0;}
   }
  }
- function yieldPocket(bot,heading,col){
+ function yieldPocket(bot,heading,col,front=null){
   const p=bot.g.position,T=col.T,k=T.k,h=BSP.toHammer(T,p.toArray());
   const axis=BSP.toHammer(T,[p.x+heading[0]*k,p.y,p.z+heading[1]*k]).map((v,i)=>v-h[i]);
   const len=Math.hypot(axis[0],axis[1]);if(len<.01)return null;
@@ -82,6 +94,10 @@ const BotTactics15D=(()=>{
    for(const sign of [-1,1]){
     const side=LocalBSPNav.floorAt(col,[q[0]-y*40*sign,q[1]+x*40*sign,q[2]],12);
     if(!side||Math.abs(q[2]-side[2])>8||!LocalBSPNav.walkable(col,q,side,48))continue;
+    if(front){
+     const g=BSP.toGame(T,q),sg=BSP.toGame(T,side);
+     if((g[0]-front.back[0])*heading[0]+(g[2]-front.back[2])*heading[1]>-48*k||Math.hypot(sg[0]-front.side[0],sg[2]-front.side[2])<48*k)continue;
+    }
     // Give the passer a full 32-unit hull plus margin on the main lane.
     const lane=[q[0]-x*48,q[1]-y*48,q[2]];
     if(!LocalBSPNav.walkable(col,q,lane,56))continue;
@@ -90,21 +106,126 @@ const BotTactics15D=(()=>{
   }
   return null;
  }
+ // Snapshot a bounded convoy when a pair negotiates a refuge. Only nearby,
+ // same-lane, same-heading teammates with fresh navigation intent qualify.
+ function convoy(passer,yielder,heading,others,k,now){
+  const p=passer.g.position,dx=-heading[0],dz=-heading[1];
+  return others.filter(b=>{
+   const i=b.trafficIntent,q=b.g.position;
+   if(b===passer||b===yielder||b.dead||b.blinded>0||b.team!==passer.team||b.trafficYield||b.trafficJunction||!i||now-i.t>.25)return false;
+   const x=q.x-p.x,z=q.z-p.z,a=x*dx+z*dz;
+   return a<0&&a>=-160*k&&Math.abs(x*dz-z*dx)<=24*k&&Math.abs(q.y-p.y)<=8*k&&i.x*dx+i.z*dz>.7;
+  }).sort((a,b)=>a.g.position.distanceToSquared(p)-b.g.position.distanceToSquared(p)).slice(0,3);
+ }
+ // A two-member retreat train uses a separate refuge for its rear actor.
+ // Reject larger retreat groups rather than sending the leader into them.
+ function retreatPlan(bot,other,heading,col,others,now){
+  const pocket=yieldPocket(bot,heading,col),k=col.T.k;
+  if(!pocket)return null;
+  const behind=convoy(bot,other,[-heading[0],-heading[1]],others,k,now);
+  if(behind.length>1)return null;
+  if(!behind.length)return {pocket,rear:null};
+  const rear=behind[0],refuge=yieldPocket(rear,heading,col,pocket);
+  return refuge?{pocket,rear:{bot:rear,pocket:refuge,phase:'back'}}:null;
+ }
+ function retreatMove(rear,p,k,returning){
+  if(returning&&rear.phase==='parked')rear.phase='return';
+  let dest=rear.phase==='back'||rear.phase==='return'?rear.pocket.back:rear.phase==='rejoin'?rear.pocket.rejoin:rear.pocket.side;
+  let dx=dest[0]-p.x,dz=dest[2]-p.z,d=Math.hypot(dx,dz);
+  if(d<5*k){
+   rear.phase=({back:'side',side:'parked',return:'rejoin',rejoin:'done'})[rear.phase]||rear.phase;
+   dest=rear.phase==='side'?rear.pocket.side:rear.phase==='rejoin'?rear.pocket.rejoin:dest;
+   dx=dest[0]-p.x;dz=dest[2]-p.z;d=Math.hypot(dx,dz);
+  }
+  return ['parked','done'].includes(rear.phase)||d<.001?{x:0,z:0}:{x:dx/d*Math.min(.28,d/(32*k)),z:dz/d*Math.min(.28,d/(32*k))};
+ }
+ function convoyPending(st,others,k,now){
+  const ref=st.rear?.pocket.back||st.pocket.back,h=st.heading;
+  // Release followers that turn away, stop publishing eligible intent, die,
+  // or clear the refuge. New arrivals cannot extend a reservation forever.
+  st.followers=(st.followers||[]).filter(b=>{
+   const i=b.trafficIntent,q=b.g.position;
+   return others.includes(b)&&!b.dead&&!(b.blinded>0)&&b.team===st.passer.team&&i&&now-i.t<=.25&&i.x*h[0]+i.z*h[1]<-.7&&Math.abs(q.y-ref[1])<=8*k&&(q.x-ref[0])*h[0]+(q.z-ref[2])*h[1]>=-40*k;
+  });
+  return st.followers.length>0;
+ }
+ // Reserve a level crossing for two small same-direction allied streams.
+ // Never admit opposing approaches, new arrivals, or unverified walk geometry.
+ function junction(bot,heading,col,others,now){
+  const k=col.T.k,p=bot.g.position;
+  let st=bot.trafficJunction;
+  if(st){
+   const progress=(b,h)=>(b.g.position.x-st.x)*h[0]+(b.g.position.z-st.z)*h[1];
+   const invalid=(b,h)=>{
+    const i=b.trafficIntent,q=b.g.position;
+    return !others.includes(b)||b.dead||b.blinded>0||b.trafficYield||b.trafficJunction!==st||b.team!==st.passer.team||!i||now-i.t>.25||i.x*h[0]+i.z*h[1]<.8||Math.abs(q.y-st.y)>8*k;
+   };
+   const ph=[st.dx,st.dz],wh=[st.wx,st.wz];
+   if(now>st.until||st.passing.every(b=>progress(b,ph)>48*k)||others.some(o=>!st.members.includes(o)&&!o.dead&&Math.abs(o.g.position.y-st.y)<72*k&&Math.hypot(o.g.position.x-st.x,o.g.position.z-st.z)<st.radius*k)||st.passing.some(b=>invalid(b,ph))||st.waiting.some(b=>invalid(b,wh))){clearJunction(bot,now);return null;}
+   if(st.waiting.includes(bot)){bot.trafficConvoyWait=true;bot.trafficPass=null;return {x:0,z:0};}
+   return null;
+  }
+  if(now<(bot.junctionRetry||0)||bot.trafficYield)return null;
+  for(const ally of others){
+   const i=ally.trafficIntent,q=ally.g.position;
+   if(ally===bot||ally.dead||ally.blinded>0||ally.team!==bot.team||ally.trafficYield||ally.trafficJunction||!i||now-i.t>.25||now<(ally.junctionRetry||0)||Math.abs(p.y-q.y)>8*k)continue;
+   const [ux,uz]=heading,vx=i.x,vz=i.z,dot=ux*vx+uz*vz,cross=ux*vz-uz*vx;
+   if(Math.abs(dot)>.25||Math.abs(cross)<.95)continue;
+   const dx=q.x-p.x,dz=q.z-p.z,a=(dx*vz-dz*vx)/cross,b=(dx*uz-dz*ux)/cross;
+   if(a<32*k||b<32*k||a>128*k||b>128*k||Math.abs(a-b)>64*k)continue;
+   const cx=p.x+a*ux,cz=p.z+a*uz;
+   const valid=(pos,hx,hz)=>LocalBSPNav.walkable(col,BSP.toHammer(col.T,pos.toArray()),BSP.toHammer(col.T,[cx+hx*52*k,pos.y,cz+hz*52*k]),260);
+   if(!valid(p,ux,uz)||!valid(q,vx,vz))continue;
+   const A=[bot],B=[ally];let unsafe=false;
+   // Only one follower per approach; reject any unexpected nearby actor.
+   for(const o of others){
+    if(o===bot||o===ally||o.dead)continue;
+    const r=o.g.position,ox=r.x-cx,oz=r.z-cz,oi=o.trafficIntent;
+    if(Math.abs(r.y-p.y)>=72*k||Math.hypot(ox,oz)>=200*k)continue;
+    if(o.team!==bot.team||o.blinded>0||o.trafficYield||o.trafficJunction||!oi||now-oi.t>.25||now<(o.junctionRetry||0)||Math.abs(r.y-p.y)>8*k){unsafe=true;break;}
+    const follow=(hx,hz,d)=>oi.x*hx+oi.z*hz>.95&&Math.abs(ox*hz-oz*hx)<=8*k&&-(ox*hx+oz*hz)>=d+40*k;
+    const inA=follow(ux,uz,a),inB=follow(vx,vz,b);
+    if(inA===inB|| (inA?A:B).length>=2||!valid(r,inA?ux:vx,inA?uz:vz)){unsafe=true;break;}
+    (inA?A:B).push(o);
+   }
+   if(unsafe)continue;
+   const holdA=a>=80*k,holdB=b>=80*k;if(!holdA&&!holdB)continue;
+   const priorityA=A.some(o=>o.trafficPriority),priorityB=B.some(o=>o.trafficPriority);
+   const passA=holdB&&(!holdA||(priorityA!==priorityB?priorityA:a<b||a===b&&String(bot.botId)<String(ally.botId)));
+   const passing=passA?A:B,waiting=passA?B:A,members=[...A,...B];
+   st={passer:passing[0],waiter:waiting[0],passing,waiting,members,x:cx,y:p.y,z:cz,dx:passA?ux:vx,dz:passA?uz:vz,wx:passA?vx:ux,wz:passA?uz:vz,radius:200,until:now+4};
+   for(const o of members){o.trafficJunction=st;o.trafficPass=null;}
+   if(waiting.includes(bot)){bot.trafficConvoyWait=true;return {x:0,z:0};}
+   return null;
+  }
+  return null;
+ }
  function trafficYield(bot,x,z,eligible,col,others,now){
   const len=Math.hypot(x,z),k=col?.T.k||.02,p=bot.g.position;
+  bot.trafficConvoyWait=false;
   if(!eligible||!col||bot.dead||bot.blinded>0){clearYield(bot,now);bot.trafficIntent=null;bot.trafficMeet=null;return null;}
   if(len>.08)bot.trafficIntent={x:x/len,z:z/len,t:now};
-  else if(!bot.trafficYield){bot.trafficIntent=null;bot.trafficMeet=null;return null;}
+  else if(!bot.trafficYield){clearJunction(bot,now);bot.trafficIntent=null;bot.trafficMeet=null;return null;}
   let st=bot.trafficYield;
   if(st){
-   const other=st.yielder===bot?st.passer:st.yielder;
-   if(now>st.until||other.dead||other.blinded>0||!others.includes(other)||other.trafficYield!==st){clearYield(bot,now);return null;}
-   const q=st.passer.g.position,ref=st.pocket.back;
-   if(st.phase==='parked'&&(q.x-ref[0])*st.heading[0]+(q.z-ref[2])*st.heading[1]<-40*k)st.phase='return';
-   if(bot===st.passer)return ['parked','return','rejoin'].includes(st.phase)?null:{x:0,z:0};
+   const members=[st.yielder,st.passer,st.rear?.bot].filter(Boolean);
+   if(now>st.until||members.some(b=>b.dead||b.blinded>0||!others.includes(b)||b.trafficYield!==st)){clearYield(bot,now);return null;}
+   const q=st.passer.g.position,ref=st.rear?.pocket.back||st.pocket.back;
+   if(st.rear&&bot===st.rear.bot){
+    const move=retreatMove(st.rear,p,k,st.phase==='rear-return');
+    if(st.rear.phase==='done'){clearYield(bot,now);return null;}
+    return move;
+   }
+   if(st.rear&&st.rear.phase!=='parked'&&st.phase==='back')return {x:0,z:0};
+   if(st.phase==='parked'){
+    const waiting=convoyPending(st,others,k,now);
+    if(!waiting&&(q.x-ref[0])*st.heading[0]+(q.z-ref[2])*st.heading[1]<-40*k)st.phase='return';
+   }
+   if(bot===st.passer)return ['parked','return','rejoin','rear-return'].includes(st.phase)?null:{x:0,z:0};
+   if(st.phase==='rear-return')return {x:0,z:0};
    let dest=st.phase==='rejoin'?st.pocket.rejoin:st.phase==='back'||st.phase==='return'?st.pocket.back:st.pocket.side;
    let dx=dest[0]-p.x,dz=dest[2]-p.z,d=Math.hypot(dx,dz);
-   if(st.phase==='rejoin'&&d<5*k){clearYield(bot,now);return null;}
+   if(st.phase==='rejoin'&&d<5*k){if(st.rear){st.phase='rear-return';return {x:0,z:0};}clearYield(bot,now);return null;}
    if(st.phase==='return'&&d<5*k){st.phase='rejoin';dest=st.pocket.rejoin;dx=dest[0]-p.x;dz=dest[2]-p.z;d=Math.hypot(dx,dz);}
    else if((st.phase==='back'||st.phase==='side')&&d<5*k){
     st.phase=st.phase==='back'?'side':'parked';dest=st.pocket.side;
@@ -113,23 +234,35 @@ const BotTactics15D=(()=>{
    // Slow near a refuge to avoid oscillating across it with coarse AI ticks.
    return st.phase==='parked'||d<.001?{x:0,z:0}:{x:dx/d*Math.min(.28,d/(32*k)),z:dz/d*Math.min(.28,d/(32*k))};
   }
+  // A registered follower brakes rather than trying to sidestep a stopped
+  // convoy into a wall. Once the refuge is occupied it resumes live steering.
+  const reservation=others.find(b=>b.trafficYield?.passer===b&&b.trafficYield.followers?.includes(bot))?.trafficYield;
+  if(reservation&&now<=reservation.until&&bot.trafficIntent){
+   if(['back','side'].includes(reservation.phase)&&bot.trafficIntent.x*reservation.heading[0]+bot.trafficIntent.z*reservation.heading[1]<-.7){bot.trafficConvoyWait=true;bot.trafficPass=null;return {x:0,z:0};}
+   if(reservation.phase==='parked')return null;
+  }
   if(len<=.08||now<(bot.trafficRetry||0))return null;
   const heading=[x/len,z/len];
+  const crossing=junction(bot,heading,col,others,now);
+  if(crossing||bot.trafficJunction)return crossing;
   let meeting=false;
   for(const ally of others){
    const intent=ally.trafficIntent;
-   if(ally===bot||ally.dead||ally.blinded>0||ally.team!==bot.team||ally.trafficYield||!intent||now-intent.t>.25||now<(ally.trafficRetry||0))continue;
+   if(ally===bot||ally.dead||ally.blinded>0||ally.team!==bot.team||ally.trafficYield||ally.trafficJunction||!intent||now-intent.t>.25||now<(ally.trafficRetry||0))continue;
    const q=ally.g.position,dx=q.x-p.x,dz=q.z-p.z;
    if(Math.abs(q.y-p.y)>8*k||Math.hypot(dx,dz)>52*k||dx*heading[0]+dz*heading[1]<=0||Math.abs(dx*heading[1]-dz*heading[0])>24*k||intent.x*heading[0]+intent.z*heading[1]>-.7)continue;
    meeting=true;
    const meet=bot.trafficMeet;
    if(!meet||meet.ally!==ally){bot.trafficMeet={ally,since:now,heading,their:[intent.x,intent.z]};return null;}
    if(now-meet.since<.55&&(bot.trafficWait||0)<.55)return null;
-   const own=yieldPocket(bot,meet.heading,col),their=yieldPocket(ally,meet.their,col);
+   const own=retreatPlan(bot,ally,meet.heading,col,others,now),their=retreatPlan(ally,bot,meet.their,col,others,now);
    if(!own&&!their){bot.trafficRetry=now+1;continue;}
-   const yieldSelf=own&&(!their||own.distance<their.distance||own.distance===their.distance&&String(bot.botId)>String(ally.botId));
-   st={yielder:yieldSelf?bot:ally,passer:yieldSelf?ally:bot,pocket:yieldSelf?own:their,heading:yieldSelf?meet.heading:meet.their,phase:'back',until:now+12};
+   const priority=!!bot.trafficPriority,allyPriority=!!ally.trafficPriority;
+   const yieldSelf=own&&(!their||(priority!==allyPriority?allyPriority:own.pocket.distance<their.pocket.distance||own.pocket.distance===their.pocket.distance&&String(bot.botId)>String(ally.botId)));
+   st={yielder:yieldSelf?bot:ally,passer:yieldSelf?ally:bot,pocket:(yieldSelf?own:their).pocket,rear:(yieldSelf?own:their).rear,heading:yieldSelf?meet.heading:meet.their,phase:'back',until:now+12};
+   st.followers=convoy(st.passer,st.yielder,st.heading,others,k,now);
    bot.trafficYield=ally.trafficYield=st;bot.trafficPass=ally.trafficPass=null;
+   if(st.rear){st.rear.bot.trafficYield=st;st.rear.bot.trafficPass=null;}
    return trafficYield(bot,x,z,eligible,col,others,now);
   }
   if(!meeting)bot.trafficMeet=null;

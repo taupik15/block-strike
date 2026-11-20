@@ -215,6 +215,7 @@ const BombMode=(()=>{
  }
  function explode(){
   const origin=position.clone();origin.y-=.45;
+  window.BSPBreakables?.bombExplode(site?.target);
   finish('T','BOMB EXPLODED');clearMarker();
   if(typeof playWorldSound==='function')playWorldSound('c4_explode1.wav',origin,.82);else playOriginalSound('c4_explode1.wav',.82);
   GrenadeFX15B.init(S);GrenadeFX15B.burst('c4',origin);

@@ -40,14 +40,20 @@ const YaPBWaypoints=(()=>{
  // per lookup; no bulk graph expansion or writes to the imported map library.
  const DB='assets/yapb-graph/',SHARD_MAX=4*1024*1024;
  let indexPromise;
- async function localFetch(path,limit,json=false){
-  const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12000);
+ async function localFetchOnce(path,limit,json,timeout){
+  const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),timeout);
   try{const r=await fetch(DB+path,{signal:ctrl.signal,credentials:'same-origin'});
    if(!r.ok||r.redirected||/text\/html/i.test(r.headers.get('content-type')||''))throw Error('Bundled GRAPH unavailable (HTTP '+r.status+')');
    const size=Number(r.headers.get('content-length'));if(size>limit)throw Error('Bundled GRAPH exceeds limit');
    const buf=await r.arrayBuffer();if(buf.byteLength>limit)throw Error('Bundled GRAPH exceeds limit');
    return json?JSON.parse(new TextDecoder().decode(buf)):buf;
   }finally{clearTimeout(timer)}
+ }
+ async function localFetch(path,limit,json=false){
+  try{return await localFetchOnce(path,limit,json,15000)}catch(e){
+   if(e.name!=='AbortError'&&e.name!=='TypeError')throw e;
+   try{return await localFetchOnce(path,limit,json,30000)}catch(retry){if(retry.name==='AbortError')throw Error('Local GRAPH request timed out after retry');throw retry;}
+  }
  }
  async function bundled(name){
   if(typeof name!=='string'||!name||name.length>255||/[\\/\x00-\x1f]/.test(name))return null;

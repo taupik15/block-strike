@@ -174,7 +174,7 @@ const LocalMapMedia=(()=>{
      const push=k=>{
       const a=offset+k*8,point=points[d.getUint16(a,true)];
       if(!point)throw Error('Invalid model vertex index.');
-      positions.push(point.x*.02,point.z*.02,point.y*.02);
+      positions.push(point.x*.02,point.z*.02,-point.y*.02);
       uvs.push(d.getInt16(a+4,true)/w,d.getInt16(a+6,true)/h);
      };
      for(let step=2;step<n;step++){
@@ -273,9 +273,9 @@ const LocalMapMedia=(()=>{
    }
   }
  }
- function position(origin){
+ function position(origin,T){
   const p=(origin||'').trim().split(/\s+/).map(Number);
-  return p.length===3&&p.every(Number.isFinite)?V(p[0]*.02,p[2]*.02,p[1]*.02):null;
+  return p.length===3&&p.every(Number.isFinite)?V(...BSP.toGame(T,p)):null;
  }
  function splash(col,from,to){
   if(!col?.water?.length||to.y>=from.y||!GoldSrcSprites.file('wsplash3.spr'))return;
@@ -328,7 +328,7 @@ const LocalMapMedia=(()=>{
   const beams=data.files.filter(e=>['env_lightning','env_beam'].includes(e.classname)).slice(0,12);
   return beams.flatMap(e=>{
    if(e.targetname&&!(Number(e.spawnflags)&1))return [];
-   const from=position(anchors.get(e.LightningStart)),to=position(anchors.get(e.LightningEnd));
+   const from=position(anchors.get(e.LightningStart),data.col.T),to=position(anchors.get(e.LightningEnd),data.col.T);
    const sprite=data.media?.sprites.get(path(e.texture||''));
    if(!from||!to||!sprite?.frames?.length||from.distanceToSquared(to)<.0001)return [];
    const life=Math.min(30,Math.max(0,Number(e.life)||0)),interval=Math.min(90,Math.max(.08,Number(e.StrikeTime)||0));
@@ -367,10 +367,10 @@ const LocalMapMedia=(()=>{
   if(!data.media)return;
   const meshCache=new Map();
   for(const e of data.files.slice(0,4000)){
-   const p=position(e.origin);if(!p)continue;
+   const p=position(e.origin,data.col.T);if(!p)continue;
    const key=path(e.model||''),model=data.media.models.get(key),sprite=data.media.sprites.get(key);
    if(model){
-    const group=new THREE.Group();group.position.copy(p);group.rotation.y=-((Number(e.angles?.split(/\s+/)[1])||Number(e.angle)||0)*Math.PI/180);scene.add(group);
+    const group=new THREE.Group();group.position.copy(p);group.rotation.y=(Number(e.angles?.split(/\s+/)[1])||Number(e.angle)||0)*Math.PI/180;scene.add(group);
     if(model.reuse){
      Phase9.loadWorldModel(model.reuse.slice(6)).then(source=>{
       if(!source||!group.parent||activeMapData?.local!==data)return;

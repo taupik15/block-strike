@@ -112,12 +112,12 @@
   function pose(dr){
     const d=dr.d;
     if(d.rotating){
-      const a=dr.p*(dr.sign||1)*Math.PI/180,T=dr.c.T,p=BSP.toGame(T,dr.base),cs=Math.cos(a),sn=Math.sin(a);
-      dr.entry.yaw=a;dr.grp.rotation.y=-a;
-      dr.grp.position.set(p[0]-cs*p[0]+sn*p[2],0,p[2]-sn*p[0]-cs*p[2]);
+      const a=dr.p*(dr.sign||1)*Math.PI/180,T=dr.c.T,p=BSP.toGame(T,dr.base),r=-a*(T.zSign??1),cs=Math.cos(r),sn=Math.sin(r);
+      dr.entry.yaw=a;dr.grp.rotation.y=r;
+      dr.grp.position.set(p[0]-cs*p[0]-sn*p[2],0,p[2]+sn*p[0]-cs*p[2]);
       dr.grp.updateMatrixWorld(true);return;
     }
-    const mv=d.movedir_g,s=dr.p*S;dr.grp.position.set(mv[0]*s,mv[1]*s,mv[2]*s);
+    const mv=d.movedir_g,s=dr.p*(dr.c?.T?.k||S);dr.grp.position.set(mv[0]*s,mv[1]*s,mv[2]*s);
     dr.entry.origin=d.movedir_h.map((n,i)=>n*dr.p+(dr.base?.[i]||0));
   }
   // dt dalam detik; ph = posisi pemain dalam Hammer units
@@ -194,9 +194,12 @@ window.BSPBreakables=(()=>{
  function clear(){items=[];data=null;rays=null;dirty=false;effects.length=0;}
  function mount(map,rayMeshes){clear();data=map;rays=rayMeshes;items=(map.destructibles||[]).map(d=>{if(d.entry.destroyed)dirty=true;d.entry.destroyed=false;return {...d,health:d.hp,meshes:[]};});refresh();}
  function register(index,mesh,raycast=true){const item=items[index];if(!item)return;item.meshes.push({mesh,raycast});mesh.userData.breakable=item;}
- function hit(mesh,damage,contact=null){const item=mesh?.userData?.breakable;if(!item||!items.includes(item)||item.entry.destroyed||!Number.isFinite(damage)||damage<=0)return false;
+ function hit(mesh,damage,contact=null){const item=mesh?.userData?.breakable;if(!item||item.bombTarget||!items.includes(item)||item.entry.destroyed||!Number.isFinite(damage)||damage<=0)return false;
   item.health=Math.max(0,item.health-damage);if(item.health>0)return false;
-  item.entry.destroyed=true;queueEffect(item,mesh,contact);for(const {mesh} of item.meshes){mesh.visible=false;const i=rays.indexOf(mesh);if(i>=0)rays.splice(i,1);}dirty=true;return true;
+  return destroy(item,mesh,contact);
+ }
+ function destroy(item,mesh,contact){
+  if(item.entry.destroyed)return false;item.health=0;item.entry.destroyed=true;queueEffect(item,mesh,contact);for(const {mesh} of item.meshes){mesh.visible=false;const i=rays.indexOf(mesh);if(i>=0)rays.splice(i,1);}dirty=true;return true;
  }
  // HE uses the existing radius/damage curve and visible brush surfaces.
  // Collect all damage before mutating any brush so one explosion cannot clear
@@ -204,7 +207,7 @@ window.BSPBreakables=(()=>{
  function blast(pos,source,col){
   if(!col?.local||data?.col!==col||!rays||!items.length)return 0;
   const k=col.T.k,radius=Grenade14D.TYPES.he.blastRadius*Grenade14D.worldScale(k),wet=BSP.pointWater(col,pos),ray=new THREE.Raycaster(),pending=[];
-  for(const item of items){if(item.entry.destroyed)continue;let best=null;
+  for(const item of items){if(item.entry.destroyed||item.bombTarget)continue;let best=null;
    for(const {mesh,raycast} of item.meshes){if(!raycast||!mesh.visible||!rays.includes(mesh)||!mesh.geometry)continue;
     const box=new THREE.Box3().setFromObject(mesh),near=box.clampPoint(source,V());if(box.isEmpty()||near.distanceTo(pos)>=radius)continue;
     const center=box.getCenter(V()),samples=[near,center];
@@ -223,6 +226,7 @@ window.BSPBreakables=(()=>{
   let destroyed=0;for(const [mesh,damage,point] of pending)if(hit(mesh,damage,point))destroyed++;
   return destroyed;
  }
+ function bombExplode(target){if(!target)return 0;let count=0;for(const item of items)if(item.bombTarget===target&&destroy(item,item.meshes[0]?.mesh,null))count++;return count;}
  function reset(){effects.length=0;for(const item of items){item.health=item.hp;if(!item.entry.destroyed)continue;item.entry.destroyed=false;for(const {mesh,raycast} of item.meshes){mesh.visible=true;if(raycast&&!rays.includes(mesh))rays.push(mesh);}dirty=true;}refresh();}
  // Find a visible shootable brush on the intended final walking leg. Never
  // alter live collision while probing, or accept a wall/second brush behind it.
@@ -233,7 +237,7 @@ window.BSPBreakables=(()=>{
   const eye=p.clone().add(V(0,28*k,0)),end=goal.clone().add(V(0,28*k,0)),delta=end.sub(eye),range=delta.length();
   raycaster.set(eye,delta.normalize());raycaster.far=range;
   const hit=raycaster.intersectObjects(rays)[0],item=hit?.object?.userData?.breakable;
-  if(!item||!items.includes(item)||item.entry.destroyed||!col.breakables.includes(item.entry)||hit.distance>160*k)return null;
+  if(!item||item.bombTarget||!items.includes(item)||item.entry.destroyed||!col.breakables.includes(item.entry)||hit.distance>160*k)return null;
   const a=BSP.toHammer(col.T,p.toArray()),b=BSP.toHammer(col.T,goal.toArray());
   if(!BSP.traceAll(col,a,b).hit||!BSP.traceAll({...col,breakables:[item.entry]},a,b).hit)return null;
   const open={...col,breakables:col.breakables.filter(x=>x!==item.entry)};
@@ -241,5 +245,5 @@ window.BSPBreakables=(()=>{
   return {item,point:hit.point.clone()};
  }
  function active(item){return !!item&&items.includes(item)&&!item.entry.destroyed;}
- return {mount,register,hit,blast,reset,refresh,clear,passageTarget,active,takeEffects};
+ return {mount,register,hit,blast,bombExplode,reset,refresh,clear,passageTarget,active,takeEffects};
 })();

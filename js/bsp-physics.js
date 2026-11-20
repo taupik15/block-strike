@@ -115,16 +115,16 @@ function makeTransform(meta) {
 }
 
 function toHammer(T, g) {
-  const xp = g[0] / T.k, yp = g[2] / T.k;
+  const xp = g[0] / T.k, yp = g[2] * (T.zSign??1) / T.k;
   return [T.c * xp + T.s * yp, -T.s * xp + T.c * yp, g[1] / T.k];
 }
 function toGame(T, h) {
   const xp = T.c * h[0] - T.s * h[1], yp = T.s * h[0] + T.c * h[1];
-  return [xp * T.k, h[2] * T.k, yp * T.k];
+  return [xp * T.k, h[2] * T.k, yp * T.k * (T.zSign??1)];
 }
 // kecepatan horizontal (game -> hammer): transformasi linear tanpa translasi
 function velToHammer(T, v) {
-  const xp = v[0] / T.k, yp = v[1] / T.k;
+  const xp = v[0] / T.k, yp = v[1] * (T.zSign??1) / T.k;
   return [T.c * xp + T.s * yp, -T.s * xp + T.c * yp];
 }
 
@@ -384,11 +384,24 @@ function snapFloor(col, gx, gz) {
 }
 // GoldSrc hull 1 is 72 units tall, hull 3 is 36. Their centers
 // differ by 18 units when preserving the same feet position.
-function changeStance(col, pos, fromCrouch, toCrouch, grounded=true){
+function changeStance(col, pos, fromCrouch, toCrouch, grounded=true, actors=[]){
  if(fromCrouch===toCrouch||!Number.isInteger(col.crouchHead))return true;
  const origin=toHammer(col.T,pos.toArray()),hull={...col,head:toCrouch?col.crouchHead:(col.standHead??col.head)};
- const clear=h=>!traceAll(hull,h,h).startsolid;
+ // Stance changes must not expand into an actor above or beside us. A zero-
+ // length movement trace intentionally ignores existing actor overlaps, so
+ // test the requested hull explicitly instead. Do not alter shared collision.
+ const bodies=actorHull(col,actors,toCrouch).actorHulls;
+ const bodyClear=h=>!bodies.some(a=>Math.abs(h[0]-a.center[0])<32-EPS&&Math.abs(h[1]-a.center[1])<32-EPS&&Math.abs(h[2]-a.center[2])<a.half-EPS);
+ const clear=h=>bodyClear(h)&&!traceAll(hull,h,h).startsolid;
  if(!grounded){if(!clear(origin))return false;return true}
+ // Preserve feet on an actor platform. In particular, do not choose a lower
+ // world-clear center when standing up on a teammate. Never force a stand
+ // by searching around a body that blocks the nominal expansion.
+ if(bodies.length){
+  const nominal=[origin[0],origin[1],origin[2]+(toCrouch?-18:18)];
+  if(!bodyClear(nominal))return false;
+  if(clear(nominal)){pos.set(...toGame(col.T,nominal));return true;}
+ }
  // Real compiled hulls can differ at clip brushes, edges and slopes.
  // Find a non-solid center strictly between the two nominal origins.
  // Then settle onto the target hull's floor, never move through a wall.
@@ -410,7 +423,7 @@ function traceSegment(col, start, end){
  const old=col.head;col.head=col.standHead??col.head;
  try{const a=toHammer(col.T,start.toArray()),b=toHammer(col.T,end.toArray()),r=traceAll(col,a,b);
   const n=r.normal;
-  return {hit:r.hit,frac:r.frac,normal:n?new THREE.Vector3((col.T.c*n[0]-col.T.s*n[1]),n[2],(col.T.s*n[0]+col.T.c*n[1])).normalize():null};
+  return {hit:r.hit,frac:r.frac,normal:n?new THREE.Vector3(...toGame(col.T,n)).normalize():null};
  }finally{col.head=old}
 }
 // Read actual brush contents at a point; no expanded player hull.
@@ -427,7 +440,7 @@ function wallExit(col,entry,dir,maxDepth){
 function tracePointSegment(col,a,b){
  if(!col?.pointClip)return null;
  const r=traceHull(col.pointClip,col.pointHead,toHammer(col.T,a.toArray()),toHammer(col.T,b.toArray())),n=r.normal;
- return {...r,normal:n?new THREE.Vector3(col.T.c*n[0]-col.T.s*n[1],n[2],col.T.s*n[0]+col.T.c*n[1]).normalize():null};
+ return {...r,normal:n?new THREE.Vector3(...toGame(col.T,n)).normalize():null};
 }
 function pointLineBlocked(col,a,b){if(!col?.pointClip)return true;return traceHull(col.pointClip,col.pointHead,toHammer(col.T,a.toArray()),toHammer(col.T,b.toArray())).hit;}
 window.BSP = { loadClipData, traceAll, stepSlide, canStand, changeStance, traceSegment, movePlayer, moveActor, actorHull, loadCollision, snapFloor, snapSpawn, inBuyzone, toHammer, toGame, makeTransform, STEP, GRAV, JUMP, SPEED, ZOOM, maxSpeed, analog, accelerate, fallDamage, waterLevel, pointWater, viewMotion, pointSolid, wallExit, pointLineBlocked, tracePointSegment };

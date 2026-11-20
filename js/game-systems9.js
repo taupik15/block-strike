@@ -104,8 +104,8 @@ const Phase9=(()=>{
  function updateCrouch(dt=.016){
   const desired=crouchRequested||mobileCrouch;
   if(desired!==crouching){
-   if(window.bspCol){if(BSP.changeStance(bspCol,P.pos,crouching,desired,P.on))crouching=desired}
-   else if(desired||!obs.some(o=>{
+   if(window.bspCol){if(BSP.changeStance(bspCol,P.pos,crouching,desired,P.on,movementActors(P,P.pos)))crouching=desired}
+   else if(desired||LayoutNav.canExpand(P.pos,movementActors(P,P.pos))&&!obs.some(o=>{
     const cx=Math.max(o.x1,Math.min(P.pos.x,o.x2)),cz=Math.max(o.z1,Math.min(P.pos.z,o.z2));
     return Math.hypot(P.pos.x-cx,P.pos.z-cz)<.38&&P.pos.y+1.7>o.y1&&P.pos.y+1.05<o.y2;
    }))crouching=desired;
