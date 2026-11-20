@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#171d12">
+<title>BLOCK STRIKE</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/gui-theme.css">
+<link rel="stylesheet" href="css/mobile.css">
+<link rel="stylesheet" href="css/cs-hud.css?v=16.4.7-pre19">
+<link rel="stylesheet" href="css/classic.css">
+<link rel="stylesheet" href="css/tahap9.css?v=16.4AH">
+<link rel="stylesheet" href="css/tahap10.css">
+<link rel="stylesheet" href="css/tahap11.css?v=16.4.1">
+<link rel="stylesheet" href="css/tahap12-hotfix.css">
+<link rel="stylesheet" href="css/tahap13.css">
+<link rel="stylesheet" href="css/tahap14efg.css?v=16.4.7-pre19">
+<link rel="stylesheet" href="css/quickbuy15.css">
+<link rel="stylesheet" href="css/cs16-source.css">
+<link rel="stylesheet" href="css/cs16-complete.css">
+<link rel="stylesheet" href="css/cs16-menu15.css">
+<link rel="stylesheet" href="css/spectator15e.css?v=16.4.7-pre26E">
+<link rel="stylesheet" href="css/bomb.css?v=16.4.7-pre26J">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/ui/pwa-180.png">
+<link rel="icon" href="assets/ui/cross.svg" type="image/svg+xml">
+</head>
+<body>
+
+<canvas id="c"></canvas>
+<button id="pauseBtn" aria-label="Main menu">MENU</button><div id="pad"></div><div id="jb"></div><div id="jk"></div>
+<canvas id="radar" class="ui" width="96" height="96"></canvas>
+<div id="top" class="ui"></div>
+<div id="chips" class="ui"></div>
+<div id="cross" class="ui"><i></i><i></i><i></i><i></i></div>
+<div id="scopeOverlay" class="hidden" aria-hidden="true"><div class="scope-ring"><i></i><b></b></div></div>
+<div id="hp" class="ui"><span id="hpt">100</span><div id="hpbar"><div id="hpf"></div></div></div>
+<div id="armor" class="ui">ARMOR 0</div><div id="gear" class="ui">HE 0 · FLASH 0 · SMOKE 0</div>
+<div id="ammo" class="ui"></div>
+<div id="economy" class="ui">$800</div>
+<div id="roundclock" class="ui">BUY 15</div>
+<div id="bombHud"><span id="bombScore"></span><strong id="bombStatus"></strong><span id="kitStatus" class="hidden" aria-label="Defuse kit equipped">KIT</span></div>
+<div id="bombActionProgress" class="hidden"><span id="bombActionLabel">DEFUSING BOMB</span><progress id="bombProgress" max="1" value="0" aria-label="C4 action"></progress></div>
+<div id="bombControls"><button type="button" id="bombUse" class="hidden" aria-label="Hold to defuse">⚙</button></div>
+<div id="dmg" class="ui"></div><div id="flashEffect" class="ui" aria-hidden="true"></div><div id="modeStatus" class="ui" aria-live="off"></div>
+<div id="msg" class="ui"></div>
+<div id="killfeed" class="ui"></div>
+<div id="scoreboard" class="hidden" aria-hidden="true"><div class="sb-box"><div class="sb-topline"><div id="sbHead" class="sb-head"></div><button id="scoreClose" aria-label="Close scoreboard">×</button></div><div class="sb-cols"><span>PLAYER</span><span>K</span><span>D</span><span>STATUS</span><span>HP</span><span>TYPE</span></div><div id="sbBody"></div></div></div>
+<div id="radioStatus" class="hidden" aria-live="polite"></div>
+<div id="radioOverlay" class="hidden" role="dialog" aria-label="Radio commands"><header><b id="radioTitle">RADIO COMMANDS</b><button id="radioClose" aria-label="Close radio">×</button></header><nav class="radio-tabs"><button id="radioTabZ">Z · ORDERS</button><button id="radioTabX">X · TEAM</button><button id="radioTabC">C · REPORT</button><button id="radioTabMore">MORE</button></nav><div id="radioCommands" tabindex="0" aria-label="Daftar perintah radio, bisa digulir"></div></div>
+<button class="game-utility" id="radioBtn" type="button" aria-label="Open radio commands"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 16v-4a7 7 0 0 1 14 0v4M7 20h10M8 11h8M12 4V1"/></svg></button>
+<button class="game-utility" id="scoreBtn" type="button" aria-label="Open scoreboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4zM4 10h16M10 10v10M14 10v10"/></svg></button>
+<div class="btn" id="buybtn">BUY</div><div class="btn" id="crouchBtn">CROUCH</div><div class="btn" id="walkBtn">WALK</div><div class="btn" id="nvgBtn">NVG</div><div class="btn" id="pickupBtn">TAKE</div><button class="btn" id="grenadeTypeBtn" type="button">TYPE</button><button class="btn" id="grenadeBtn" type="button">GREN</button><div class="btn" id="fire">TEMBAK</div><div class="btn" id="ads">BIDIK</div><div class="btn" id="jump">LOMPAT</div><div class="btn" id="rel">RELOAD</div><div class="btn" id="swap">GANTI</div>
+<button class="game-utility" id="settingsGameBtn" type="button" aria-label="Game settings">SET</button>
+<button class="game-utility" id="teamBtn" type="button" aria-label="Change team">TEAM</button>
+<button class="game-utility" id="flashBtn" type="button" aria-label="Toggle flashlight">LIGHT</button>
+<button class="game-utility" id="dropBtn" type="button" aria-label="Drop weapon">DROP</button>
+<div id="spectatorTop" class="hidden" aria-live="off"><strong>SPECTATOR</strong><span id="specScores">CT 0 : 0 T</span><span id="specTime">ROUND 0</span></div>
+<div id="spectatorHud" class="hidden" aria-live="polite">
+ <div class="spec-player"><strong id="specModeLabel">FIRST PERSON</strong><span id="specName">-</span><small id="specInfo">-</small></div>
+ <nav aria-label="Spectator controls"><button type="button" id="specPrev" aria-label="Previous teammate">◀</button>
+  <select id="specMode" aria-label="Spectator camera mode">
+   <option value="first">First Person</option><option value="locked">Locked Chase</option><option value="chase">Free Chase</option><option value="free">Free Look</option><option value="map">Free Map Overview</option><option value="chase-map">Chase Map Overview</option>
+  </select><button type="button" id="specNext" aria-label="Next teammate">▶</button>
+  <button type="button" id="specAuto" class="active" aria-pressed="true" aria-label="Toggle Auto Director">AUTO ON</button></nav>
+ <small id="specHelp">◀ ▶ target · C mode · P director</small>
+</div>
+<div id="spectatorMove" class="hidden" role="group" aria-label="Free camera analog control"><i></i></div>
+<div id="weaponOverlay" class="hidden"><header>SELECT WEAPON <button id="weaponClose" aria-label="Close weapon selector">×</button></header><div id="weaponItems"></div></div>
+<div id="teamOverlay" class="hidden"><header>CHANGE TEAM <button id="teamClose" aria-label="Close team menu">×</button></header><p>Perpindahan berlaku pada ronde berikutnya.</p><button data-switch-team="CT">COUNTER-TERRORISTS</button><button data-switch-team="T">TERRORISTS</button><p id="teamQueued"></p></div>
+<div id="pickupPrompt" class="hidden" role="group" aria-label="Ambil senjata">
+ <strong id="pickupName">Weapon</strong><small id="pickupDesc"></small>
+ <div><button id="pickupAccept">AMBIL</button><button id="pickupCancel" aria-label="Tutup indikator">×</button></div>
+</div>
+<div id="controlEditor" class="hidden" role="dialog" aria-label="Atur tombol mobile">
+ <div class="layout-toolbar"><strong>CUSTOM CONTROL LAYOUT</strong><span>Seret ikon untuk memindah · pilih preset 2/3/4 jari</span>
+  <div class="layout-config"><button data-preset="two">2 Jari</button><button data-preset="three">3 Jari</button><button data-preset="four">4 Jari</button>
+  <label>Dipilih: <b id="layoutCurrent">FIRE</b></label><label>Ukuran <input id="layoutSize" type="range" min="38" max="90" value="52"></label>
+  <label>Transparansi <input id="layoutOpacity" type="range" min=".35" max="1" step=".05" value=".8"></label>
+  <button id="layoutReset">RESET</button><button id="layoutCancel">BATAL</button><button id="layoutSave" class="primary">SIMPAN</button></div>
+ </div>
+</div>
+<div id="menu" class="screen" aria-label="Block Strike main menu">
+ <div class="cs-classic-main" role="navigation" aria-label="Main menu">
+  <div class="cs-game-id"><span>TACTICAL FPS · OFFLINE</span><h1>BLOCK STRIKE</h1><small>CLASSIC EDITION</small></div>
+  <div class="cs-main-links">
+   <button id="go" type="button">New Game</button>
+   <button id="selectMapBtn" type="button" class="hidden" aria-hidden="true" tabindex="-1">New Match (legacy)</button>
+   <button id="findServersBtn" type="button" aria-describedby="offlineNotice">Find Servers <small>Offline</small></button>
+   <button id="settingsBtn" type="button">Options</button>
+   <button id="creditsBtn" type="button">Credits</button>
+   <button id="resumeBtn" class="hidden" type="button">Resume Game</button>
+   <button id="quitBtn" type="button">Quit</button>
+  </div>
+  <p id="offlineNotice" role="status">Single-player · offline · Dust Block</p>
+ </div>
+ <div class="cs-main-foot">BLOCK STRIKE <span>HTML5 / THREE.JS · CLASSIC UI</span> <small>WASD · MOUSE · B BUY · ESC MENU</small></div>
+</div>
+<div id="quitDialog" class="screen hidden"><div class="cs-window cs-quit" role="dialog" aria-modal="true" aria-label="Quit"><header><strong>Quit Game</strong><button type="button" id="quitClose" aria-label="Close">×</button></header><p>A browser page cannot close its own tab reliably. Close this tab to exit, or return to the main menu.</p><div class="cs-actions"><button type="button" id="quitBack">Cancel</button><button type="button" id="quitExitMatch">Leave Match</button></div></div></div>
+<div id="settingsScreen" class="screen hidden" role="dialog" aria-modal="true" aria-label="Options">
+ <div class="cs-window cs-options-window">
+  <header class="cs-window-head"><strong>Options</strong><button type="button" id="optionsCloseX" aria-label="Close Options">×</button></header>
+  <nav class="cs-tabs" id="optionsTabs" role="tablist" aria-label="Options categories">
+   <button type="button" data-options-tab="multiplayer" class="active" role="tab" aria-selected="true">Multiplayer</button>
+   <button type="button" data-options-tab="keyboard" role="tab" aria-selected="false">Keyboard</button>
+   <button type="button" data-options-tab="mouse" role="tab" aria-selected="false">Mouse</button>
+   <button type="button" data-options-tab="audio" role="tab" aria-selected="false">Audio</button>
+   <button type="button" data-options-tab="video" role="tab" aria-selected="false">Video</button>
+   <button type="button" data-options-tab="voice" role="tab" aria-selected="false">Voice</button>
+   <button type="button" data-options-tab="touch" role="tab" aria-selected="false">Touch</button>
+  </nav>
+  <div class="cs-window-content cs-options-content">
+   <section class="cs-options-panel" data-options-panel="multiplayer">
+    <h3>Multiplayer</h3>
+    <label class="cs-field"><span>Player name</span><input id="playerNickname" type="text" maxlength="24" autocomplete="off" value="PLAYER" placeholder="Your name"></label>
+    <label class="cs-field"><span>Character models</span><select id="classicModels"><option value="on">CS 1.6 Classic</option><option value="off">Previous Skins</option></select></label>
+    <label class="cs-field"><span>Weapon hand</span><select id="weaponHand"><option value="right">Right Hand</option><option value="left">Left Hand</option></select></label>
+    <p class="cs-help">Model changes apply at the start of the next match. Your name is shown on the local scoreboard.</p>
+   </section>
+   <section class="cs-options-panel hidden" data-options-panel="keyboard">
+    <h3>Keyboard controls</h3><div class="cs-key-table">
+    <div><span>Move / strafe</span><kbd>W A S D</kbd></div><div><span>Walk</span><kbd>SHIFT</kbd></div>
+    <div><span>Jump / crouch</span><kbd>SPACE / CTRL</kbd></div><div><span>Fire / special function</span><kbd>LMB / RMB</kbd></div>
+    <div><span>Reload / Buy</span><kbd>R / B</kbd></div><div><span>Pick up / Drop</span><kbd>E / Q</kbd></div>
+    <div><span>Hold and release grenade / select type</span><kbd>G / H</kbd></div><div><span>Flashlight</span><kbd>F</kbd></div><div><span>Radio / Score</span><kbd>Z X C / TAB</kbd></div>
+    <div><span>Auto Buy / Rebuy</span><kbd>F3 / F4</kbd></div><div><span>Pause / Menu</span><kbd>ESC</kbd></div>
+    </div><p class="cs-help">These are the current game bindings. Keyboard remapping is not supported yet.</p>
+   </section>
+   <section class="cs-options-panel hidden" data-options-panel="mouse">
+    <h3>Mouse / Aim</h3>
+    <label class="cs-field"><span>Look sensitivity</span><input id="sn" type="range" min="0.002" max="0.009" step="0.0001" value="0.0045"><output id="sensitivityValue" for="sn">4.5</output></label>
+    <label class="cs-field"><span>Crosshair size</span><input id="crosshairSize" type="range" min="12" max="38" step="2" value="22"><output id="crossSizeValue" for="crosshairSize">22</output></label>
+    <label class="cs-field"><span>Crosshair color</span><select id="crosshairColor"><option value="green">Green (classic)</option><option value="yellow">Yellow</option><option value="cyan">Cyan</option><option value="white">White</option></select></label>
+    <p class="cs-help">Sensitivity affects mouse and mobile drag aim. Weapon special action remains on right click or the mobile Aim button.</p>
+   </section>
+   <section class="cs-options-panel hidden" data-options-panel="audio">
+    <h3>Audio</h3>
+    <label class="cs-field"><span>Sound effects volume</span><input id="volume" type="range" min="0" max="1" step="0.05" value="0.8"><output id="volumeValue" for="volume">80%</output></label>
+    <p class="cs-help">Weapon, radio, footsteps, grenade and interface sounds share the master volume. There is no background music.</p>
+   </section>
+   <section class="cs-options-panel hidden" data-options-panel="video">
+    <h3>Video / HUD</h3>
+    <button type="button" id="fullscreenToggle">Enter fullscreen</button><p id="fullscreenStatus" class="cs-help" role="status">Fullscreen support depends on your browser.</p>
+    <button type="button" id="offlinePrepare" disabled>Prepare Offline (±245 MB)</button><p id="offlineCacheStatus" class="cs-help" role="status">Menyiapkan cache aplikasi…</p>
+    <label class="cs-field"><span>GoldSrc sprites — optional local override</span><input id="goldsrcSpriteFile" type="file" accept=".zip,application/zip"></label>
+    <button type="button" id="goldsrcSpriteRemove">Use built-in sprites / forget local override</button><p id="goldsrcSpriteStatus" class="cs-help" role="status">GoldSrc sprites load automatically from the bundled pack when available. An optional ZIP you have permission to use overrides it and is saved on this device.</p>
+    <label class="cs-field"><span>Graphics quality</span><select id="q"><option value="0">Low · better battery</option><option value="1" selected>Medium</option><option value="2">High</option></select></label>
+    <label class="cs-field"><span>HUD size</span><input id="hudScale" type="range" min="80" max="125" step="5" value="100"><output id="hudScaleValue" for="hudScale">100%</output></label>
+    <p class="cs-help">Graphics changes adjust render resolution and shadows. Screen resolution is managed by Safari and your device.</p>
+   </section>
+   <section class="cs-options-panel hidden" data-options-panel="voice"><h3>Voice Communication</h3><p class="cs-help">Voice chat is unavailable in offline bot matches. Radio commands and their sound effects remain available during gameplay. No microphone permission is requested.</p></section>
+   <section class="cs-options-panel hidden" data-options-panel="touch">
+    <h3>Mobile controls</h3>
+    <label class="cs-field"><span>Crouch button</span><select id="crouchMode"><option value="toggle">Toggle</option><option value="hold">Hold</option></select></label>
+    <button id="controlLayoutBtn" type="button" class="cs-action-line">Customize mobile control layout…</button>
+    <p class="cs-help">iPhone 13 landscape: 2/3/4-finger presets, draggable buttons and safe-area support. Touch controls can be customized during a match.</p>
+   </section>
+  </div>
+  <footer class="cs-actions"><button type="button" id="optionsDefaults">Defaults</button><span id="optionsStatus" role="status"></span><button type="button" data-close="settingsScreen">Cancel</button><button type="button" id="optionsApply" class="cs-primary">OK</button></footer>
+ </div>
+</div>
+<div id="creditsScreen" class="screen hidden"><section class="dialog"><h2>Credits &amp; asset notices</h2><p>BLOCK STRIKE · Three.js / WebGL. Model dan suara GoldSrc berasal dari paket yang disediakan pengguna, dengan atribusi <a href="https://cs16planet.ru/modeli-oruzhiya-cs-16/26189-standartnye-modeli-oruzhija-dlja-cs-16.html">CS16planet.ru</a>.</p><p>HUD: Armory Xtreme / CS16Forge. GUI: CSGO GUI 1.6 Fixed. Map, tekstur dan karakter dipertahankan dari Tahap 7. Hak aset pihak ketiga tetap milik pemiliknya; izin redistribusi publik belum terverifikasi.</p><p><a href="ASSET_NOTICES.md" target="_blank" rel="noopener">Baca catatan aset lengkap</a></p><button data-close="creditsScreen">0 &nbsp; BACK</button></section></div>
+<div id="mapScreen" class="screen hidden">
+ <div class="team-title"><small>NEW GAME / 01</small><h2>Select battlefield</h2></div>
+ <div id="mapOptions" class="map-options">
+  <button class="map-card selected" data-map="dust_block"><strong>DUST BLOCK</strong><span>Arena blok klasik · eliminasi tim</span><i>SELECTED</i></button>
+  
+ </div>
+ 
+<div class="map-actions"><button id="backMap">0 &nbsp; BACK / CANCEL</button><button id="continueMap" class="primary">CHOOSE TEAM →</button></div>
+ <small class="map-note">Dust Block · mode eliminasi tim.</small>
+</div>
+<div id="matchConfigScreen" class="screen hidden" role="dialog" aria-modal="true" aria-label="New Game">
+ <div class="cs-window cs-create-window">
+  <header class="cs-window-head"><strong>Create Game</strong><button type="button" id="createClose" aria-label="Cancel New Game">×</button></header>
+  <nav class="cs-tabs" id="createTabs" role="tablist" aria-label="New Game settings">
+   <button data-create-tab="server" class="active" role="tab" aria-selected="true">Server</button>
+   <button data-create-tab="game" role="tab" aria-selected="false">Game</button>
+   <button data-create-tab="cpu" role="tab" aria-selected="false">CPU Player Options</button>
+  </nav>
+  <div class="cs-window-content cs-create-content">
+   <section data-create-panel="server" class="cs-create-panel">
+    <label class="cs-field"><span>Map</span><select id="createMap"><option value="dust_block">Dust Block · Elimination</option></select></label>
+    <label class="cs-field"><span>Maximum players</span><input id="matchPlayers" type="number" min="2" max="32" step="1" value="16" inputmode="numeric" aria-describedby="matchPerformanceHint"></label>
+    <div id="dustMapPreview" class="cs-map-row"><div class="cs-map-thumb" role="img" aria-label="Dust Block arena preview"></div><div><strong>DUST BLOCK</strong><p>Team elimination · 1 human + bots.</p></div></div>
+    <div class="map-library-actions"><button type="button" id="openMapImport">Import Map</button><button type="button" id="removeSavedMap" class="hidden">Delete map</button><button type="button" id="repairMapWads" class="hidden">Add missing WAD</button><input type="file" id="repairWadFiles" accept=".wad,application/octet-stream" multiple hidden></div>
+    <p id="savedMapReport" class="hidden" role="status"></p>
+    <canvas id="savedMapOverview" class="hidden" width="144" height="108" aria-label="Map overview"></canvas>
+    <div id="bspImport" class="hidden">
+     <label>ZIP or BSP v30 <input type="file" id="bspFile" accept=".zip,.bsp,application/zip,application/octet-stream"></label>
+     <label>Texture WAD3 (optional) <input type="file" id="bspWads" accept=".wad,application/octet-stream" multiple></label>
+     <label>Bot routes PWF, GRAPH or NAV v5 (optional) <input type="file" id="bspWaypoints" accept=".pwf,.graph,.nav,application/octet-stream"></label>
+     <p id="bspStatus" role="status">Choose a ZIP or BSP from Files.</p>
+     <div id="mapCandidates"></div>
+     <div class="map-library-actions"><button type="button" id="importSelectedMaps" disabled>Import selected</button><button type="button" id="importAllMaps" disabled>Import all</button></div>
+    </div>
+   </section>
+   <section data-create-panel="game" class="cs-create-panel hidden">
+    <label class="cs-field"><span>Game mode</span><input id="createMode" type="text" value="Team Elimination" readonly></label>
+    <label class="cs-field"><span>Round time</span><select id="matchRoundTime"><option value="60">1:00 minute</option><option value="90">1:30 minutes</option><option value="120" selected>2:00 minutes</option><option value="180">3:00 minutes</option><option value="300">5:00 minutes</option></select></label>
+    <label class="cs-field"><span>C4 countdown</span><select id="matchC4Time"><option value="25">25 seconds</option><option value="35">35 seconds</option><option value="45" selected>45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option></select></label>
+    <label class="cs-field"><span>Freeze time</span><select id="matchFreezeTime"><option value="0">Off</option><option value="3">3 seconds</option><option value="6" selected>6 seconds</option><option value="10">10 seconds</option></select></label>
+    <label class="cs-field"><span>Buy time</span><select id="matchBuyTime"><option value="10">10 seconds</option><option value="15" selected>15 seconds</option><option value="30">30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option></select></label>
+    <label class="cs-field"><span>Starting money</span><select id="matchStartMoney"><option value="800" selected>$800</option><option value="1500">$1,500</option><option value="3000">$3,000</option><option value="5000">$5,000</option><option value="8000">$8,000</option><option value="16000">$16,000</option></select></label>
+    <p class="cs-help">Bomb Defusal is available when a compatible local BSP is selected.</p>
+   </section>
+   <section data-create-panel="cpu" class="cs-create-panel hidden">
+    <label class="cs-field"><span>Number of bots</span><input id="matchBotCount" type="number" min="1" max="31" step="1" value="15" inputmode="numeric"></label>
+    <label class="cs-field"><span>Bot difficulty</span><select id="matchDifficulty"><option value="noob">Noob</option><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option><option value="expert">Expert</option></select></label>
+    <label class="cs-field"><span>Follow / Cover bots</span><select id="matchFollowers"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option></select></label>
+    <label class="cs-field"><span>Bot teams</span><input type="text" disabled value="Auto Balance · CT vs T" aria-label="Bot teams"></label>
+    <p class="cs-help">Difficulty affects CT and T equally. Follow and Cover recruit nearby bots; Regroup affects the whole team.</p>
+   </section>
+   <div id="matchTeamPreview" class="match-preview" aria-live="polite">CT 8 · T 8 · 15 bots · Normal</div>
+   <small id="matchPerformanceHint" class="cs-help">Total players include you. A large match may lower iPhone frame rate.</small>
+  </div>
+  <footer class="cs-actions"><button id="backMatchConfig" type="button">Cancel</button><button id="continueMatchConfig" type="button" class="cs-primary">Start → Choose Team</button></footer>
+ </div>
+</div>
+<div id="teamScreen" class="screen hidden">
+ <div class="team-title"><small>NEW GAME / 03</small><h2>Choose a team</h2></div>
+ <div class="team-options">
+  <button class="team-card ct-card" data-team="CT"><img src="assets/ui/cs16/gign.png" alt="GIGN"><div><strong>1 &nbsp; COUNTER-TERRORISTS</strong><small>USP · M4A1 · AUG</small><i>SELECT CT →</i></div></button>
+  <button class="team-card t-card" data-team="T"><img src="assets/ui/cs16/leet.png" alt="Leet"><div><strong>2 &nbsp; TERRORISTS</strong><small>GLOCK 18 · AK-47 · SG-552</small><i>SELECT T →</i></div></button>
+ </div>
+ <button id="backMenu">0 &nbsp; BACK</button>
+</div>
+<div id="classScreen" class="screen hidden">
+ <div class="team-title"><small>NEW GAME / 04</small><h2 id="classTitle">Choose a class</h2></div>
+ <div id="classOptions"></div><p class="class-note">Pilih model pemain dan pemimpin regu pendamping.</p>
+ <div class="map-actions"><button id="classBack">0 &nbsp; BACK</button><button id="startMatch" class="primary">START MATCH →</button></div>
+</div>
+<div id="loadingScreen" class="screen hidden"><section class="dialog"><small>BLOCK STRIKE</small><h2>Loading battlefield</h2><p id="loadStatus" role="status"></p><button id="loadBack" class="hidden">BACK TO MENU</button></section></div>
+<div id="buyMenu" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Buy menu">
+ <div class="buy-window">
+  <header><h2>Buy Menu</h2><span id="buyContext">BUY ZONE</span><div class="buy-cash" id="buyCash">$800</div><button id="closeBuy" class="close-button" aria-label="Close buy menu">×</button></header>
+  <div class="buy-layout"><nav id="buyTabs" aria-label="Shop by category">
+   <small>SHOP BY CATEGORY</small>
+   <button data-tab="pistols">1 &nbsp; PISTOLS</button><button data-tab="shotguns">2 &nbsp; SHOTGUNS</button><button data-tab="smgs">3 &nbsp; SMG</button><button data-tab="rifles">4 &nbsp; RIFLES</button><button data-tab="machineguns">5 &nbsp; MACHINE GUNS</button><button data-tab="primaryAmmo">6 &nbsp; PRIMARY AMMO</button><button data-tab="secondaryAmmo">7 &nbsp; SECONDARY AMMO</button><button data-tab="equipment">8 &nbsp; EQUIPMENT</button><button id="buyCancel">9 &nbsp; CANCEL</button>
+  </nav><section class="buy-content"><h3 id="buyCategory">SELECT A CATEGORY</h3><div id="buyItems" class="buy-items"></div></section></div>
+  <footer><span id="buyHint" role="status">Pilih kategori di sebelah kiri</span><button id="autoBuyBtn" type="button" title="Beli otomatis dari daftar prioritas">F3 AUTO BUY</button><button id="rebuyBtn" type="button" title="Ulangi daftar pembelian terakhir">F4 REBUY</button><button id="buyBack">BACK</button><button id="closeBuy2">CONTINUE</button></footer>
+ </div>
+</div>
+<div id="rot">Putar HP ke mode landscape 📱↔️</div>
+
+<script src="js/vendor/three.min.js"></script>
+<script src="js/vendor/GLTFLoader.js"></script>
+<script src="js/vendor/SkeletonUtils.js"></script>
+<script src="js/bsp-render.js?v=16.4.7-pre26E"></script>
+<script src="js/bsp-physics.js?v=16.4.7-pre26AI"></script>
+<script src="js/bsp-local.js?v=16.4.7-pre26AI"></script>
+<script src="js/local-cache.js?v=16.4.7-pre25B"></script>
+<script src="js/vendor/pako-inflate.min.js"></script>
+<script src="js/yapb-waypoints.js?v=16.4.7-pre26N"></script>
+<script src="js/bsp-local-nav.js?v=16.4.7-pre26AI"></script>
+<script src="js/map-media.js?v=16.4.7-pre22"></script>
+<script src="js/map-library.js?v=16.4.7-pre25B"></script>
+<script src="js/map-importer.js?v=16.4.7-pre26AI"></script>
+<script src="js/goldsrc-sprites.js?v=16.4.7-pre18"></script>
+<script src="js/modes/bomb.js?v=16.4.7-pre26S"></script>
+<script src="js/bsp-doors.js?v=16.4.7-pre26AI"></script>
+<script>window.NAV_BOTS=true; /* Tahap 7B: aktifkan A* nav untuk bot (T→CT sudah jalan, CT→T masih fallback) */</script>
+<script src="js/nav-graph.js?v=16.4.7-pre22"></script>
+<script src="js/combat12.js?v=16.4.7-pre23H"></script>
+<script src="js/attack14f.js?v=16.4.2"></script>
+<script src="js/safari14e.js?v=16.4.7-pre25A"></script>
+<script src="js/cs16-vgui.js"></script>
+<script src="js/cs16-sfx.js?v=16.4.7-pre26K"></script>
+<script src="js/cs16-bots.js"></script>
+<script src="js/weapon-modes15c.js?v=16.4.4"></script>
+<script src="js/bot-tactics15d.js?v=16.4.7-pre26U"></script>
+<script src="js/weapon-presentation.js"></script>
+<script src="js/weapon-calibration.js?v=16.4.7-pre26F"></script>
+<script src="js/economy-rules.js?v=16.4.7-pre5"></script>
+<script src="js/native-hitboxes.js?v=16.4.7-pre12"></script>
+<script src="js/game-core.js?v=16.4.7-pre26AI"></script>
+<script src="js/game-systems8.js?v=16.4.7-pre26K"></script>
+<script src="js/grenade14d.js?v=16.4.7-pre23H"></script>
+<script src="js/grenade-fx15b.js?v=16.4.7-pre23H"></script>
+<script src="js/game-systems9.js?v=16.4.7-pre26AI"></script>
+<script src="js/game-systems10.js?v=16.4.7-pre26S"></script>
+<script src="js/game-systems11.js?v=16.4.7-pre12"></script>
+<script src="js/classic-ui.js?v=16.4.7-pre19"></script>
+<script src="js/layout-nav.js"></script>
+<script src="js/spectator15e.js"></script>
+<script src="js/game-systems13.js?v=16.4.7-pre26K"></script>
+<script src="js/game-systems14b.js"></script>
+<script src="js/game-systems14c.js?v=16.4.7-pre15"></script>
+<script src="js/quickbuy15.js?v=16.4.7-pre15"></script>
+<script src="js/cs16-menu15.js?v=16.4.7-pre26AI"></script>
+<script src="js/offline.js?v=16.4.7-pre26AI"></script>
+</body>
+</html>

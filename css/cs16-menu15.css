@@ -1,0 +1,94 @@
+/* Main menu and desktop-style option panels based on source-supplied GameMenu.res
+ * and GoldSrc-era UI layout. No network, map or cheat functionality is added. */
+#menu{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:left;padding:clamp(24px,6vw,90px);background:linear-gradient(90deg,rgba(11,18,26,.56),rgba(0,0,0,.05) 72%),url('../assets/cs16-extra-ui/cs16-menu-background.jpg') center/cover no-repeat;overflow:hidden}
+#menu .cs-classic-main{position:relative;z-index:1;width:min(420px,55%);display:flex;flex-direction:column;align-items:flex-start;gap:13px}
+#menu .cs-game-id{color:#f2e8cf;text-align:left;filter:drop-shadow(0 1px 2px #000)}
+#menu .cs-game-id>span{display:block;color:#f3bd59;font-size:9px;letter-spacing:2.8px;font-weight:600}
+#menu .cs-game-id h1{font-family:Arial,Helvetica,sans-serif;color:#f2e9d4;font-weight:800;font-style:normal;font-size:clamp(25px,3.7vw,48px);line-height:1.04;letter-spacing:1px;margin:3px 0 0;text-shadow:0 3px 8px #000}
+#menu .cs-game-id small{color:#eeb84e;font-size:9px;letter-spacing:3px;font-weight:600}
+#menu .cs-main-links{width:100%;display:flex;flex-direction:column;align-items:stretch;gap:0}
+#menu .cs-main-links button{display:flex;align-items:center;justify-content:space-between;background:transparent;border:0;border-radius:0;color:#f0f0e6;font-family:Arial,Helvetica,sans-serif;font-size:clamp(14px,1.85vw,23px);font-weight:500;letter-spacing:0;text-shadow:1px 2px 4px #0a0b05;padding:6px 8px;text-align:left;cursor:pointer;min-width:0}
+#menu .cs-main-links button:hover,#menu .cs-main-links button:focus-visible{background:#17180a82;color:#ffc54f;outline:1px solid #c5a25777}
+#menu .cs-main-links button small{font-size:10px;color:#c5bc9b;letter-spacing:1px}
+#menu #offlineNotice{font-size:10px;color:#e8d9b5;line-height:1.5;text-align:left;margin:0;max-width:330px;letter-spacing:.2px;min-height:14px}
+#menu .cs-main-foot{position:absolute;z-index:2;bottom:max(8px,env(safe-area-inset-bottom));left:clamp(25px,6vw,90px);font-size:11px;font-weight:700;letter-spacing:1.1px;color:#f2c159;display:flex;align-items:center;gap:15px;text-shadow:0 2px 6px #000}
+#menu .cs-main-foot span,#menu .cs-main-foot small{font-size:9px;color:#ddd7c8;font-weight:400;letter-spacing:.3px}
+#settingsScreen,#matchConfigScreen,#quitDialog{padding:max(7px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(7px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));background:#0a0e11b8;backdrop-filter:blur(3px);align-items:center;justify-content:center;overflow:hidden}
+.cs-window{color:#e5e8d8;background:#353c31;border:1px solid #838c7a;box-shadow:0 0 0 1px #0f140f,0 14px 55px #000b;font:12px/1.4 Arial,Helvetica,sans-serif;display:flex;flex-direction:column;min-height:0;max-height:calc(100dvh - 16px);width:min(630px,100%);text-align:left}
+.cs-window button,.cs-window input,.cs-window select{font:inherit;touch-action:manipulation}
+.cs-window input[type=range]{touch-action:pan-x;accent-color:#d3b674;width:100%}
+.cs-window input[type=text],.cs-window input[type=number],.cs-window select{color:#edf0e5;background:#222820;border:1px solid #7d8b78;border-radius:1px;padding:6px 9px;max-width:100%;min-height:30px;min-width:0;outline-offset:1px}
+.cs-window input:focus-visible,.cs-window select:focus-visible,.cs-window button:focus-visible{outline:2px solid #e2c97e;outline-offset:1px}
+.cs-window button{cursor:pointer;color:#e2e6d8;background:#576352;border:1px solid #899b84;border-radius:1px;padding:6px 13px;min-height:30px}
+.cs-window button:hover{background:#6b795e}
+.cs-window button:disabled,.cs-window select:disabled{opacity:.58;cursor:default}
+.cs-window-head{flex:0 0 auto;background:linear-gradient(#566452,#414d40);border-bottom:1px solid #222a22;color:#f0ede2;padding:6px 9px 6px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px;letter-spacing:.3px}
+.cs-window-head strong{font-size:13px;font-weight:700}
+.cs-window-head button{width:27px;height:26px;padding:0;background:#455044;min-height:0;font-size:20px;line-height:1}
+.cs-tabs{display:flex;flex:0 0 auto;gap:3px;overflow-x:auto;padding:7px 10px 0;background:#32392f;touch-action:pan-x;-webkit-overflow-scrolling:touch}
+.cs-tabs button{flex:0 0 auto;background:#30382d;color:#c5cfba;border-bottom:0;border-radius:3px 3px 0 0;padding:7px 13px;min-height:28px;white-space:nowrap;font-size:11px}
+.cs-tabs button.active{color:#f5f2dc;background:#525f4e;border-color:#9dae8c;font-weight:700}
+.cs-window-content{background:#525f4e;border:1px solid #8c9b82;margin:0 9px;min-height:0;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;-webkit-overflow-scrolling:touch;padding:12px 14px}
+.cs-window-content *:not(input[type=range]){touch-action:pan-y}
+.cs-options-window{width:min(665px,100%)}
+.cs-options-content{min-height:210px;flex:1 1 auto}
+.cs-options-panel,.cs-create-panel{display:flex;flex-direction:column;gap:10px}
+.cs-options-panel.hidden,.cs-create-panel.hidden{display:none}
+.cs-options-panel h3{color:#f2ebcf;font-size:14px;font-weight:700;margin:0 0 4px}
+.cs-field{display:grid;grid-template-columns:minmax(120px,35%) minmax(0,1fr) minmax(32px,auto);align-items:center;gap:10px;min-height:30px;color:#f0efdd;font-size:12px}
+.cs-field>*:nth-child(2){grid-column:2}
+.cs-field>output{grid-column:3;font-variant-numeric:tabular-nums;color:#f9de9a;text-align:right;min-width:30px}
+.cs-help{color:#e1e7d3;font-size:11px;line-height:1.4;opacity:.9;margin:5px 0 0}
+.cs-key-table{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px}
+.cs-key-table>div{display:flex;gap:5px;justify-content:space-between;align-items:center;border-bottom:1px solid #ffffff26;padding:5px 3px;min-width:0}
+.cs-key-table span{color:#edf1e5;font-size:10px}
+.cs-key-table kbd{white-space:nowrap;font:10px/1.5 monospace;background:#262e25;border:1px solid #77866d;padding:2px 5px;color:#ffe3a7}
+.cs-action-line{align-self:flex-start}
+.cs-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;margin:0;padding:10px;min-height:49px;flex-shrink:0}
+.cs-actions #optionsStatus{color:#f7deaa;flex:1;font-size:10px;text-align:left}
+.cs-actions button.cs-primary{background:#b1af8c;color:#1d2419;border-color:#d8d7ad;font-weight:700}
+.cs-actions button.cs-primary:hover{background:#dbd2a4}
+.cs-create-window{width:min(550px,100%)}
+.cs-create-content{min-height:185px;flex:1 1 auto;display:flex;flex-direction:column;gap:10px}
+.cs-create-panel{flex:1 1 auto}
+.cs-map-row{display:flex;gap:12px;padding:8px;background:#343e32;border:1px solid #819377;min-height:86px}
+.cs-map-thumb{width:120px;flex-shrink:0;background:#b2a181 url('../assets/ui/dust-block-preview.jpg') center/cover no-repeat;position:relative}
+.cs-map-thumb:before{content:none}
+.cs-map-row strong{font-size:13px;color:#fff1ce}
+.cs-map-row p{margin:4px 0;font-size:11px}
+.cs-map-row small{font-size:10px;opacity:.85}
+.cs-create-content .match-preview{margin:3px 0 0;background:#283328;border:1px solid #7b8a72;padding:8px 10px;color:#f9e5a8;font-size:11px;flex:0 0 auto}
+.cs-quit{width:min(430px,100%)}.cs-quit>p{margin:0;padding:19px;font-size:12px;line-height:1.5}
+@media (orientation:landscape) and (max-height:500px){
+ #menu{padding:18px max(20px,env(safe-area-inset-left));gap:0}#menu .cs-classic-main{gap:4px;width:min(350px,46%)}
+ #menu .cs-game-id>span{font-size:8px}#menu .cs-game-id h1{font-size:clamp(22px,3vw,32px)}#menu .cs-main-links button{font-size:clamp(12px,1.7vw,17px);padding:4px 7px;min-height:24px}
+ #menu .cs-main-foot{left:max(20px,env(safe-area-inset-left));gap:8px;bottom:4px}#menu .cs-main-foot small{display:none}
+ .cs-window{font-size:11px;max-height:calc(100dvh - 8px)}.cs-window-content{padding:7px 10px}.cs-tabs{padding-top:5px}.cs-tabs button{padding:5px 9px;min-height:26px}.cs-options-content{min-height:0}
+ .cs-field{min-height:27px;gap:7px}.cs-window input[type=text],.cs-window input[type=number],.cs-window select{min-height:27px;padding:4px 6px}
+ .cs-actions{padding:5px 10px;min-height:37px}.cs-actions button{min-height:27px;padding:4px 10px}
+ .cs-key-table{gap:2px 9px}.cs-key-table>div{padding:2px 3px}.cs-help{font-size:10px}.cs-map-row{min-height:68px;padding:5px}.cs-map-thumb{width:95px}
+}
+@media(max-width:550px){.cs-field{grid-template-columns:minmax(90px,39%) minmax(0,1fr) 30px}.cs-key-table{grid-template-columns:1fr}.cs-main-foot span{display:none!important}}
+/* Apply the only new visual preference to the existing HUD without reflowing controls. */
+#cross{--cross-arm:calc(var(--cross-size,22px) * .4)}
+#cross::before,#cross::after{content:none}
+#cross i{background:var(--cs-cross-color,#7fff7f)}
+#cross i:nth-child(1){height:var(--cross-arm);top:calc(-1 * (var(--spread) + var(--cross-arm)))}
+#cross i:nth-child(2){height:var(--cross-arm)}
+#cross i:nth-child(3){width:var(--cross-arm);left:calc(-1 * (var(--spread) + var(--cross-arm)))}
+#cross i:nth-child(4){width:var(--cross-arm)}
+
+/* VGUI reference colors for keyboard focus and selected cards. */
+#menu .cs-main-links button:focus-visible,
+#buyMenu button:focus-visible,
+#teamScreen button:focus-visible,
+#classScreen button:focus-visible,
+#spectatorHud :is(button,select):focus-visible{
+ outline:2px solid #ffb000;
+ outline-offset:2px;
+}
+#buyMenu #buyTabs button.active,
+#classOptions .class-card.selected{
+ border-color:#d69a37;
+ box-shadow:inset 0 -2px #ffb000;
+}

@@ -1,0 +1,50 @@
+/* Batch 15E: adapt the original Spectator.res/BottomSpectator.res layout to mobile web. */
+#spectatorTop{position:fixed;z-index:14;top:max(6px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:6px 12px;color:#e9deb0;background:#0b151de8;border:1px solid #a79568;white-space:nowrap;font-size:11px;font-weight:800;letter-spacing:.6px;pointer-events:none}
+#spectatorTop strong{color:#f0bb6e;letter-spacing:1px}
+#spectatorHud{width:min(760px,calc(100vw - 28px));max-width:calc(100vw - 28px);min-height:58px;justify-content:space-between;gap:7px;flex-wrap:wrap;padding:8px 11px}
+#spectatorHud .spec-player{min-width:104px;max-width:25vw;gap:1px}
+#spectatorHud nav{display:flex;align-items:center;flex-wrap:nowrap;gap:4px}
+#spectatorHud select{min-width:120px;max-width:220px;background:#26342f;border:1px solid #aa966c;color:#f6e6c2;font:700 11px system-ui;padding:8px 6px;height:36px;touch-action:manipulation}
+#spectatorHud button{height:36px;min-width:34px;border:1px solid #a79662;padding:6px 8px;touch-action:manipulation;border-radius:2px;font-size:12px}
+#spectatorHud button:disabled{opacity:.42}
+#spectatorHud #specAuto{font-size:10px;white-space:nowrap;min-width:61px}
+#specAuto.active{color:#fbe8a0!important;border-color:#f1cd77!important;background:#42543d!important}
+#spectatorHud #specHelp{font-size:9px;opacity:.75;max-width:165px;white-space:normal;line-height:1.3;flex:1}
+#spectatorMove{position:fixed;left:calc(env(safe-area-inset-left) + 18px);bottom:calc(env(safe-area-inset-bottom) + 82px);width:92px;height:92px;z-index:14;display:grid;place-items:center;border:1px solid #d9c99f8c;border-radius:50%;background:#20292466;touch-action:none;user-select:none}
+#spectatorMove i{width:34px;height:34px;border:1px solid #e4d6a8c0;border-radius:50%;background:#eddfaf5c;pointer-events:none}
+body.spectating #hp,body.spectating #armor,body.spectating #gear,body.spectating #ammo,body.spectating #economy,body.spectating #chips,body.spectating #top,body.spectating #roundclock,body.spectating #scopeOverlay,body.spectating #cross{display:none!important}
+body.spectating #radar{opacity:.7}
+body.spectating #radioBtn,body.spectating #settingsGameBtn,body.spectating #modeStatus{display:none!important}
+body.spectating #spectatorTop,body.spectating #spectatorHud{display:flex}
+@media (orientation:landscape) and (max-height:500px){
+ #spectatorTop{top:max(3px,env(safe-area-inset-top));padding:3px 7px;font-size:9px}
+ #spectatorHud{width:min(720px,calc(100vw - 20px));max-width:calc(100vw - 20px);padding:4px 8px;bottom:max(4px,env(safe-area-inset-bottom));min-height:42px;gap:4px}
+ #spectatorHud .spec-player{min-width:95px;max-width:24vw}
+ #spectatorHud .spec-player strong{font-size:8px}
+ #spectatorHud .spec-player span{font-size:10px}
+ #spectatorHud .spec-player small{font-size:8px}
+ #spectatorHud select{min-width:105px;max-width:150px;height:31px;padding:3px;font-size:10px}
+ #spectatorHud button{height:31px;min-width:29px;padding:4px;font-size:11px}
+ #spectatorHud #specAuto{min-width:56px;font-size:9px}
+ #specHelp{display:none!important}
+ #spectatorMove{bottom:calc(env(safe-area-inset-bottom) + 54px);width:78px;height:78px}
+}
+@media (max-width:520px){#spectatorHud .spec-player{max-width:27vw}#specHelp{display:none!important}}
+
+body.playing.spectating #ads,body.spectating #flashEffect{display:none!important}
+@media (max-width:380px){
+ #spectatorHud .spec-player{max-width:100%}
+}
+
+/* Short landscape: keep read-only HUD clear of the default right-hand controls.
+   Inline positions from the custom control editor remain authoritative. */
+@media (orientation:landscape) and (max-height:500px){
+ body.playing:not(.pc):not(.spectating) #weaponBtn{left:calc(var(--safe-l) + 90px)}
+ body.playing:not(.pc):not(.spectating) #dropBtn{left:calc(var(--safe-l) + 134px)}
+ body.playing:not(.pc):not(.spectating) #settingsGameBtn{left:calc(var(--safe-l) + 178px)}
+ body.playing:not(.pc):not(.spectating) #flashBtn{left:calc(var(--safe-l) + 222px)}
+ body.playing:not(.pc):not(.spectating) #ammo{left:50%;right:auto;transform:translateX(-50%);bottom:var(--safe-b)}
+ body.playing:not(.pc):not(.spectating) #economy{left:50%;right:auto;transform:translateX(-50%);bottom:calc(var(--safe-b) + 28px)}
+ body.playing:not(.pc):not(.spectating) #gear{left:50%;right:auto;transform:translateX(-50%);bottom:calc(var(--safe-b) + 51px)}
+ body.spectating #radioStatus{top:calc(env(safe-area-inset-top) + 128px);max-width:48vw}
+}

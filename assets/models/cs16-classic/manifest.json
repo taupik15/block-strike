@@ -1,0 +1,50 @@
+{
+  "ct/gign": {
+    "size": 4232788,
+    "animations": 100,
+    "bones": 53,
+    "primitives": 1
+  },
+  "ct/gsg9": {
+    "size": 4060404,
+    "animations": 100,
+    "bones": 53,
+    "primitives": 2
+  },
+  "ct/sas": {
+    "size": 4288336,
+    "animations": 100,
+    "bones": 55,
+    "primitives": 2
+  },
+  "ct/urban": {
+    "size": 4095900,
+    "animations": 100,
+    "bones": 53,
+    "primitives": 1
+  },
+  "t/arctic": {
+    "size": 4341052,
+    "animations": 100,
+    "bones": 55,
+    "primitives": 1
+  },
+  "t/guerilla": {
+    "size": 4204188,
+    "animations": 100,
+    "bones": 53,
+    "primitives": 1
+  },
+  "t/leet": {
+    "size": 4349676,
+    "animations": 100,
+    "bones": 55,
+    "primitives": 2
+  },
+  "t/terror": {
+    "size": 4196280,
+    "animations": 100,
+    "bones": 53,
+    "primitives": 1
+  }
+}

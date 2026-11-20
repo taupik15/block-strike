@@ -1,0 +1,84 @@
+{
+  "he-flame": {
+    "sprite_type": 2,
+    "alpha_mode": 1,
+    "frames": 3,
+    "original_size": [
+      64,
+      64
+    ],
+    "source_zip": "cs16_files-02.zip",
+    "source_member": "cs16_files/sprites/muzzleflash2.spr",
+    "source_sha256": "8d5de8592cd691bd4d228f2922208acfe33d20870406a48863dbb1a3c1bc9693",
+    "selected_source_frames": [
+      0,
+      1,
+      2
+    ]
+  },
+  "he-dust": {
+    "sprite_type": 2,
+    "alpha_mode": 3,
+    "frames": 30,
+    "original_size": [
+      72,
+      72
+    ],
+    "source_zip": "cs16_files-02.zip",
+    "source_member": "cs16_files/sprites/fast_wallpuff1.spr",
+    "source_sha256": "e348129eb9cf8d661f91e99aa4defebbf41da7e5efa43fc2b23cbacb88d38c5e",
+    "selected_source_frames": [
+      4,
+      7,
+      10,
+      12,
+      14,
+      16,
+      18,
+      20,
+      23,
+      27
+    ]
+  },
+  "flash-core": {
+    "sprite_type": 2,
+    "alpha_mode": 3,
+    "frames": 1,
+    "original_size": [
+      64,
+      64
+    ],
+    "source_zip": "cs16_files-02.zip",
+    "source_member": "cs16_files/sprites/3dmflaora.spr",
+    "source_sha256": "263c7caf82ffb178815857096fe643174f51689464778f829d361f4ae49a3ca5",
+    "selected_source_frames": [
+      0
+    ]
+  },
+  "smoke": {
+    "sprite_type": 2,
+    "alpha_mode": 2,
+    "frames": 30,
+    "original_size": [
+      72,
+      72
+    ],
+    "source_zip": "cs16_files-02.zip",
+    "source_member": "cs16_files/sprites/black_smoke3.spr",
+    "source_sha256": "8539f22177ae5ec673316d76939211dc9dc1c1c2dacdb6a52e100e1e7d5c15ea",
+    "selected_source_frames": [
+      6,
+      9,
+      12,
+      14,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+    ]
+  }
+}
