@@ -1,4 +1,4 @@
-/* Walkable graph for imported BSPs. A cell can hold separate floors. */
+/* Walkable graph for imported BSPs. A cell can hold separate floors. Release pre26AR.8. */
 const LocalBSPNav=(()=>{
  const stride=48,limit=7000;
  const axes=[[stride,0],[-stride,0],[0,stride],[0,-stride],[stride,stride],[-stride,stride],[stride,-stride],[-stride,-stride]];
@@ -257,6 +257,75 @@ const LocalBSPNav=(()=>{
    }
   }
   return fail();
+ }
+ // Opportunistic, physically verified two-jump boost via a stationary crouched ally.
+ // Plans are transient: never add conditional edges to the shared GRAPH or bomb ETA.
+ function boostCommand(graph,bot,goal,stationId,now,dt,speed,actors,allies,eligible){
+  const p=bot.g.position,col=graph?.col,k=col?.T.k;
+  let plan=bot.boostPlan;
+  const cancel=()=>{bot.boostPlan=null;bot.boostRetry=now+2;return null;};
+  const helperOK=a=>a&&a!==bot&&a.team===bot.team&&!a.dead&&!a.blinded&&a.onGround&&a.crouching&&!a.visibleEnemy&&!a.remoteDoorRoute&&!a.trafficYield&&Math.hypot(...(a.vel||[0,0]))<=5*k;
+  const allowed=eligible&&col&&Number.isInteger(col.crouchHead)&&!bot.crouching&&bot.medium!=='water'&&bot.medium!=='ladder'&&dt>=.02&&dt<=.12&&speed>=80*k;
+  if(!allowed)return plan?cancel():null;
+  if(plan){
+   if(plan.graph!==graph||plan.revision!==(graph.geometryRevision||0)||plan.stationId!==stationId||plan.goal.distanceToSquared(goal)>(8*k)**2||!helperOK(plan.helper)||!allies.includes(plan.helper)||plan.helper.g.position.distanceToSquared(plan.anchor)>(2*k)**2||now>plan.deadline||Math.abs(dt-plan.dt)>.012)return cancel();
+   const cmd=plan.commands[plan.index];
+   if(!cmd){bot.localRoute=null;return cancel();}
+   if(p.distanceToSquared(V(...cmd.pos))>(6*k)**2||!!bot.onGround!==cmd.on||!!bot.jumpHeld!==cmd.held||Math.hypot((bot.vel?.[0]||0)-cmd.vel[0],(bot.vel?.[1]||0)-cmd.vel[1])>35*k||Math.hypot(...cmd.wish)>speed+1e-5)return cancel();
+   // Check the immediate action against live collision, including new actors.
+   const st={pos:p.toArray(),on:!!bot.onGround,vy:bot.vy||0,vel:[...(bot.vel||[0,0])],jumpHeld:!!bot.jumpHeld};
+   BSP.moveActor(col,col.T,st,cmd.wish,dt,cmd.jump,false,actors);
+   if(st.jumped!==cmd.jump||st.medium!=='air'||st.on!==cmd.nextOn||Math.hypot(...st.pos.map((v,i)=>v-cmd.end[i]))>6*k)return cancel();
+   plan.index++;return {x:cmd.wish[0]/speed,z:cmd.wish[1]/speed,jump:cmd.jump};
+  }
+  const nav=bot.localRoute;
+  if(now<(bot.boostRetry||0)||!bot.onGround||bot.jumpHeld||nav?.graph!==graph||nav.direct||nav.points?.length||nav.flight||bot.remoteDoorRoute)return null;
+  bot.boostRetry=now+2;
+  if(goal.y-p.y<48*k||goal.y-p.y>86*k||Math.hypot(goal.x-p.x,goal.z-p.z)>150*k||Math.hypot(...(bot.vel||[0,0]))>12*k)return null;
+  const helper=allies.filter(helperOK).find(a=>{const q=a.g.position,d=Math.hypot(q.x-p.x,q.z-p.z);return d>=32*k&&d<=42*k&&Math.abs(q.y+18*k-p.y)<3*k&&Math.hypot(q.x-goal.x,q.z-goal.z)<90*k;});
+  if(!helper)return null;
+  const target=graph.nodes.find(n=>teamAllows(n,bot.team)&&!n.crouch&&!n.ladder&&!n.water&&(stationId==null||stationId===n.id)&&V(...n.pos).distanceToSquared(goal)<=(8*k)**2);
+  if(!target)return null;
+  const end=V(...target.pos),floor=floorAt(col,target.h,4);
+  if(!floor||Math.abs(floor[2]-target.h[2])>4||BSP.traceAll(col,target.h,target.h).startsolid)return null;
+  const anchor=helper.g.position.clone();
+  if(!actors.some(a=>a.crouch&&V(...a.pos).distanceToSquared(anchor)<k*k))return null;
+  const initial={pos:p.toArray(),on:true,vy:bot.vy||0,vel:[...(bot.vel||[0,0])],jumpHeld:false};
+  const copy=s=>({...s,pos:s.pos.slice(),vel:s.vel.slice()});
+  const direction=(st,q,rate)=>{const x=q.x-st.pos[0],z=q.z-st.pos[2],d=Math.hypot(x,z);return d>k?[x/d*rate,z/d*rate]:[0,0];};
+  const advance=(st,list,wish,jump)=>{const cmd={pos:st.pos.slice(),vel:st.vel.slice(),on:st.on,held:!!st.jumpHeld,wish,jump};BSP.moveActor(col,col.T,st,wish,dt,jump,false,actors);cmd.end=st.pos.slice();cmd.nextOn=st.on;list.push(cmd);return st.medium==='air'&&(!jump||st.jumped);};
+  const onHelper=st=>st.on&&Math.abs(st.pos[1]-anchor.y-54*k)<2*k&&Math.abs(st.pos[0]-anchor.x)<32*k&&Math.abs(st.pos[2]-anchor.z)<32*k;
+  // Bounded simulation of takeoff, short run-up on the ally, and second landing.
+  for(const delay of [0,.12,.22]){
+   const first=copy(initial),prefix=[];
+   let landed=false;
+   for(let i=0;i<Math.ceil(.9/dt);i++){
+    if(!advance(first,prefix,i*dt<delay?[0,0]:direction(first,anchor,Math.min(speed,80*k)),i===0))break;
+    if(first.on){landed=onHelper(first);break;}
+   }
+   if(!landed)continue;
+   const run=copy(first),runup=prefix.slice();
+   for(let j=0;j<=Math.ceil(.32/dt);j++){
+    if(!onHelper(run))break;
+    if(!run.jumpHeld){
+     for(const rate of [Math.min(speed,100*k),Math.min(speed,180*k),speed]){
+      const second=copy(run),commands=runup.slice();
+      for(let i=0;i<Math.ceil(1/dt);i++){
+       if(!advance(second,commands,direction(second,end,rate),i===0))break;
+       if(second.on){
+        if(Math.abs(second.pos[1]-end.y)<=4*k&&Math.hypot(second.pos[0]-end.x,second.pos[2]-end.z)<=16*k&&!onHelper(second)&&!BSP.traceAll(col,BSP.toHammer(col.T,second.pos),target.h).hit){
+         bot.boostPlan={graph,revision:graph.geometryRevision||0,stationId,goal:goal.clone(),helper,anchor,dt,index:0,commands,deadline:now+3};
+         return boostCommand(graph,bot,goal,stationId,now,dt,speed,actors,allies,eligible);
+        }
+        break;
+       }
+      }
+     }
+    }
+    if(!advance(run,runup,direction(run,end,Math.min(speed,140*k)),false))break;
+   }
+  }
+  return null;
  }
  function routeOrigin(graph,bot){
   const col=graph.col,raw=BSP.toHammer(col.T,bot.g.position.toArray());
@@ -581,5 +650,5 @@ const LocalBSPNav=(()=>{
   if(!ladderPoint(col,h)&&!waterPoint(col,h)){const small=hull!==col,floor=floorAt(hull,small?lower(h):h,40);if(floor)h=small?raise(floor):floor;}
   return near(graph,pos,hull,h,graph.teamAllowed?.[bot.team]);
  }
- return {build,fromPwf,fromNav,fromGraph,validate,refreshGeometry,steer,floorAt,walkable,distanceField,defenseStation,attach,near,jumpLink,predictJump,jumpCommand,ladderLink,waterLink,waterExitLink,teamAllows};
+ return {build,fromPwf,fromNav,fromGraph,validate,refreshGeometry,steer,floorAt,walkable,distanceField,defenseStation,attach,near,jumpLink,predictJump,jumpCommand,boostCommand,ladderLink,waterLink,waterExitLink,teamAllows};
 })();

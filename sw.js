@@ -12,9 +12,16 @@ function localKey(url) {
  return allowed.has(u.href) ? u.href : null;
 }
 async function fetchResource(key) {
- const response = await fetch(key,{cache:'reload',credentials:'same-origin'});
+ // Request the exact release of the navigation/core pair rather than a stale CDN URL.
+ const critical = ['js/bsp-local-nav.js','js/game-core.js','js/runtime-health.js'].some(path=>key===absolute(path));
+ const requestURL = critical ? key+'?v='+encodeURIComponent(OFFLINE_BUILD) : key;
+ const response = await fetch(requestURL,{cache:'reload',credentials:'same-origin'});
  if (!response.ok || response.status !== 200 || response.redirected ||
      (key !== absolute('index.html') && /text\/html/i.test(response.headers.get('content-type')||''))) throw Error('Resource unavailable: '+key);
+ if(key===absolute('js/bsp-local-nav.js')&&typeof OFFLINE_NAV_SHA256!=='undefined'&&self.crypto?.subtle){
+  const digest=new Uint8Array(await self.crypto.subtle.digest('SHA-256',await response.clone().arrayBuffer()));
+  if(Array.from(digest,b=>b.toString(16).padStart(2,'0')).join('')!==OFFLINE_NAV_SHA256)throw Error('Navigation module does not match release: '+OFFLINE_BUILD);
+ }
  return response;
 }
 async function store(cache,key){

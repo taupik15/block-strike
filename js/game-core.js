@@ -558,6 +558,7 @@ function staggerBotTicks(){
  const interval=botTickInterval(Phase10.config.players),count=Math.max(1,bots.length);
  bots.forEach((b,i)=>{b.aiAccum=-interval*i/count;});
 }
+let missingBoostReported=false;
 function takeBotStep(b,dt,players){
  const interval=botTickInterval(players);b.aiAccum=(b.aiAccum||0)+dt;
  if(b.aiAccum+1e-9<interval)return 0;
@@ -699,7 +700,17 @@ function botUpdate(b,dt){
  }
  // A cooperative boost is a temporary physical manoeuvre, not a GRAPH edge.
  const boostGraph=activeMapData?.local?.graph;
- const boost=b.boostPlan||boostGraph&&allowRemote&&goal.y-p.y>=48*bspCol.T.k&&goal.y-p.y<=86*bspCol.T.k&&performance.now()/1000>=(b.boostRetry||0)?LocalBSPNav.boostCommand(boostGraph,b,goal,order.stationId??null,performance.now()/1000,step,sp,movementActors(b,p),bots,!!boostGraph&&allowRemote&&!combatHold&&!b.remoteDoorRoute&&!flight&&!b.routeJump&&!b.routeLadder&&!(window.NAV_BOTS&&window.NavGraph?.graph())):null;
+ const boostRequested=b.boostPlan||boostGraph&&allowRemote&&goal.y-p.y>=48*bspCol.T.k&&goal.y-p.y<=86*bspCol.T.k&&performance.now()/1000>=(b.boostRetry||0);
+ let boost=null;
+ if(boostRequested){
+  // Older cached navigation modules may lack this optional manoeuvre. Never halt ordinary movement.
+  if(typeof LocalBSPNav!=='undefined'&&typeof LocalBSPNav?.boostCommand==='function'){
+   boost=LocalBSPNav.boostCommand(boostGraph,b,goal,order.stationId??null,performance.now()/1000,step,sp,movementActors(b,p),bots,!!boostGraph&&allowRemote&&!combatHold&&!b.remoteDoorRoute&&!flight&&!b.routeJump&&!b.routeLadder&&!(window.NAV_BOTS&&window.NavGraph?.graph()));
+  }else{
+   b.boostPlan=null;b.boostRetry=performance.now()/1000+2;
+   if(!missingBoostReported){missingBoostReported=true;RuntimeHealth.fail('compatibility',Error('Navigation module missing boostCommand; normal movement continues. Update game files and reload.'));}
+  }
+ }
  if(boost){mx=boost.x;mz=boost.z;calibratedJump=boost.jump;b.routeJumpTarget=null;b.routeJump=false;}
  const commandedMove=Math.hypot(mx,mz)>.05;b.trafficBlocked=false;
  b.trafficPriority=!!BombMode.isCarrier?.(b);
