@@ -633,7 +633,7 @@ function botUpdate(b,dt){
  // A seen opponent above/below the bot is not a straight-line move target.
  // Keep shooting at the visible enemy, but use physically validated GRAPH
  // stairs/ramps rather than pressing into the wall below the ledge.
- const elevatedPursuit=!!activeMapData?.local&&hasEnemy&&!follow&&!!bspCol&&(LocalBSPNav.elevationPursuit(bspCol,p,tg.pos)||LocalBSPNav.windowDetour?.(bspCol,b,tg.pos));
+ const elevatedPursuit=!!activeMapData?.local&&hasEnemy&&!follow&&!!bspCol&&(LocalBSPNav.elevationPursuit(bspCol,p,tg.pos)||LocalBSPNav.windowDetour?.(bspCol,b,tg.pos)||performance.now()/1000<(b.windowPassageRetry||0));
  // Keep the objective priority; replenish in a quiet moment, not while planting or escaping.
  updateBotSilencer(b,order,hasEnemy);
  if(order.mode==='reload-cover'&&b.cd<=0&&!b.reloadLeft)startBotReload(b);
@@ -657,7 +657,7 @@ function botUpdate(b,dt){
  if(flight)b.crouching=!!b.localRoute.flightCrouch;
  else if(!order?.hold){
   if(b.routeCrouch||order.stationCrouch&&goalDistanceSq(order.pos)<=order.radius**2)b.crouching=true;
-  else if(pathfinding&&!hasEnemy){b.crouchTarget=false;b.crouching=false}
+  else if(pathfinding&&(!hasEnemy||elevatedPursuit)){b.crouchTarget=false;b.crouching=false}
   else Phase11.decideBotCrouch(b,hasEnemy,order,step);
  }
  if(window.bspCol&&Number.isInteger(bspCol.crouchHead)&&wasCrouching!==!!b.crouching){
@@ -722,8 +722,14 @@ function botUpdate(b,dt){
  let windowCross=null;
  if(window.bspCol&&!boost&&!flight&&!b.routeJump&&!b.routeLadder&&!order?.urgent&&!order?.busy&&!order?.hold&&!combatHold){
   windowCross=LocalBSPNav.windowPassage?.(bspCol,b,goal,performance.now()/1000,step,sp)||null;
+  if(windowCross&&b.crouching){
+   // The real pane probe uses an upright 32-unit hull. Combat crouch must not
+   // silently turn that verified standing jump into a different manoeuvre.
+   if(BSP.changeStance(bspCol,p,true,false,!!b.onGround,movementActors(b,p))){b.crouching=false;b.crouchTarget=false;sp*=3;}
+   else{b.windowPassage=null;b.windowPassageRetry=performance.now()/1000+.75;windowCross=null;}
+  }
   if(windowCross){mx=windowCross.x;mz=windowCross.z;calibratedJump=windowCross.jump;b.routeJumpTarget=null;}
- }else b.windowPassage=null;
+ }else{b.windowPassage=null;b.windowPassageStall=0;}
  const commandedMove=Math.hypot(mx,mz)>.05;b.trafficBlocked=false;
  b.trafficPriority=!!BombMode.isCarrier?.(b);
  const canYield=pathfinding&&!b.remoteDoorRoute&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&(!order.force||b.trafficPriority&&order.mode==='plant')&&!b.routeJump&&!b.localRoute?.flight&&!b.routeLadder&&!b.crouching&&b.onGround&&b.medium!=='water'&&b.medium!=='ladder'&&!(window.NAV_BOTS&&window.NavGraph?.graph());
@@ -767,6 +773,10 @@ function botUpdate(b,dt){
  else if(window.bspCol){const verticalDrive=order?.hold||order?.busy||combatHold?0:Math.max(-1,Math.min(1,(destination.y-p.y)/(25*bspCol.T.k)));const st={pos:p.toArray(),vy:b.vy||0,on:!!b.onGround,vel:b.vel,jumpHeld:b.jumpHeld,ladderDetach:b.ladderDetach,climb:verticalDrive,swimVertical:verticalDrive,assistBrokenGlass:!combatHold&&!order.hold};BSP.moveActor(bspCol,bspCol.T,st,[mx*sp,mz*sp],step,calibratedJump&&b.onGround&&(commandedMove||!!boost)&&!combatHold&&!order.hold&&!order.busy,!!b.crouching,movementActors(b,p));actorContact=st.actorContact;if(st.jumped&&b.routeJumpTarget&&b.localRoute){b.localRoute.flight=b.routeJumpTarget;b.localRoute.flightCrouch=!!b.crouching;}p.fromArray(st.pos);b.vy=st.vy;b.onGround=st.on;b.medium=st.medium;b.waterLevel=st.waterLevel;b.vel=st.vel;b.jumpHeld=st.jumpHeld;b.ladderDetach=st.ladderDetach;if(st.landed>580){damageBot(b,BSP.fallDamage(st.landed),'generic',null,false,null,'',0,'fall');if(b.dead)return;}}
  else{const v=BSP.accelerate(b.vel,[mx*sp,mz*sp],step,true);actorContact=LayoutNav.moveActor(p,v[0]*step,v[1]*step,!!b.crouching,movementActors(b,p));if(step>0)b.vel=[(p.x-ox)/step,(p.z-oz)/step];}
  const moved=Math.hypot(p.x-ox,p.z-oz);b.lastMoveSpeed=moved/Math.max(step,.001);
+ // Unlike the old window wait flag, record ACTUAL physical displacement.
+ // A blocked 32-player choke must not restart the same window animation for
+ // the rest of the round; back off and let the GRAPH choose a detour.
+ LocalBSPNav.windowProgress?.(b,!!windowCross,moved,sp,step,performance.now()/1000);
  // Vertical ladder/water movement is real progress; do not blacklist a climbing edge.
  const progress=boost||b.medium==='ladder'||b.medium==='water'||b.localRoute?.flight?Math.hypot(moved,p.y-oy):moved;
  // Traffic blocks are temporary, not evidence that a GRAPH edge is invalid.

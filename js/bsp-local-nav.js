@@ -331,7 +331,16 @@ const LocalBSPNav=(()=>{
  // never by walking directly into a wall beneath the enemy. The threshold
  // is in Hammer units; close targets on the same floor retain normal combat.
  function elevationPursuit(col,from,to){
-  return !!col?.local&&!!from&&!!to&&Math.abs(to.y-from.y)>48*col.T.k;
+  if(!col?.local||!from||!to)return false;
+  const k=col.T.k,rise=Math.abs(to.y-from.y);
+  if(rise>48*k)return true;
+  // Chateau's 40-Hammer-unit window ledges also separate two floors.
+  // A visible opponent can be shot through the pane, but the standing hull
+  // cannot walk there. Use the verified GRAPH route instead of walking at it.
+  if(rise<=20*k)return false;
+  const a=BSP.toHammer(col.T,from.toArray()),b=BSP.toHammer(col.T,to.toArray());
+  const distance=Math.hypot(a[0]-b[0],a[1]-b[1]);
+  return distance>24&&distance<=360&&!walkable(col,a,b,360);
  }
  // Validate the ACTUAL manoeuvre against the imported BSP before attempting
  // a broken pane crossing. Some Chateau windows are visible and shootable but
@@ -394,6 +403,9 @@ const LocalBSPNav=(()=>{
   bot.windowPassageStep=dt;bot.windowPassageSpeed=speed;
   const p=bot?.g?.position;
   if(!col?.local||!p||!goal||!col.breakables)return null;
+  // Do not immediately restart a manoeuvre that just stalled against a solid
+  // hull or another player. The ordinary GRAPH route gets a recovery window.
+  if(now<(bot.windowPassageRetry||0)){bot.windowPassage=null;return null;}
   const pos=BSP.toHammer(col.T,p.toArray()),end=BSP.toHammer(col.T,goal.toArray());
   let plan=bot.windowPassage;
   const cancel=()=>{bot.windowPassage=null;return null};
@@ -448,6 +460,17 @@ const LocalBSPNav=(()=>{
   // Jump persists as actual ballistic motion. Never inject position or VY.
   if(plan.launched&&bot.onGround&&distance>8){plan.launched=false;plan.phase='back';}
   return c(plane-side*86,mid);
+ }
+ // Report measured bot movement AFTER actual BSP + actor collision resolution.
+ // A collision-bound window plan is never treated as permanent progress.
+ function windowProgress(bot,active,moved,speed,dt,now){
+  if(!active||bot.onGround===false&&bot.windowPassage?.launched){bot.windowPassageStall=0;return false;}
+  const threshold=Math.min(.025,Math.max(0,speed)*Math.max(0,dt)*.18);
+  bot.windowPassageStall=moved<threshold?(bot.windowPassageStall||0)+dt:0;
+  if(bot.windowPassageStall<=.65)return false;
+  bot.windowPassage=null;bot.windowPassageStall=0;bot.windowPassageRetry=now+2.5;
+  if(bot.localRoute){bot.localRoute.direct=false;bot.localRoute.directCheck=0;bot.localRoute.until=0;bot.localRoute.avoidDirect=bot.windowPassageRetry;}
+  return true;
  }
  function routeOrigin(graph,bot){
   const col=graph.col,raw=BSP.toHammer(col.T,bot.g.position.toArray());
@@ -772,5 +795,5 @@ const LocalBSPNav=(()=>{
   if(!ladderPoint(col,h)&&!waterPoint(col,h)){const small=hull!==col,floor=floorAt(hull,small?lower(h):h,40);if(floor)h=small?raise(floor):floor;}
   return near(graph,pos,hull,h,graph.teamAllowed?.[bot.team]);
  }
- return {build,fromPwf,fromNav,fromGraph,validate,refreshGeometry,steer,floorAt,walkable,distanceField,defenseStation,attach,near,jumpLink,predictJump,jumpCommand,boostCommand,elevationPursuit,windowPassage,windowDetour,ladderLink,waterLink,waterExitLink,teamAllows};
+ return {build,fromPwf,fromNav,fromGraph,validate,refreshGeometry,steer,floorAt,walkable,distanceField,defenseStation,attach,near,jumpLink,predictJump,jumpCommand,boostCommand,elevationPursuit,windowPassage,windowDetour,windowProgress,ladderLink,waterLink,waterExitLink,teamAllows};
 })();
