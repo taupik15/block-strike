@@ -333,6 +333,122 @@ const LocalBSPNav=(()=>{
  function elevationPursuit(col,from,to){
   return !!col?.local&&!!from&&!!to&&Math.abs(to.y-from.y)>48*col.T.k;
  }
+ // Validate the ACTUAL manoeuvre against the imported BSP before attempting
+ // a broken pane crossing. Some Chateau windows are visible and shootable but
+ // their interior-to-exterior approach is not traversable with a standing
+ // player hull. Do not make those bots jump indefinitely into solid masonry.
+ const windowCrossTests=new WeakMap();
+ function crossableWindow(col,b,axis,side,footZ){
+  let memo=windowCrossTests.get(b);
+  if(!memo){memo=new Map();windowCrossTests.set(b,memo);}
+  const key=axis+':'+side+':'+Math.round(footZ/8);
+  if(memo.has(key))return memo.get(key);
+  const o=b.origin||[0,0,0],cross=1-axis,plane=o[axis]+(b.mins[axis]+b.maxs[axis])*.5,mid=o[cross]+(b.mins[cross]+b.maxs[cross])*.5;
+  const start=[0,0,footZ];start[axis]=plane+side*78;start[cross]=mid;
+  const airborne=footZ<o[2]+b.mins[2]+1;
+  const wishHammer=[0,0,0];wishHammer[axis]=-side*250;
+  const wishGame=BSP.toGame(col.T,wishHammer);
+  const st={pos:BSP.toGame(col.T,start),on:true,vy:0,vel:[0,0],jumpHeld:false,assistBrokenGlass:true};
+  let launched=false,passed=false,ok=false;
+  for(let i=0;i<175;i++){
+   const h=BSP.toHammer(col.T,st.pos),d=(h[axis]-plane)*side;
+   const v=BSP.toHammer(col.T,[(st.vel||[0,0])[0]||0,0,(st.vel||[0,0])[1]||0]);
+   const jump=airborne&&!launched&&d<=54&&d>=30&&(-side*v[axis])>90&&st.on;
+   BSP.movePlayer(col,col.T,st,[wishGame[0],wishGame[2]],1/60,jump,false);
+   launched=launched||!!st.jumped;
+   const next=BSP.toHammer(col.T,st.pos);
+   if((next[axis]-plane)*side<-54)passed=true;
+   if(passed&&st.on){ok=true;break;}
+   if(next[2]<footZ-125)break;
+  }
+  memo.set(key,ok);
+  return ok;
+ }
+ function windowPaneBetween(col,bot,goal){
+  if(!col?.local||!bot?.g?.position||!goal||!col.breakables)return null;
+  const pos=BSP.toHammer(col.T,bot.g.position.toArray()),end=BSP.toHammer(col.T,goal.toArray());
+  let result=null,nearest=Infinity;
+  for(const b of col.breakables){
+   if(!b?.destroyed||!b.glassPassage||b.yaw)continue;
+   const o=b.origin||[0,0,0],axis=(b.maxs[0]-b.mins[0])<=6?0:(b.maxs[1]-b.mins[1])<=6?1:-1;
+   if(axis<0)continue;
+   const cross=1-axis,plane=o[axis]+(b.mins[axis]+b.maxs[axis])*.5,mid=o[cross]+(b.mins[cross]+b.maxs[cross])*.5;
+   const side=Math.sign(pos[axis]-plane),distance=Math.abs(pos[axis]-plane),line=end[axis]-pos[axis];
+   if(!side||(end[axis]-plane)*side>=-24||distance<8||distance>124||Math.abs(pos[cross]-mid)>36||pos[2]<o[2]+b.mins[2]-48||pos[2]>o[2]+b.maxs[2]+24||Math.abs(line)<1e-6)continue;
+   const crossAt=pos[cross]+(end[cross]-pos[cross])*(plane-pos[axis])/line;
+   if(Math.abs(crossAt-mid)>26)continue;
+   if(distance<nearest){nearest=distance;result={pane:b,axis,cross,plane,mid,side,pos};}
+  }
+  return result;
+ }
+ function windowDetour(col,bot,goal){
+  const pane=bot?.onGround&&windowPaneBetween(col,bot,goal);
+  return !!pane&&!crossableWindow(col,pane.pane,pane.axis,pane.side,pane.pos[2]);
+ }
+ // Broken GoldSrc window crossings require an intentional run-up when the
+ // outside sill is above the inside floor. The original Chateau GRAPH contains
+ // links across such panes, but a normal walk link cannot satisfy their hull
+ // geometry. This is a transient, collision-respecting action, not a new edge
+ // or a teleport. Only activate near a shattered, verified narrow pane.
+ function windowPassage(col,bot,goal,now,dt=1/60,speed=5){
+  bot.windowPassageStep=dt;bot.windowPassageSpeed=speed;
+  const p=bot?.g?.position;
+  if(!col?.local||!p||!goal||!col.breakables)return null;
+  const pos=BSP.toHammer(col.T,p.toArray()),end=BSP.toHammer(col.T,goal.toArray());
+  let plan=bot.windowPassage;
+  const cancel=()=>{bot.windowPassage=null;return null};
+  const eligible=b=>b?.destroyed&&b.glassPassage&&!b.yaw;
+  if(plan){
+   if(!eligible(plan.pane)||now>plan.expires)return cancel();
+  }else{
+   const m=bot.onGround&&windowPaneBetween(col,bot,goal);
+   if(!m||!crossableWindow(col,m.pane,m.axis,m.side,m.pos[2]))return null;
+   const match={...m,phase:'back',expires:now+4.0,launched:false};
+   plan=bot.windowPassage=match;
+  }
+  const {pane,axis,cross,plane,mid,side}=plan,k=col.T.k;
+  const distance=(pos[axis]-plane)*side,other=(end[axis]-plane)*side;
+  if(other>=-12&&distance>14)return cancel();
+  // Once across the full body width, resume the ordinary combat/GRAPH goal.
+  if(distance< -44)return cancel();
+  const lower=pos[2]<(pane.origin?.[2]||0)+pane.mins[2]+1;
+  const c=(axisValue,crossValue)=>{const h=pos.slice();h[axis]=axisValue;h[cross]=crossValue;const g=BSP.toGame(col.T,h);const dx=g[0]-p.x,dz=g[2]-p.z,len=Math.hypot(dx,dz);return {x:len>.001?dx/len:0,z:len>.001?dz/len:0,jump:false,active:true};};
+  // Any remaining sideways mismatch must be corrected before entering a
+  // 59-unit window with a 32-unit standing hull.
+  if(Math.abs(pos[cross]-mid)>13&&distance>16){
+   const align=c(plane+side*Math.max(48,distance),mid);
+   // Throttled lateral steering avoids coarse AI-tick overshoot at a 59-unit
+   // window; a full-speed left/right toggle can oscillate forever at 32 bots.
+   const travel=Math.max(1,(bot.windowPassageStep||1/60)*(bot.windowPassageSpeed||5)/k);
+   const scale=Math.min(1,Math.abs(pos[cross]-mid)/travel);
+   return {...align,x:align.x*scale,z:align.z*scale};
+  }
+  if(lower&&!plan.launched&&distance>0){
+   // Starting with one's nose against a sill cannot produce a GoldSrc jump.
+   // Back away, acquire real ground speed, launch 28–70 Hammer units out.
+   if(plan.phase==='back'){
+    if(distance<72)return c(plane+side*84,mid);
+    plan.phase='run';
+   }
+   if(distance>70)return c(plane-side*82,mid);
+   // Compute actual horizontal velocity in Hammer without depending on the
+   // camera basis; a failed low-speed launch retreats for another run-up.
+   const rawVelocity=BSP.toHammer(col.T,[(bot.vel||[0,0])[0]||0,0,(bot.vel||[0,0])[1]||0]);
+   const towardSpeed=-side*rawVelocity[axis];
+   if(distance>=28&&bot.onGround&&!bot.jumpHeld&&towardSpeed>80){plan.launched=true;return {...c(plane-side*82,mid),jump:true};}
+   // A bot that arrived at the sill with no runway must back away and
+   // accelerate again. Do not keep pushing the standing hull into the jamb.
+   if(bot.onGround&&distance<56&&towardSpeed<80){
+    plan.slow=(plan.slow||0)+(bot.windowPassageStep||1/60);
+    if(plan.slow>.22){plan.phase='back';plan.slow=0;return c(plane+side*84,mid);}
+   }else plan.slow=0;
+   if(distance<28&&bot.onGround){plan.phase='back';return c(plane+side*84,mid);}
+   return c(plane-side*64,mid);
+  }
+  // Jump persists as actual ballistic motion. Never inject position or VY.
+  if(plan.launched&&bot.onGround&&distance>8){plan.launched=false;plan.phase='back';}
+  return c(plane-side*86,mid);
+ }
  function routeOrigin(graph,bot){
   const col=graph.col,raw=BSP.toHammer(col.T,bot.g.position.toArray());
   return bot.crouching&&Number.isInteger(col.crouchHead)&&!ladderPoint(col,raw)&&!waterPoint(col,raw)?raise(raw):raw;
@@ -656,5 +772,5 @@ const LocalBSPNav=(()=>{
   if(!ladderPoint(col,h)&&!waterPoint(col,h)){const small=hull!==col,floor=floorAt(hull,small?lower(h):h,40);if(floor)h=small?raise(floor):floor;}
   return near(graph,pos,hull,h,graph.teamAllowed?.[bot.team]);
  }
- return {build,fromPwf,fromNav,fromGraph,validate,refreshGeometry,steer,floorAt,walkable,distanceField,defenseStation,attach,near,jumpLink,predictJump,jumpCommand,boostCommand,elevationPursuit,ladderLink,waterLink,waterExitLink,teamAllows};
+ return {build,fromPwf,fromNav,fromGraph,validate,refreshGeometry,steer,floorAt,walkable,distanceField,defenseStation,attach,near,jumpLink,predictJump,jumpCommand,boostCommand,elevationPursuit,windowPassage,windowDetour,ladderLink,waterLink,waterExitLink,teamAllows};
 })();

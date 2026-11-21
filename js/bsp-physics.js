@@ -183,6 +183,16 @@ function stepSlide(col, pos, d, assistBrokenGlass=false) {
   return best;
 }
 
+// A jumping actor still has its full physical hull. Apply the same bounded,
+// swept centering used on the ground when an already shattered pane's jamb
+// catches it in midair. This never skips world, actor or intact-glass collision.
+function airGlassSlide(col,pos,d,assist){
+ const move=slideAll(col,pos,d),want=Math.hypot(d[0],d[1]),got=Math.hypot(move.pos[0]-pos[0],move.pos[1]-pos[1]);
+ if(!assist||want<.001||got>=want*.6)return move.pos;
+ const aligned=alignBrokenGlass(col,pos,d);
+ return aligned?slideAll(col,aligned,d).pos:move.pos;
+}
+
 // Keluarkan origin dari solid (mis. spawn terlalu dekat lantai)
 function unstick(col, pos) {
   let p = pos;
@@ -259,7 +269,7 @@ function movePlayer(col,T,st,wish,dt,jump,crouching=false) {
    vel=accelerate(vel,[wish[0]*factor,wish[1]*factor],step,on,T.k,medium);
    const wv=velToHammer(T,vel),before=h;
    const delta=[wv[0]*step,wv[1]*step,0];let bankExit=false;
-   h=on?stepSlide(col,h,delta,!!st.assistBrokenGlass):slideAll(col,h,delta).pos;
+   h=on?stepSlide(col,h,delta,!!st.assistBrokenGlass):airGlassSlide(col,h,delta,!!st.assistBrokenGlass);
    // Near the surface, allow a short supported step onto a bank. Never
    // lift through solid geometry or climb an unsupported wall.
    if(water&&!ladder&&level===2&&(jump||st.swimVertical>0)&&Math.hypot(...delta)>1e-5&&Math.hypot(h[0]-before[0],h[1]-before[1])<Math.hypot(...delta)*.98){

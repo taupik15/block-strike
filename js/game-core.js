@@ -633,7 +633,7 @@ function botUpdate(b,dt){
  // A seen opponent above/below the bot is not a straight-line move target.
  // Keep shooting at the visible enemy, but use physically validated GRAPH
  // stairs/ramps rather than pressing into the wall below the ledge.
- const elevatedPursuit=!!activeMapData?.local&&hasEnemy&&!follow&&!!bspCol&&LocalBSPNav.elevationPursuit(bspCol,p,tg.pos);
+ const elevatedPursuit=!!activeMapData?.local&&hasEnemy&&!follow&&!!bspCol&&(LocalBSPNav.elevationPursuit(bspCol,p,tg.pos)||LocalBSPNav.windowDetour?.(bspCol,b,tg.pos));
  // Keep the objective priority; replenish in a quiet moment, not while planting or escaping.
  updateBotSilencer(b,order,hasEnemy);
  if(order.mode==='reload-cover'&&b.cd<=0&&!b.reloadLeft)startBotReload(b);
@@ -716,22 +716,30 @@ function botUpdate(b,dt){
   }
  }
  if(boost){mx=boost.x;mz=boost.z;calibratedJump=boost.jump;b.routeJumpTarget=null;b.routeJump=false;}
+ // An actual broken window may have a safe ballistic crossing even where
+ // static GRAPH validation dropped the unflagged pane edge. Preserve ordinary
+ // combat and routing except while performing this short physical manoeuvre.
+ let windowCross=null;
+ if(window.bspCol&&!boost&&!flight&&!b.routeJump&&!b.routeLadder&&!order?.urgent&&!order?.busy&&!order?.hold&&!combatHold){
+  windowCross=LocalBSPNav.windowPassage?.(bspCol,b,goal,performance.now()/1000,step,sp)||null;
+  if(windowCross){mx=windowCross.x;mz=windowCross.z;calibratedJump=windowCross.jump;b.routeJumpTarget=null;}
+ }else b.windowPassage=null;
  const commandedMove=Math.hypot(mx,mz)>.05;b.trafficBlocked=false;
  b.trafficPriority=!!BombMode.isCarrier?.(b);
  const canYield=pathfinding&&!b.remoteDoorRoute&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&(!order.force||b.trafficPriority&&order.mode==='plant')&&!b.routeJump&&!b.localRoute?.flight&&!b.routeLadder&&!b.crouching&&b.onGround&&b.medium!=='water'&&b.medium!=='ladder'&&!(window.NAV_BOTS&&window.NavGraph?.graph());
- const yielding=BotTactics15D.trafficYield(b,mx,mz,canYield&&!boost&&!obstacleHold,window.bspCol,bots,performance.now()/1000);
+ const yielding=windowCross?null:BotTactics15D.trafficYield(b,mx,mz,canYield&&!boost&&!obstacleHold,window.bspCol,bots,performance.now()/1000);
  if(yielding){mx=yielding.x;mz=yielding.z;}
 
  if(!commandedMove||b.routeJump||b.localRoute?.flight||order.urgent||order.busy)b.trafficPass=null;
- if(!boost&&commandedMove&&!yielding&&!b.routeJump&&!b.localRoute?.flight){
+ if(!boost&&!windowCross&&commandedMove&&!yielding&&!b.routeJump&&!b.localRoute?.flight){
   const space=BotTactics15D.separate(b,bots,pathfinding?.32:1);mx+=space.x;mz+=space.z;
   const steer=activeMapData?.local?BotTactics15D.obstacleSteer(b,mx,mz,step,sp,bspCol,bots,movementActors(b,p)):BotTactics15D.sidestep(b,mx,mz);
   mx=steer.x;mz=steer.z;
  }
  // Waiting for a physical touch door or following a moving ally is not a
  // failed GRAPH edge. Exclude jump, ladder, swim and urgent orders.
- let navigationWait=!!boost||!!b.trafficYield||b.trafficConvoyWait||obstacleHold||!!b.remoteDoorWaiting;
- if(!boost&&!yielding&&commandedMove&&pathfinding&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&!b.routeJump&&!b.localRoute?.flight&&!b.routeLadder&&b.medium!=='water'&&b.onGround&&window.bspCol){
+ let navigationWait=!!boost||!!windowCross||!!b.trafficYield||b.trafficConvoyWait||obstacleHold||!!b.remoteDoorWaiting;
+ if(!boost&&!windowCross&&!yielding&&commandedMove&&pathfinding&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&!b.routeJump&&!b.localRoute?.flight&&!b.routeLadder&&b.medium!=='water'&&b.onGround&&window.bspCol){
   const k=bspCol.T.k,h=BSP.toHammer(bspCol.T,p.toArray()),d=Math.hypot(dx,dz);
   const end=BSP.toHammer(bspCol.T,[p.x+ux*Math.min(d,48*k),p.y,p.z+uz*Math.min(d,48*k)]);
   const hull=b.crouching&&Number.isInteger(bspCol.crouchHead)?{...bspCol,head:bspCol.crouchHead}:bspCol;
