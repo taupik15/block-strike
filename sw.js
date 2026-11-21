@@ -1,3 +1,7 @@
+/* AR.11.10 cumulative release from deployed AR.11.1. Shell/cache rollover only. */
+/* AR.11.9 visual parity: hide released grenade prop, keep hand recoil motion. */
+/* AR.11.8 spectator and bot animation parity: refresh offline shell. */
+/* AR.11.7 shield presentation audio and grenade transition; trigger PWA update. */
 /* AR.11.2 decorative non-solid brushes must not intercept glass shots. */
 /* Versioned, project-scoped offline cache. Never caches imported maps or remote URLs. */
 importScripts('offline-assets.js');
