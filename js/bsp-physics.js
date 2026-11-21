@@ -172,7 +172,13 @@ function stepSlide(col, pos, d, assistBrokenGlass=false) {
   // This is a real swept movement, never a teleport or reduced player hull.
   if(assistBrokenGlass && Math.hypot(best[0]-pos[0],best[1]-pos[1])<want*.6){
     const aligned=alignBrokenGlass(col,pos,d);
-    if(aligned)return aligned;
+    if(aligned){
+      // A glass-passage correction is a swept sideways move. Continue the
+      // requested forward move in the SAME tick, with normal collision, so
+      // touching a jamb does not consume a whole frame of walking speed.
+      const through=slideAll(col,aligned,d).pos;
+      return through;
+    }
   }
   return best;
 }

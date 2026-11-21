@@ -630,17 +630,21 @@ function botUpdate(b,dt){
  const assigned=order===objective&&['defend','advance','guard-bomb','protect-defuser'].includes(order.mode);
  const follow=!!order.force||order===objective&&!hasEnemy||assigned||!!radio&&order===radio;
  const goal=hasEnemy&&!follow?tg.pos:order.pos;
+ // A seen opponent above/below the bot is not a straight-line move target.
+ // Keep shooting at the visible enemy, but use physically validated GRAPH
+ // stairs/ramps rather than pressing into the wall below the ledge.
+ const elevatedPursuit=!!activeMapData?.local&&hasEnemy&&!follow&&!!bspCol&&LocalBSPNav.elevationPursuit(bspCol,p,tg.pos);
  // Keep the objective priority; replenish in a quiet moment, not while planting or escaping.
  updateBotSilencer(b,order,hasEnemy);
  if(order.mode==='reload-cover'&&b.cd<=0&&!b.reloadLeft)startBotReload(b);
  if(!hasEnemy&&!order.busy&&!order.urgent&&!order.force&&(!b.lastSeen||performance.now()/1000-b.lastSeen.t>2.5)&&b.cd<=0&&!b.reloadLeft&&b.reserve>0&&b.ammo<Math.max(1,Math.floor(W[b.weaponId].mag*.4)))startBotReload(b);
  b.routeJump=false;b.routeJumpTarget=null;b.routeCrouch=false;b.routeLadder=false;
- const pathfinding=!!activeMapData?.local&&!order.hold&&!order.busy&&order.mode!=='avoid-grenade'&&(follow||!hasEnemy);
+ const pathfinding=!!activeMapData?.local&&!order.hold&&!order.busy&&order.mode!=='avoid-grenade'&&(follow||!hasEnemy||elevatedPursuit);
  const flight=b.localRoute?.flight&&b.onGround===false?b.localRoute.flight:null;
  const allowRemote=pathfinding&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&!order.force&&!threat&&!radio;
  b.remoteDoorWaiting=false;
  if(!allowRemote&&b.remoteDoorRoute){b.remoteDoorRoute=null;if(!flight)b.localRoute=null;}
- const destination=flight?V(...flight.pos):pathfinding?BombMode.route(b,goal,order.stationId??null,allowRemote):V(goal.x,goal.y,goal.z);
+ const destination=flight?V(...flight.pos):pathfinding?BombMode.route(b,goal,elevatedPursuit?null:order.stationId??null,allowRemote):V(goal.x,goal.y,goal.z);
  b.los=hasEnemy;
  const target=destination,dx=target.x-p.x,dz=target.z-p.z,dist=Math.hypot(dx,dz)||1;
  // Route goals are standing-equivalent; crouched hull centers are 18 units lower.
@@ -664,10 +668,10 @@ function botUpdate(b,dt){
  if(b.crouching)sp/=3;
  b.st-=step;if(b.st<0){b.st=1+rnd()*2;b.strafe=rnd()<.5?-1:1}
  const ox=p.x,oy=p.y,oz=p.z,oldYaw=b.g.rotation.y;
- if(follow&&!order.hold&&!order.busy&&goalDistanceSq(order.pos)>order.radius*order.radius){mx=ux;mz=uz}
+ if((follow&&!order.hold&&!order.busy&&goalDistanceSq(order.pos)>order.radius*order.radius)||elevatedPursuit&&Math.hypot(dx,dz)>.12){mx=ux;mz=uz}
  let combatHold=false;
  if(hasEnemy&&!order?.busy&&!flashTurn&&order.mode!=='reload-cover'){
-  const stationary=follow||order?.hold||radio?.mode==='hold';
+  const stationary=follow||elevatedPursuit||order?.hold||radio?.mode==='hold';
   if(!stationary){
    const combat=BotTactics15D.engage(b,target,order);mx=combat.x;mz=combat.z;
    if(b.weaponId!=='knife'&&!b.reloadLeft&&b.cd<.24&&tg.dist>(['awp','scout','g3sg1','sg550'].includes(b.weaponId)?12:5)&&tg.dist<(b.effectiveRange||42)&&!botFriendlyLane(b,tg.pos)){mx=0;mz=0;}
@@ -739,7 +743,7 @@ function botUpdate(b,dt){
  // A* follows orders and search memory; visible enemies are tracked directly.
  // Avoid repeated A* on dynamic targets; obstacle recovery clears cached routes.
  const needsMove=moveLen>.05;let actorContact=false;
- const wantsMove=!combatHold&&!order?.hold&&!order?.busy&&(follow||!hasEnemy)&&goalDistanceSq(goal)>order.radius**2;
+ const wantsMove=!combatHold&&!order?.hold&&!order?.busy&&(follow||!hasEnemy||elevatedPursuit)&&goalDistanceSq(goal)>order.radius**2;
  const layoutTraffic=!window.bspCol?LayoutNav.trafficStep(b,destination,needsMove&&wantsMove&&!hasEnemy&&!order.urgent&&!order.busy&&!order.hold&&(!order.force||b.trafficPriority&&order.mode==='plant')&&!obstacleHold,bots,performance.now()/1000,movementActors(b,p)):null;
  if(layoutTraffic){
   navigationWait=true;
@@ -752,7 +756,7 @@ function botUpdate(b,dt){
   if(!LayoutNav.step(b,destination,speed,step,move,actors))move(v[0]*step,v[1]*step);
   if(step>0)b.vel=[(p.x-ox)/step,(p.z-oz)/step];
  }else if(needsMove&&window.NAV_BOTS&&window.bspCol&&window.NavGraph&&NavGraph.graph()&&!hasEnemy){NavGraph.botStep(b,destination,sp,step)}
- else if(window.bspCol){const verticalDrive=order?.hold||order?.busy||combatHold?0:Math.max(-1,Math.min(1,(destination.y-p.y)/(25*bspCol.T.k)));const st={pos:p.toArray(),vy:b.vy||0,on:!!b.onGround,vel:b.vel,jumpHeld:b.jumpHeld,ladderDetach:b.ladderDetach,climb:verticalDrive,swimVertical:verticalDrive};BSP.moveActor(bspCol,bspCol.T,st,[mx*sp,mz*sp],step,calibratedJump&&b.onGround&&(commandedMove||!!boost)&&!combatHold&&!order.hold&&!order.busy,!!b.crouching,movementActors(b,p));actorContact=st.actorContact;if(st.jumped&&b.routeJumpTarget&&b.localRoute){b.localRoute.flight=b.routeJumpTarget;b.localRoute.flightCrouch=!!b.crouching;}p.fromArray(st.pos);b.vy=st.vy;b.onGround=st.on;b.medium=st.medium;b.waterLevel=st.waterLevel;b.vel=st.vel;b.jumpHeld=st.jumpHeld;b.ladderDetach=st.ladderDetach;if(st.landed>580){damageBot(b,BSP.fallDamage(st.landed),'generic',null,false,null,'',0,'fall');if(b.dead)return;}}
+ else if(window.bspCol){const verticalDrive=order?.hold||order?.busy||combatHold?0:Math.max(-1,Math.min(1,(destination.y-p.y)/(25*bspCol.T.k)));const st={pos:p.toArray(),vy:b.vy||0,on:!!b.onGround,vel:b.vel,jumpHeld:b.jumpHeld,ladderDetach:b.ladderDetach,climb:verticalDrive,swimVertical:verticalDrive,assistBrokenGlass:!combatHold&&!order.hold};BSP.moveActor(bspCol,bspCol.T,st,[mx*sp,mz*sp],step,calibratedJump&&b.onGround&&(commandedMove||!!boost)&&!combatHold&&!order.hold&&!order.busy,!!b.crouching,movementActors(b,p));actorContact=st.actorContact;if(st.jumped&&b.routeJumpTarget&&b.localRoute){b.localRoute.flight=b.routeJumpTarget;b.localRoute.flightCrouch=!!b.crouching;}p.fromArray(st.pos);b.vy=st.vy;b.onGround=st.on;b.medium=st.medium;b.waterLevel=st.waterLevel;b.vel=st.vel;b.jumpHeld=st.jumpHeld;b.ladderDetach=st.ladderDetach;if(st.landed>580){damageBot(b,BSP.fallDamage(st.landed),'generic',null,false,null,'',0,'fall');if(b.dead)return;}}
  else{const v=BSP.accelerate(b.vel,[mx*sp,mz*sp],step,true);actorContact=LayoutNav.moveActor(p,v[0]*step,v[1]*step,!!b.crouching,movementActors(b,p));if(step>0)b.vel=[(p.x-ox)/step,(p.z-oz)/step];}
  const moved=Math.hypot(p.x-ox,p.z-oz);b.lastMoveSpeed=moved/Math.max(step,.001);
  // Vertical ladder/water movement is real progress; do not blacklist a climbing edge.

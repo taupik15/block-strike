@@ -327,6 +327,12 @@ const LocalBSPNav=(()=>{
   }
   return null;
  }
+ // Pursue vertically separated visible opponents through the map route,
+ // never by walking directly into a wall beneath the enemy. The threshold
+ // is in Hammer units; close targets on the same floor retain normal combat.
+ function elevationPursuit(col,from,to){
+  return !!col?.local&&!!from&&!!to&&Math.abs(to.y-from.y)>48*col.T.k;
+ }
  function routeOrigin(graph,bot){
   const col=graph.col,raw=BSP.toHammer(col.T,bot.g.position.toArray());
   return bot.crouching&&Number.isInteger(col.crouchHead)&&!ladderPoint(col,raw)&&!waterPoint(col,raw)?raise(raw):raw;
@@ -650,5 +656,5 @@ const LocalBSPNav=(()=>{
   if(!ladderPoint(col,h)&&!waterPoint(col,h)){const small=hull!==col,floor=floorAt(hull,small?lower(h):h,40);if(floor)h=small?raise(floor):floor;}
   return near(graph,pos,hull,h,graph.teamAllowed?.[bot.team]);
  }
- return {build,fromPwf,fromNav,fromGraph,validate,refreshGeometry,steer,floorAt,walkable,distanceField,defenseStation,attach,near,jumpLink,predictJump,jumpCommand,boostCommand,ladderLink,waterLink,waterExitLink,teamAllows};
+ return {build,fromPwf,fromNav,fromGraph,validate,refreshGeometry,steer,floorAt,walkable,distanceField,defenseStation,attach,near,jumpLink,predictJump,jumpCommand,boostCommand,elevationPursuit,ladderLink,waterLink,waterExitLink,teamAllows};
 })();
