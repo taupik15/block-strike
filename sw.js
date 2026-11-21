@@ -1,3 +1,4 @@
+/* AR.11.10.2: Chateau source GRAPH physically validated stairs, safe reverse links, cache upgrade. */
 /* AR.11.10.1 Chateau real-BSP live-bot choke recovery; versioned cache refresh. */
 /* AR.11.10 cumulative release from deployed AR.11.1. Shell/cache rollover only. */
 /* AR.11.9 visual parity: hide released grenade prop, keep hand recoil motion. */
