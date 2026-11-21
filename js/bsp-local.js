@@ -235,7 +235,7 @@ const LocalBSP=(()=>{
   const batches=new Map(), doors=[],destructibles=[],warnings=[];
 
   let triangles=0;
-  function addFaces(brush,origin,door=-1,opacity=1,worldSurface=false,destructible=-1){
+  function addFaces(brush,origin,door=-1,opacity=1,worldSurface=false,destructible=-1,nonSolid=false){
    const first=integer(brush,56),count=integer(brush,60);
    if(first<0||count<0||(first+count)*20>faces.byteLength)fail('Invalid BSP surface range.');
    for(let f=first;f<first+count;f++){
@@ -252,8 +252,8 @@ const LocalBSP=(()=>{
     }
     const uv=poly.map(p=>[p[0]*u[0]+p[1]*u[1]+p[2]*u[2]+ud,p[0]*v[0]+p[1]*v[1]+p[2]*v[2]+vd]);
     const light=integer(texinfo,j+36)&1?null:atlas.add(uv,integer(faces,face+16),[0,1,2,3].map(i=>faces.getUint8(face+12+i)));
-    const key=[index,light?.page??-1,door,opacity,worldSurface?1:0,destructible].join(':');
-    if(!batches.has(key))batches.set(key,{index,name,info,positions:[],uvs:[],uv2:[],page:light?.page,door,opacity,worldSurface,destructible});
+    const key=[index,light?.page??-1,door,opacity,worldSurface?1:0,destructible,nonSolid?1:0].join(':');
+    if(!batches.has(key))batches.set(key,{index,name,info,positions:[],uvs:[],uv2:[],page:light?.page,door,opacity,worldSurface,destructible,nonSolid});
     const {positions,uvs,uv2}=batches.get(key);
     for(let k=1;k<n-1;k++)for(const n of [0,k,k+1]){
      const p=poly[n],[s,t]=uv[n];
@@ -284,8 +284,16 @@ const LocalBSP=(()=>{
     if(d){door=doors.length;doors.push({d,entry,entity:e});entry.yaw=0;entry.rotatingDoor={distance:d.distance,twoWay:d.twoWay};}
    }
    let destructible=-1;const triggerHp=bombBreakable(e,targets),hp=triggerHp||breakableHealth(e);
-   if(hp){const entry=brushCollision.get(e);if(entry&&!entry.destructible){entry.destructible=true;destructible=destructibles.length;destructibles.push({entry,hp,material:Number(e.material||0),bombTarget:triggerHp?e.targetname:null,bombTrigger:!triggerHp&&e.targetname&&targets.some(t=>t.target===e.targetname)?e.targetname:null});}}
-   addFaces(model(Number(e.model.slice(1))),point(e)||[0,0,0],door,opacity,false,destructible);
+   if(hp){const entry=brushCollision.get(e);if(entry&&!entry.destructible){entry.destructible=true;
+    // Narrow shootable glass is passage-sized, but a standing hull still has
+    // to align inside its solid jambs after it breaks.
+    const span=entry.maxs.map((v,i)=>v-entry.mins[i]);
+    entry.glassPassage=e.classname==='func_breakable'&&Number(e.material||0)===0&&(Number(e.rendermode||0)===2||/glass|window/i.test(e.targetname||''))&&span[2]>=65&&((span[0]<=6&&span[1]>=42&&span[1]<=120)||(span[1]<=6&&span[0]>=42&&span[0]<=120));
+    destructible=destructibles.length;destructibles.push({entry,hp,material:Number(e.material||0),bombTarget:triggerHp?e.targetname:null,bombTrigger:!triggerHp&&e.targetname&&targets.some(t=>t.target===e.targetname)?e.targetname:null});}}
+   // func_illusionary is visual-only in GoldSrc. Its masked curtains can lie
+   // in front of shootable glass, including transparent pixels of the mesh.
+   // Keep the geometry visible but exclude it from projectile/LOS raycasts.
+   addFaces(model(Number(e.model.slice(1))),point(e)||[0,0,0],door,opacity,false,destructible,e.classname==='func_illusionary');
   }
   if(files.some(e=>e.classname==='func_breakable')&&destructibles.length<files.filter(e=>e.classname==='func_breakable').length)warnings.push('Unsupported breakable entities remain static.');
   if(files.some(e=>e.classname==='func_door_rotating'&&!doors.some(v=>v.entity===e)))warnings.push('Unsupported rotating doors remain static.');
@@ -297,7 +305,7 @@ const LocalBSP=(()=>{
   const textureCache=new Map(),lightmaps=atlas.finish();
   if(atlas.limited)warnings.push('Some surfaces exceed the static lightmap budget.');
   if(atlas.nonStatic)warnings.push('Animated BSP lightstyles are displayed as static lightmaps.');
-  for(const {index,name,info,positions,uvs,uv2,page,door,opacity,worldSurface,destructible} of batches.values()){
+  for(const {index,name,info,positions,uvs,uv2,page,door,opacity,worldSurface,destructible,nonSolid} of batches.values()){
    if(!textureCache.has(index)){
     const wad=external.get(name),embedded=info&&integer(info.view,24)>0;
     const candidate=embedded?info:wad?textureInfo(wad):null;
@@ -308,7 +316,7 @@ const LocalBSP=(()=>{
    const map=textureCache.get(index);
    if(!map)missing.add(name);
    meshes.push({name,positions:new Float32Array(positions),uvs:new Float32Array(uvs),
-    uv2:uv2.length?new Float32Array(uv2):null,map,lightmap:lightmaps[page],door,opacity,worldSurface,destructible});
+    uv2:uv2.length?new Float32Array(uv2):null,map,lightmap:lightmaps[page],door,opacity,worldSurface,destructible,nonSolid});
   }
   return {col,sites,mode:sites.length?'bomb':'elimination',meshes,doors,destructibles,warnings,files,missing:[...missing],
    spawn:{ct:BSP.toGame(T,spawnTeams.CT[0]),t:BSP.toGame(T,spawnTeams.T[0])}};
@@ -323,7 +331,7 @@ const LocalBSP=(()=>{
    const mesh=BSPVisuals.mesh(batch),water=/^[!*]/.test(batch.name);
    (groups[batch.door]||scene).add(mesh);
    if(water){if(batch.map)data.waterMaps.add(batch.map)}
-   else scene.userData.rayMeshes.push(mesh);
+   else if(!batch.nonSolid)scene.userData.rayMeshes.push(mesh);
    if(batch.destructible>=0)BSPBreakables.register(batch.destructible,mesh,!water);
   }
   if(data.sky)BSPVisuals.mountSky(data.sky,scene);

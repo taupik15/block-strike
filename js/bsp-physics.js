@@ -128,8 +128,35 @@ function velToHammer(T, v) {
   return [T.c * xp + T.s * yp, -T.s * xp + T.c * yp];
 }
 
+// Subtle, collision-checked centering at an already destroyed glass pane.
+// A 59-unit GoldSrc window admits a 32-unit standing hull through only a
+// 27-unit lane. A touch joystick can hit the adjacent solid jamb even when
+// the glass is gone. Never move through a wall, another actor, or intact glass.
+function alignBrokenGlass(col, pos, d) {
+  if (!col?.breakables || Math.hypot(d[0],d[1]) < 0.25) return null;
+  for (const b of col.breakables) {
+    if (!b.destroyed || !b.glassPassage || b.yaw) continue;
+    const o=b.origin||[0,0,0],dims=b.mins.map((x,i)=>b.maxs[i]-x);
+    const axis=dims[0]<=6?0:dims[1]<=6?1:-1;
+    if(axis<0 || Math.abs(d[axis])<Math.abs(d[1-axis])*1.5)continue;
+    const cross=1-axis,plane=o[axis]+(b.mins[axis]+b.maxs[axis])*.5;
+    const toward=plane-pos[axis];
+    if(toward*d[axis]<=0 || Math.abs(toward)>56)continue;
+    const low=o[cross]+b.mins[cross]+19,high=o[cross]+b.maxs[cross]-19;
+    if(low>=high || pos[2]<o[2]+b.mins[2]-40 || pos[2]>o[2]+b.maxs[2]+40)continue;
+    const desired=Math.max(low,Math.min(high,pos[cross]));
+    const difference=desired-pos[cross];
+    if(Math.abs(difference)<.1 || Math.abs(difference)>16)continue;
+    const delta=[0,0,0];delta[cross]=Math.sign(difference)*Math.min(2,Math.abs(difference));
+    const path=slideAll(col,pos,delta);
+    if(path.startsolid || Math.abs(path.pos[cross]-pos[cross])<Math.abs(delta[cross])*.95)continue;
+    return path.pos;
+  }
+  return null;
+}
+
 // Gerak horizontal dengan naik tangga. d = [dx, dy, 0] (Hammer)
-function stepSlide(col, pos, d) {
+function stepSlide(col, pos, d, assistBrokenGlass=false) {
   const a = slideAll(col, pos, d);
   const want = Math.hypot(d[0], d[1]);
   if (want < 1e-6) return a.pos;
@@ -139,7 +166,15 @@ function stepSlide(col, pos, d) {
   const b = slideAll(col, up, d).pos;
   const down = slideAll(col, b, [0, 0, -STEP]);
   const gb = Math.hypot(down.pos[0] - pos[0], down.pos[1] - pos[1]);
-  return gb > got + 1e-3 ? down.pos : a.pos;      // ambil yang lebih jauh
+  const best=gb > got + 1e-3 ? down.pos : a.pos;
+  // If the player is stopped by a doorjamb after the pane has shattered,
+  // allow at most a two-unit sideways step toward its legal collision lane.
+  // This is a real swept movement, never a teleport or reduced player hull.
+  if(assistBrokenGlass && Math.hypot(best[0]-pos[0],best[1]-pos[1])<want*.6){
+    const aligned=alignBrokenGlass(col,pos,d);
+    if(aligned)return aligned;
+  }
+  return best;
 }
 
 // Keluarkan origin dari solid (mis. spawn terlalu dekat lantai)
@@ -218,7 +253,7 @@ function movePlayer(col,T,st,wish,dt,jump,crouching=false) {
    vel=accelerate(vel,[wish[0]*factor,wish[1]*factor],step,on,T.k,medium);
    const wv=velToHammer(T,vel),before=h;
    const delta=[wv[0]*step,wv[1]*step,0];let bankExit=false;
-   h=on?stepSlide(col,h,delta):slideAll(col,h,delta).pos;
+   h=on?stepSlide(col,h,delta,!!st.assistBrokenGlass):slideAll(col,h,delta).pos;
    // Near the surface, allow a short supported step onto a bank. Never
    // lift through solid geometry or climb an unsupported wall.
    if(water&&!ladder&&level===2&&(jump||st.swimVertical>0)&&Math.hypot(...delta)>1e-5&&Math.hypot(h[0]-before[0],h[1]-before[1])<Math.hypot(...delta)*.98){
