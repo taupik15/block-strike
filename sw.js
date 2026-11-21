@@ -1,4 +1,4 @@
-/* AR.11.1 named breakable glass hotfix. */
+/* AR.11.2 decorative non-solid brushes must not intercept glass shots. */
 /* Versioned, project-scoped offline cache. Never caches imported maps or remote URLs. */
 importScripts('offline-assets.js');
 const scope = self.registration.scope;
