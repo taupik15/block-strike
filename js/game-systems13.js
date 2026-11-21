@@ -103,11 +103,41 @@ const Phase13=(()=>{
  }
  function spectatorAsset(bot){
   if(BombMode.isPlanting?.(bot))return 'c4';
+  const grenade=bot.grenadeVisual?.id;
+  if(grenade&&['hegrenade','flashbang','smokegrenade'].includes(grenade))
+   return bot.hasBotShield&&bot.shieldReady?'shield_'+grenade:grenade;
   const id=bot.weaponId||'knife';
   return bot.hasBotShield&&bot.shieldReady&&(SHIELD_NATIVE_PISTOLS.has(id)||id==='knife')?'shield_'+id:id;
  }
  function spectatorWeaponKey(bot){return spectatorAsset(bot)+'@'+(bot.botId||bot.name)}
- function spectatorIdle(state,raised){return weaponSequence(state,raised?['shield_idle','idle1','idle']:['idle','idle1','idle3'])||state.clipNames[0]}
+ function spectatorUnsilenced(bot,asset){return (asset==='usp'||asset==='m4a1')&&!bot.silenced}
+ function spectatorIdle(state,raised,unsilenced=false){
+  return weaponSequence(state,raised?['shield_idle','idle1','idle']:unsilenced?['idle_unsil','idle','idle1','idle3']:['idle','idle1','idle3'])||state.clipNames[0];
+ }
+ // Use the firing bot's actual magazine, dual-hand and silencer state. The
+ // ordinary spectator 'shoot1' fallback lost native fire variants entirely.
+ function spectatorFireClip(state,bot,asset,unsilenced){
+  if(asset==='knife'||asset==='shield_knife'){
+   const stab=bot.lastShot?.sound==='knife_stab.wav';
+   return weaponSequence(state,stab?['stab','hit','stab_miss']:['midslash1','midslash2','slash','slash1']);
+  }
+  if(asset==='elite'){
+   const side=bot.dualVisualSide?'left':'right';
+   const clips=weaponSequenceNames(state,n=>new RegExp('^shoot_'+side+'[1-5]$').test(n));
+   state.fireCycle=(state.fireCycle||0)+1;
+   return bot.ammo===0?weaponSequence(state,['shoot_'+side+'last']):clips[(state.fireCycle-1)%clips.length];
+  }
+  if(asset==='glock18'&&state.actions.shoot3)
+   return weaponSequence(state,[bot.ammo===0?'shoot_empty':'shoot3']);
+  const suffix=unsilenced?'_unsil':'';
+  if(bot.ammo===0){const last=weaponSequence(state,['shootlast'+suffix,'shoot_empty']);if(last)return last}
+  const shots=weaponSequenceNames(state,n=>/^shoot(?:__?\d+|\d+)?(?:_unsil)?$/.test(n)&&n.endsWith('_unsil')===unsilenced);
+  state.fireCycle=(state.fireCycle||0)+1;
+  return shots.length?shots[(state.fireCycle-1)%shots.length]:weaponSequence(state,['shoot1'+suffix,'shoot'+suffix,'shoot1','shoot']);
+ }
+ function spectatorReloadClip(state,unsilenced){
+  return weaponSequence(state,unsilenced?['reload_unsil','reload','start_reload']:['reload','start_reload']);
+ }
  function loadSpectatorWeapon(bot){
   if(!bot||specMode!=='first')return;
   const asset=spectatorAsset(bot);
@@ -119,39 +149,72 @@ const Phase13=(()=>{
    const model=cloneViewmodel(gltf,asset);const mixer=new THREE.AnimationMixer(model);
    const actions={};
    for(const clip of gltf.animations)actions[clip.name]=mixer.clipAction(clip);
-   const state={mixer,actions,clipNames:Object.keys(actions)};
+   const state={mixer,actions,clipNames:Object.keys(actions),fireCycle:0,queue:[]};
    const raised=asset.startsWith('shield_')&&!!bot.shieldRaised;
-   const idle=spectatorIdle(state,raised);
+   const unsilenced=spectatorUnsilenced(bot,asset);
+   const idle=spectatorIdle(state,raised,unsilenced);
    const weapon=new THREE.Group();weapon.userData.viewAsset=asset;weapon.add(model);applyHand(weapon);
-   weapon.userData.shieldRaised=raised;
-   weapon.userData.animation=state;
-   weapon.userData.lastShot=bot.lastShot?.at;
-   weapon.userData.lastReload=bot.lastReload;
-   mixer.addEventListener('finished',e=>{if(e.action===state.activeAction&&spectatorView===weapon)playWeaponClip(state,spectatorIdle(state,weapon.userData.shieldRaised),true)});
+   Object.assign(weapon.userData,{shieldRaised:raised,silenced:!!bot.silenced,animation:state,
+    lastShot:bot.lastShot?.at,lastReload:bot.lastReload,lastSilencer:bot.lastSilencerToggle?.at});
+   mixer.addEventListener('finished',e=>{
+    if(e.action!==state.activeAction||spectatorView!==weapon)return;
+    const next=state.queue?.shift();
+    if(next&&playWeaponClip(state,next,false))return;
+    playWeaponClip(state,spectatorIdle(state,weapon.userData.shieldRaised,spectatorUnsilenced(bot,asset)),true);
+   });
    if(playWeaponClip(state,idle,true)){
-    state.activeAction.stopFading();
-    mixer.update(0);
+    state.activeAction.stopFading();mixer.update(0);
+   }
+   // Bot grenade visuals exist only during the short, authored throw window.
+   // Do not show a static grenade while the bot performs a throw animation.
+   if(bot.grenadeVisual?.pending&&['hegrenade','flashbang','smokegrenade'].includes(bot.grenadeVisual.id)){
+    if(playWeaponClip(state,weaponSequence(state,['throw','pullpin']),false)){
+     const duration=state.activeAction.getClip().duration;
+     state.activeAction.setEffectiveTimeScale(duration/.325);
+    }
    }
    spectatorView=weapon;viewScene.add(weapon);
   }).catch(()=>{});
  }
  function updateSpectatorWeapon(bot,dt){
-  if(!spectatorView)return;
-  const data=spectatorView.userData,state=data.animation;
-  const raised=data.viewAsset.startsWith('shield_')&&!!bot.shieldRaised;
+  if(!spectatorView||!bot)return;
+  const data=spectatorView.userData,state=data.animation,asset=data.viewAsset;
+  const raised=asset.startsWith('shield_')&&!!bot.shieldRaised;
   const fired=data.lastShot!==bot.lastShot?.at,reloaded=data.lastReload!==bot.lastReload;
-  data.lastShot=bot.lastShot?.at;data.lastReload=bot.lastReload;
+  const toggled=data.lastSilencer!==bot.lastSilencerToggle?.at;
+  data.lastShot=bot.lastShot?.at;data.lastReload=bot.lastReload;data.lastSilencer=bot.lastSilencerToggle?.at;
+  const unsilenced=spectatorUnsilenced(bot,asset);
   const defusing=!!BombMode.isDefusing?.(bot);spectatorView.position.y=0;
-  if(data.viewAsset==='c4'){if(state.activeName!=='pressbutton'&&BombMode.isPlanting?.(bot)){playWeaponClip(state,'pressbutton',true);state.activeAction?.setDuration(3);}}
-  else if(defusing){if(state.activeName!==spectatorIdle(state,raised))playWeaponClip(state,spectatorIdle(state,raised),true);}
-  else if(raised!==data.shieldRaised){
-   data.shieldRaised=raised;
-   const clip=weaponSequence(state,[raised?'shield_up':'shield_down']);
-   if(!playWeaponClip(state,clip,false))playWeaponClip(state,spectatorIdle(state,raised),true);
+  if(asset==='c4'){
+   if(state.activeName!=='pressbutton'&&BombMode.isPlanting?.(bot)){playWeaponClip(state,'pressbutton',true);state.activeAction?.setDuration(3)}
+  }else if(defusing){
+   if(state.activeName!==spectatorIdle(state,raised,unsilenced))playWeaponClip(state,spectatorIdle(state,raised,unsilenced),true);
+  }else if(raised!==data.shieldRaised){
+   data.shieldRaised=raised;state.queue=[];
+   if(!playWeaponClip(state,weaponSequence(state,[raised?'shield_up':'shield_down']),false))playWeaponClip(state,spectatorIdle(state,raised,unsilenced),true);
+  }else if(toggled&&(asset==='usp'||asset==='m4a1')){
+   data.silenced=!!bot.silenced;state.queue=[];
+   const clip=weaponSequence(state,[bot.silenced?'add_silencer':'detach_silencer']);
+   if(!playWeaponClip(state,clip,false))playWeaponClip(state,spectatorIdle(state,raised,unsilenced),true);
   }else if(!raised&&fired){
-   playWeaponClip(state,weaponSequence(state,['shoot1','shoot','shoot1_unsil']),false);
+   state.queue=[];
+   const clip=spectatorFireClip(state,bot,asset,unsilenced);
+   if(clip)playWeaponClip(state,clip,false);
   }else if(!raised&&reloaded){
-   playWeaponClip(state,weaponSequence(state,['reload','reload_unsil','start_reload']),false);
+   state.queue=[];
+   const clip=spectatorReloadClip(state,unsilenced);
+   if(clip){
+    if(clip==='start_reload'){
+     const insert=weaponSequence(state,['insert']),after=weaponSequence(state,['after_reload']);
+     if(insert)state.queue.push(insert);if(after)state.queue.push(after);
+    }
+    playWeaponClip(state,clip,false);
+    // Spectator and bot must finish reloading on the same gameplay timer.
+    if(bot.reloadLeft>0&&state.activeAction&&clip!=='start_reload'){
+     const duration=state.activeAction.getClip().duration;
+     state.activeAction.setEffectiveTimeScale(duration/Math.max(.1,bot.reloadLeft));
+    }
+   }
   }
   state.mixer.update(dt);
  }

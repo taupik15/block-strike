@@ -360,6 +360,19 @@ const Phase9=(()=>{
   action.setEffectiveTimeScale(rate);
   action.time=Math.min(action.getClip().duration,pending.age*rate);
  }
+ // The three original, non-shield grenade GLBs move their grenade prop
+ // meshes behind the view camera right after the authored 40% release frame.
+ // Keep the hand meshes/return animation, but never draw a grenade that is
+ // already represented by its live world projectile. Shield rigs differ.
+ function hideReleasedGrenadeProp(){
+  const view=grenadeView;
+  if(!view||!['hegrenade','flashbang','smokegrenade'].includes(view.asset)||view.propHidden)return false;
+  const meshes=[];
+  view.group.traverse(o=>{if(o.isMesh&&/^GoldSrcViewmodel_[678]$/.test(o.name))meshes.push(o)});
+  if(meshes.length!==3)return false;
+  meshes.forEach(o=>{o.visible=false});view.propHidden=true;
+  return true;
+ }
  function showGrenadeView(type){
   const name=thrownNames[type];if(!name||!viewScene||!vm)return;
   const asset=Phase14C.hasShield(inventory)?'shield_'+name:name;
@@ -371,7 +384,7 @@ const Phase9=(()=>{
    const resolved=weaponModels[asset]===g?asset:name;
    const model=cloneViewmodel(g,resolved);
    const group=new THREE.Group();group.userData.viewAsset=resolved;group.add(model);Phase13.applyHand(group);
-   grenadeView={group,mixer:new THREE.AnimationMixer(model),clips:g.animations,age:0,token,action:null};
+   grenadeView={group,mixer:new THREE.AnimationMixer(model),clips:g.animations,asset:resolved,age:0,token,action:null,propHidden:false};
    const pending=pendingThrow;
    const stage=pending?.stage;
    const duration=playGrenadeClip(stage==='pin'?'pullpin':stage==='throw'||stage==='released'?'throw':'deploy');
@@ -381,7 +394,9 @@ const Phase9=(()=>{
    else if(stage==='released'){
     const a=grenadeView.action;if(a)a.time=Math.min(a.getClip().duration,a.getClip().duration*.4+pending.age);
    }else if(grenadeView.action)grenadeView.action.time=Math.min(duration,pending?.age||0);
-   grenadeView.mixer.update(0);viewScene.add(group);
+   grenadeView.mixer.update(0);
+   if(stage==='released')hideReleasedGrenadeProp();
+   viewScene.add(group);
   }).catch(e=>{
    console.warn('Grenade viewmodel unavailable',name,e);
    if(pendingThrow?.type===type&&pendingThrow.stage==='loading'){
@@ -411,12 +426,16 @@ const Phase9=(()=>{
   const velocity=Grenade14D.throwVelocity(direction,{playerVertical:P.vy});
   makeGrenadeProjectile(type,origin,new THREE.Vector3(velocity.x,velocity.y,velocity.z));
   grenades[type]--;selectedGrenade=type;pendingThrow.stage='released';pendingThrow.age=0;
+  hideReleasedGrenadeProp();
   say(type.toUpperCase()+' THROWN');hud();return true;
  }
  function throwGrenade(hold=false){
   if(blocked()||(typeof freezeLeft!=='undefined'&&freezeLeft>0)||roundWait||BombMode.locked()||pendingThrow||reloading>0||WeaponModes15C.active())return false;
   const type=grenades[selectedGrenade]>0?selectedGrenade:['he','flash','smoke'].find(x=>grenades[x]>0);
   if(!type){say('NO GRENADES · BUY EQUIPMENT');return false}
+  // A grenade replaces the shielded pistol view; lower the shield first so
+  // shield collision/damage protection cannot persist while throwing.
+  if(shieldRaised)lowerShield();
   BombMode.deselect?.();aiming=false;zoomIdx=0;syncAim();
   pendingThrow={type,age:0,stage:'loading',duration:.16,committed:!hold};
   showGrenadeView(type);return true;

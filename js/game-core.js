@@ -887,6 +887,7 @@ function updateBotSilencer(b,order,hasEnemy){
  const want=b.personality==='defensive';
  if(want===botSilenced(b))return false;
  b.silenced=want;b.cd=b.weaponId==='usp'?2.5:3;b.burst=0;
+ b.lastSilencerToggle={at:performance.now(),attached:want};
  const audio=botShotAudio(b.g.position);playOriginalSound(b.weaponId+'_silencer_'+(want?'on':'off')+'.wav',audio.volume,.15,1400,0,audio.pan);return true;
 }
 // Keep both carried magazines and the existing shared caliber pool when switching.

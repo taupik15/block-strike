@@ -656,26 +656,66 @@ const Phase10=(()=>{
   }
   const smoke=['usp','glock18','p228','deagle','elite','fiveseven'].includes(k);
   GoldSrcSprites.play(vm,smoke?'pistol_smoke1':'rifle_smoke1',muzzle,{scale:.0017,fps:60,delay:.038,opacity:.23});
-  const eject=viewAttachment(state,1);
-  if(eject&&variant!==1&&k!=='elite'){
+  // Dual Elites has separate left/right ejection bones, following the same
+  // authored fire clip used for its muzzle flash. Other guns use attachment 1.
+  const eject=viewAttachment(state,k==='elite'?(variant===1?3:2):1);
+  if(eject){
    const shell=new THREE.Mesh(brassGeometry,new THREE.MeshStandardMaterial({color:k==='m3'||k==='xm1014'?0xa43f31:0xa97e39,roughness:.4,metalness:.5,transparent:true,depthWrite:false}));
-   shell.position.copy(eject);shell.position.x*=Math.sign(vm.scale.x);
+   // Attachment is in vm-local space, whereas shells live in viewScene space.
+   // Respect the model's current handedness, transform and animated bone.
+   vm.updateMatrixWorld(true);shell.position.copy(vm.localToWorld(eject.clone()));
    viewScene.add(shell);
-   effects.push({sprite:shell,lifetime:.32,age:0,velocity:new THREE.Vector3(1.35*Math.sign(vm.scale.x),.42,.38)});
+   const side=k==='elite'?(variant===1?1:-1):Math.sign(vm.scale.x)||1;
+   effects.push({sprite:shell,lifetime:.32,age:0,velocity:new THREE.Vector3(1.35*side,.42,.38)});
   }
   limitEffects(36);
  }
+ // Held p_ models point down +X in their hand's bone-local coordinates.
+ // Read the actual muzzle-end strip instead of inventing a point from half
+ // the *whole* gun bounding box (which includes the stock, sights and grip).
+ // Geometry is shared across bots: sample at most once per model mesh.
+ function heldTipLocal(geometry){
+  if(geometry.userData?.blockStrikeMuzzleTip)return geometry.userData.blockStrikeMuzzleTip;
+  if(!geometry.boundingBox)geometry.computeBoundingBox();
+  const box=geometry.boundingBox,attr=geometry.attributes.position;
+  if(!box||!attr)return null;
+  const cutoff=box.max.x-Math.max(.4,(box.max.x-box.min.x)*.025),ys=[],zs=[];
+  for(let i=0;i<attr.count;i++)if(attr.getX(i)>=cutoff){ys.push(attr.getY(i));zs.push(attr.getZ(i));}
+  if(!ys.length)return null;
+  ys.sort((a,b)=>a-b);zs.sort((a,b)=>a-b);
+  const tip=[box.max.x,ys[Math.floor(ys.length/2)],zs[Math.floor(zs.length/2)]];
+  (geometry.userData||(geometry.userData={})).blockStrikeMuzzleTip=tip;
+  return tip;
+ }
+ function botMuzzlePosition(b){
+  // game-core flips this flag on each accepted Dual Elites shot. The first
+  // shot is left; every subsequent shot uses the opposite pistol.
+  const preferred=b.weaponId==='elite'&&b.dualVisualSide?'Bip01 L Hand':'Bip01 R Hand';
+  const meshes=b.weaponModel||[];
+  const held=meshes.find(m=>m.visible&&m.userData.attachBone===preferred)
+   ||meshes.find(m=>m.visible&&m.userData.attachBone==='Bip01 R Hand');
+  if(!held)return null;
+  const tip=heldTipLocal(held.geometry);if(!tip)return null;
+  b.g.updateMatrixWorld(true);
+  return held.localToWorld(V(...tip));
+ }
  function muzzleBot(b){
   if(!b?.g||!S||(['usp','m4a1'].includes(b.weaponId)&&b.silenced))return;
-  const pos=V(),forward=V(-Math.sin(b.g.rotation.y),0,-Math.cos(b.g.rotation.y));
-  const held=b.weaponModel?.find(m=>m.visible&&m.userData.attachBone==='Bip01 R Hand');
-  if(held?.geometry.boundingBox){const box=held.geometry.boundingBox;pos.copy(held.localToWorld(V(box.max.x,0,Math.max(0,box.max.z*.5))))}
-  else {pos.copy(b.g.position).add(V(0,(window.bspCol?.56:1.18)-(b.crouchPose||0)*.24,0));pos.addScaledVector(forward,(W[b.weaponId]?.len||.55)*.65)}
+  const forward=V(-Math.sin(b.g.rotation.y),0,-Math.cos(b.g.rotation.y));
+  const pos=botMuzzlePosition(b)||b.g.position.clone().add(V(0,(window.bspCol?.56:1.18)-(b.crouchPose||0)*.24,0)).addScaledVector(forward,(W[b.weaponId]?.len||.55)*.65);
+  // The occasional smoke sprite shares the same muzzle socket, but remains
+  // rate- and distance-limited in 32-player battles on mobile GPUs.
+  const t=now();
+  if(cam&&cam.position.distanceToSquared(pos)<28*28&&t-(b.lastMuzzleSmoke??-10)>.18){
+   b.lastMuzzleSmoke=t;
+   GoldSrcSprites.play(S,['usp','glock18','p228','deagle','elite','fiveseven'].includes(b.weaponId)?'pistol_smoke1':'rifle_smoke1',pos,{scale:.0017,fps:60,delay:.038,opacity:.23});
+  }
   if(GoldSrcSprites.play(S,'muzzleflash2',pos,{scale:.0078,life:.09}))return;
   const m=new THREE.Sprite(new THREE.SpriteMaterial({map:loadTexture('muzzleflash2'),transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));
   m.position.copy(pos);
   m.scale.set(.38,.38,1);S.add(m);addEffect(m,.11);limitEffects(36);
  }
+
  function bloodImpact(b,point){
   if(!S||!point)return;
   const ids=['blood_v1_blood1','blood_v1_blood2','blood_v2_blood3'];
