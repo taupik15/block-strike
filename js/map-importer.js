@@ -183,6 +183,11 @@ const MapImporter=(()=>{
   async function attempt(buffer,type,origin,cache=false){
    try{
     const graph=type==='PWF'?LocalBSPNav.fromPwf(buffer,data.col,mapName):type==='NAV v5'?LocalBSPNav.fromNav(buffer,data.col,bsp.buffer.byteLength):LocalBSPNav.fromGraph(buffer,data.col,bsp.buffer.byteLength);
+    // Only the owner's verified original CS 1.6 Chateau BSP receives the
+    // bounded physical validation for dropped source GRAPH stair/spawn edges.
+    // Never apply this correction to another map or similarly named BSP.
+    graph.chateauRepair=type==='YaPB GRAPH'&&mapName.toLowerCase()==='de_chateau'&&
+      cacheKey==='nav-v1:2c7988276c3087b52f4709890974b476a62f526955635dd935144e38d1666dce';
     const check=LocalBSPNav.validate(graph,data.sites);
     if(!best||check.edges>best.check.edges)best={graph,check,origin};
     if(!check.ok){issues.push(origin+': incomplete validated routes ('+check.nodes+' nodes, '+check.edges+' links).');return false}
@@ -224,7 +229,7 @@ const MapImporter=(()=>{
   const record={id:ident(map.entry.path),name:map.entry.path.split('/').at(-1).replace(/\.bsp$/i,''),
    path:map.entry.path,mode:map.info.mode,notes:source.notes};
   const data=await compile({...source,name:record.name});
-  record.report={missing:data.missing,warnings:data.warnings,nav:data.navSource,overview:data.overviewPath||null,globalWads:data.globalWads,navRevision:15};
+  record.report={missing:data.missing,warnings:data.warnings,nav:data.navSource,overview:data.overviewPath||null,globalWads:data.globalWads,navRevision:16};
   try{await MapLibrary.save(record,source.files);return record}
   finally{disposePreview(data)}
  }
@@ -259,7 +264,7 @@ const MapImporter=(()=>{
   try{
    if(data.missing.length>=wanted.size)throw Error('Selected WADs did not resolve additional textures. Existing map kept.');
    const {files:oldFiles,...record}=saved;
-   record.notes=notes;record.report={missing:data.missing,warnings:data.warnings,nav:data.navSource,overview:data.overviewPath||null,globalWads:data.globalWads,navRevision:15};
+   record.notes=notes;record.report={missing:data.missing,warnings:data.warnings,nav:data.navSource,overview:data.overviewPath||null,globalWads:data.globalWads,navRevision:16};
    await MapLibrary.save(record,files);return record;
   }finally{disposePreview(data)}
  }

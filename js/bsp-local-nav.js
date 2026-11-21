@@ -168,6 +168,33 @@ const LocalBSPNav=(()=>{
   const h=ch||col,start=ch?lower(a.h):a.h,end=ch?lower(b.h):b.h;
   return !BSP.traceAll(h,start,start).startsolid&&!BSP.traceAll(h,end,end).startsolid&&walkable(h,start,end,maxDistance);
  }
+ // Verified original Chateau YaPB GRAPH links may cross real steps or diagonal transitions
+ // which walkable() rejects due its discrete 18-Hammer sweep. As a bounded
+ // fallback, accept only a link that normal grounded physics actually walks
+ // from one original waypoint to the other without jumping or teleporting.
+ // Auto-generated cell edges and arbitrary direct goals never use this path.
+ function authoredWalkLink(col,a,b){
+  if(!col?.local||a.crouch||b.crouch||a.ladder||b.ladder||a.water||b.water)return false;
+  const rise=b.h[2]-a.h[2],distance=Math.hypot(b.h[0]-a.h[0],b.h[1]-a.h[1]);
+  if(Math.abs(rise)>90||distance<30||distance>260)return false;
+  if(BSP.traceAll(col,a.h,a.h).startsolid||BSP.traceAll(col,b.h,b.h).startsolid)return false;
+  const floorA=floorAt(col,a.h,5),floorB=floorAt(col,b.h,5);
+  if(!floorA||!floorB||Math.abs(floorA[2]-a.h[2])>5||Math.abs(floorB[2]-b.h[2])>5)return false;
+  const T=col.T,goal=BSP.toGame(T,b.h),speed=250*T.k,dt=.05;
+  const st={pos:BSP.toGame(T,a.h),on:true,vy:0,vel:[0,0],jumpHeld:false};
+  let stalled=0;
+  for(let i=0;i<32;i++){
+   const dx=goal[0]-st.pos[0],dz=goal[2]-st.pos[2],d=Math.hypot(dx,dz);
+   if(st.on&&d<=24*T.k&&Math.abs(goal[1]-st.pos[1])<=12*T.k&&
+      !BSP.traceAll(col,BSP.toHammer(T,st.pos),BSP.toHammer(T,st.pos)).startsolid)return true;
+   if(d<.001||st.pos[1]<goal[1]-110*T.k)return false;
+   const before=st.pos.slice();
+   BSP.movePlayer(col,T,st,[dx/d*speed,dz/d*speed],dt,false,false);
+   stalled=st.on&&Math.hypot(st.pos[0]-before[0],st.pos[2]-before[2])<.4*T.k?stalled+1:0;
+   if(stalled>=7)return false;
+  }
+  return false;
+ }
  // A straight hull ray rejects low ledges a jump can clear and accepts gaps
  // that cannot be crossed. Validate flagged transitions with the same physics
  // used by bots, with bounded, plausible ground approach velocities.
@@ -737,12 +764,30 @@ const LocalBSPNav=(()=>{
    for(const n of nodes){if(n.valid!==false&&!n.crouch&&!n.ladder&&!n.water&&window.BSPDoors?.buttonReach(col,button,n.h))d.buttons.push({node:n.id,button});if(d.buttons.length>=64)break;}
    if(d.buttons.length>=64)break;
   }
-  for(const n of nodes){if(n.valid===false)continue;n.jumpEdges=new Set();n.edges=n.edges.filter(id=>{const t=nodes[id];if(!t||t.valid===false)return false;if(ladderLink(col,n,t)||waterLink(col,n,t)||waterExitLink(col,n,t)||edgeWalk(col,n,t))return true;if(openCol&&edgeWalk(openCol,n,t))return true;if(hasTriggers){const triggered=openDoorHull(col,n.crouch?lower(n.h):n.h);if(triggered&&edgeWalk(triggered,n,t))return true;}if((n.jumps?.has(id)||t.jump)&&jumpLink(col,n,t)){n.jumpEdges.add(id);return true;}
+  for(const n of nodes){if(n.valid===false)continue;n.jumpEdges=new Set();n.edges=n.edges.filter(id=>{const t=nodes[id];if(!t||t.valid===false)return false;if(ladderLink(col,n,t)||waterLink(col,n,t)||waterExitLink(col,n,t)||edgeWalk(col,n,t)||graph.chateauRepair&&graph.version&&authoredWalkLink(col,n,t))return true;if(openCol&&edgeWalk(openCol,n,t))return true;if(hasTriggers){const triggered=openDoorHull(col,n.crouch?lower(n.h):n.h);if(triggered&&edgeWalk(triggered,n,t))return true;}if((n.jumps?.has(id)||t.jump)&&jumpLink(col,n,t)){n.jumpEdges.add(id);return true;}
     if(graph.remoteLinks.length<128&&!n.crouch&&!t.crouch&&!n.ladder&&!t.ladder&&!n.water&&!t.water){
      for(const d of remoteDoors){if(!d.buttons.length)continue;
       if(BSP.traceAll({...col,head:-1,breakables:[d.entry]},n.h,t.h).hit&&edgeWalk(d.open,n,t)){graph.remoteLinks.push({from:n.id,to:id,entry:d.entry.remoteLiveEntry||d.entry,buttons:d.buttons});break;}
      }
     }return false;});edges+=n.edges.length;}
+  // Original YaPB graphs sometimes provide only an inward direction between
+  // two spawn waypoints. If the return direction is physically walkable without
+  // a jump, restore that one reverse link in the validated runtime graph.
+  // Do not fabricate new spatial neighbors or bypass a solid window or door.
+  graph.walkVerifiedLinks=[];
+  if(graph.chateauRepair&&graph.version){
+   const incoming=nodes.map(n=>n.edges.slice());
+   for(const n of nodes){
+    if(n.valid===false)continue;
+    for(const id of incoming[n.id]){
+     const t=nodes[id];
+     if(t?.valid===false||!t||t.edges.includes(n.id)||t.edges.length>=8)continue;
+     if(!authoredWalkLink(col,t,n))continue;
+     t.edges.push(n.id);edges++;
+     graph.walkVerifiedLinks.push({from:t.id,to:n.id});
+    }
+   }
+  }
   delete graph.routes;delete graph.reachCache;delete graph.commonReachable;delete graph.nearCells;
   graph.teamAllowed=Object.fromEntries(['CT','T'].map(team=>[team,new Set(nodes.filter(n=>teamAllows(n,team)).map(n=>n.id))]));
   const goals=[...new Set(sites.map(s=>s.id))].map(id=>nodes.filter(n=>n.edges.length&&sites.some(s=>s.id===id&&LocalBSP.inSite(s,n.h))).map(n=>n.id));

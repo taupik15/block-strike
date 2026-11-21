@@ -1628,7 +1628,7 @@ async function beginMatch(){
    verifyLocalOrientation(localMapData);
    activeMapData={id:'local_bsp',name:localMapData.name,local:localMapData,spawn:localMapData.spawn};
    // Refresh stale warnings from maps imported before automatic GRAPH support.
-   MapLibrary.updateReport(selectedMapId,{missing:localMapData.missing,warnings:localMapData.warnings,nav:localMapData.navSource,overview:localMapData.overviewPath||null,globalWads:localMapData.globalWads,navRevision:15}).catch(()=>{});
+   MapLibrary.updateReport(selectedMapId,{missing:localMapData.missing,warnings:localMapData.warnings,nav:localMapData.navSource,overview:localMapData.overviewPath||null,globalWads:localMapData.globalWads,navRevision:16}).catch(()=>{});
 
   }else{
    const r=await fetch('assets/maps/'+selectedMapId+'.json');if(!r.ok)throw new Error('Map tidak ditemukan');activeMapData=await r.json();
