@@ -1,4 +1,4 @@
-/* AR.11.10.9: shared first-person/spectator camera profile and opt-in camera QA; PWA shell update. */
+/* AR.11.10.9-MDL native GoldSrc v10 viewmodels and offline cache refresh. */
 /* AR.11.10.8: team-parity audit and connected bombsite search patrol; no combat or graph balance cheats. */
 /* AR.11.10.7: physically verified combat breakables, single active touch joystick, complete original radio asset mapping. */
 /* AR.11.10.6: C4 touch discoverability and event-linked team voice parity. */
