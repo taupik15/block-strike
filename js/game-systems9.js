@@ -98,7 +98,7 @@ const Phase9=(()=>{
   const nv=$('nvgBtn');if(nv){nv.classList.toggle('active',nightVisionActive);nv.classList.toggle('unavailable',!nightVision);nv.title=nightVision?'Night vision (N)':'Beli night vision dahulu'}
   const cr=$('crouchBtn');if(cr)cr.classList.toggle('active',crouching);
   const gd=$('grenadeTypeBtn');if(gd){gd.dataset.grenade=selectedGrenade;gd.title='Pilih '+selectedGrenade.toUpperCase()+' (tap untuk ganti)'}
-  const mode=$('modeStatus');if(mode){let bits=[];if(nightVisionActive)bits.push('NVG ON');if(shieldActiveWeapon())bits.push(shieldRaised?'SHIELD UP':'SHIELD DOWN');if(k==='usp'||k==='m4a1')bits.push(silenced[k]?'SILENCER ON':'SILENCER OFF');if(k==='famas')bits.push(famasBurst?'BURST':'AUTO');if(k==='glock18')bits.push(glockBurst?'BURST':'SEMI');if(aiming&&scopeLevels(k))bits.push('ZOOM '+(zoomIdx+1)+'/'+scopeLevels(k));if(crouching)bits.push('CROUCH');if(typeof isWalking==='function'&&isWalking())bits.push('WALK');mode.textContent=bits.join(' · ')}
+  const mode=$('modeStatus');if(mode){let bits=[];if(nightVisionActive)bits.push('NVG ON');if(shieldActiveWeapon()){bits.push(shieldRaised?'SHIELD UP':'SHIELD DOWN');if(shieldRaised&&A[shieldPistol()]?.mag===0)bits.push('LOWER SHIELD TO RELOAD');}if(k==='usp'||k==='m4a1')bits.push(silenced[k]?'SILENCER ON':'SILENCER OFF');if(k==='famas')bits.push(famasBurst?'BURST':'AUTO');if(k==='glock18')bits.push(glockBurst?'BURST':'SEMI');if(aiming&&scopeLevels(k))bits.push('ZOOM '+(zoomIdx+1)+'/'+scopeLevels(k));if(crouching)bits.push('CROUCH');if(typeof isWalking==='function'&&isWalking())bits.push('WALK');mode.textContent=bits.join(' · ')}
  }
  function setCrouchInput(on){crouchRequested=!!on}
  function updateCrouch(dt=.016){

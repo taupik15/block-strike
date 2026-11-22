@@ -196,11 +196,7 @@ const Phase13=(()=>{
    data.silenced=!!bot.silenced;state.queue=[];
    const clip=weaponSequence(state,[bot.silenced?'add_silencer':'detach_silencer']);
    if(!playWeaponClip(state,clip,false))playWeaponClip(state,spectatorIdle(state,raised,unsilenced),true);
-  }else if(!raised&&fired){
-   state.queue=[];
-   const clip=spectatorFireClip(state,bot,asset,unsilenced);
-   if(clip)playWeaponClip(state,clip,false);
-  }else if(!raised&&reloaded){
+  }else if(!raised&&reloaded&&bot.reloadLeft>0){
    state.queue=[];
    const clip=spectatorReloadClip(state,unsilenced);
    if(clip){
@@ -215,6 +211,10 @@ const Phase13=(()=>{
      state.activeAction.setEffectiveTimeScale(duration/Math.max(.1,bot.reloadLeft));
     }
    }
+  }else if(!raised&&fired){
+   state.queue=[];
+   const clip=spectatorFireClip(state,bot,asset,unsilenced);
+   if(clip)playWeaponClip(state,clip,false);
   }
   state.mixer.update(dt);
  }
@@ -223,7 +223,7 @@ const Phase13=(()=>{
   const previous=specMode;specMode=next;resetSpecMovement();
   if(specMode==='chase'){orbitYaw=observed?.g.rotation.y||0;orbitPitch=.33}
   if(specMode==='free'&&previous!=='free'){
-   freePos.copy(['map','chase-map'].includes(previous)&&observed?observed.g.position.clone().add(new THREE.Vector3(0,1.8,0)):cam.position);freeYaw=observed?.g.rotation.y??cam.rotation.y;freePitch=0;
+   freePos.copy(['map','chase-map'].includes(previous)&&observed?observed.g.position.clone().add(new THREE.Vector3(0,spectatorEyeHeight(window.bspCol,!!observed.crouching),0)):cam.position);freeYaw=observed?.g.rotation.y??cam.rotation.y;freePitch=0;
   }
   if(specMode==='map'&&previous!=='map'){
    const ct=activeMapData?.spawn?.ct,t=activeMapData?.spawn?.t;
@@ -282,6 +282,12 @@ const Phase13=(()=>{
   if(specMode==='map'){mapCenter.x+=dx;mapCenter.z+=dz}
   else {freePos.x+=dx;freePos.z+=dz;freePos.y=Spectator15E.clamp(freePos.y+up*speed,1,100)}
  }
+ // The BSP actor origin is at the center of the collision hull, not its feet.
+ // Match the human camera's stand/crouch heights. A non-BSP map uses feet origin.
+ function spectatorEyeHeight(col,crouching){
+  const standing=col?0.56:1.6;
+  return standing-(crouching?(col?(Number.isInteger(col.crouchHead)?16*(col.T?.k||.02):.25):.63):0);
+ }
  function updateSpectator(dt){if(!spectating)return;
   if(!Spectator15E.alive(observed,playerTeam)){pickBot(1)}
   const b=observed;
@@ -290,8 +296,13 @@ const Phase13=(()=>{
   if(b&&autoDirector&&directorClock>=3.5){directorClock=0;const candidate=Spectator15E.director(bots,playerTeam,b,performance.now());
    if(candidate!==b)watchBot(candidate)}
   const subject=observed;
+  // Keep interpolated spectator X/Z, but use the physical actor origin for Y.
+  // The visual mount raises crouched models to compensate for the GoldSrc hull,
+  // and adding an ordinary 1.57-unit standing offset here put the camera near
+  // ceilings on BSP maps (human standing eye height is only 0.56).
   const base=subject?(subject.visualMount||subject.g).getWorldPosition(new THREE.Vector3()):null;
-  const eye=base?.clone().add(new THREE.Vector3(0,subject.crouching?1.14:1.57,0));
+  const eye=base?.clone();
+  if(eye)eye.y=subject.g.getWorldPosition(new THREE.Vector3()).y+spectatorEyeHeight(window.bspCol,!!subject.crouching);
   if(specMode==='first'){
    subject.g.visible=false;updateSpectatorWeapon(subject,dt);
    cam.position.copy(eye);const aim=BombMode.isDefusing?.(subject)?BombMode.defuseLook(cam.position,subject.g.rotation.y):botAim(subject,cam.position);cam.rotation.set(aim.pitch,aim.yaw,0,'YXZ');

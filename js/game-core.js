@@ -872,7 +872,10 @@ function humanHitShape(crouch,col=window.bspCol){
  const legTop=crouch?.32:.40,stomachTop=crouch?.53:.58,headBase=.82;
  const band=(part,w,d,x,lo,hi)=>[part,w*width,(hi-lo)*height,d*width,x*width,bottom+(lo+hi)*height/2,0];
  const boxes=[band('leg',.35,.45,-.19,0,legTop),band('leg',.35,.45,.19,0,legTop),band('stomach',.58,.56,0,legTop,stomachTop),band('chest',.70,.62,0,stomachTop,headBase),band('head',.42,.44,0,headBase,1),band('arm',.18,.45,-.44,stomachTop,headBase),band('arm',.18,.45,.44,stomachTop,headBase)];
- const sh=Math.min(52*unit,height),shield=['shield',26.7*unit,sh,8*unit,0,bottom+height*.48,-width*.47];
+ // The raised shield reaches the head, not merely the center of the chest.
+ // Keep its original width/thickness and lower-leg exposure; only front
+ // bullet traces may intersect this volume.
+ const sh=Math.min(52*unit,height),shield=['shield',26.7*unit,sh,8*unit,0,bottom+height*.62,-width*.47];
  return {boxes,shield,chestY:boxes[3][5]};
 }
 function botTraceBullet(shooter,origin,dir,range,layers=0,travelled=0){
@@ -1011,6 +1014,10 @@ function playBotAction(b,verb,id=b.weaponId,duration=null){
 }
 function updateCharacterAnimation(b,moving,hasEnemy){
  const t=performance.now()/1000,planting=!!BombMode.isPlanting?.(b),defusing=!!BombMode.isDefusing?.(b);
+ // Gameplay reload advances at the bot's AI tick, but its animation plays at
+ // render rate. In crowded matches the latter can finish first: hold the
+ // authored reload pose until ammunition is actually committed.
+ if(b.reloadLeft>0&&/^(ref|crouch)_reload_/.test(b.cur||''))b.animHoldUntil=Math.max(b.animHoldUntil||0,t+Math.min(.25,b.reloadLeft));
  const gait=moving&&b.medium!=='water'&&b.medium!=='ladder'&&b.onGround!==false?(b.crouching?'crouchrun':b.lastMoveSpeed<2?'walk':'run'):null;
  b.characterGait=planting||defusing?null:gait;
  b.objectivePose=planting||defusing;
@@ -1207,7 +1214,11 @@ let pendingKnife=null,pendingAutoReload=null;
 function scheduleAutoReload(k,delay=.25){pendingAutoReload={k,display:cur(),round,delay}}
 function updateAutoReload(dt){const a=pendingAutoReload;if(!a)return;
  if(a.round!==round||cur()!==a.display||P.hp<=0||roundWait>0||reloading||A[a.k]?.mag!==0){pendingAutoReload=null;return}
- a.delay-=dt;if(a.delay<=1e-8&&swapT<=0&&!WeaponModes15C.active()&&!inputBlocked()){pendingAutoReload=null;reload()}
+ a.delay-=dt;
+ // Reload cannot begin with the shield raised. Keep the request until the
+ // player lowers it, instead of silently discarding the only auto-reload.
+ if(a.display==='shield'&&Phase9.shieldRaised)return;
+ if(a.delay<=1e-8&&swapT<=0&&!WeaponModes15C.active()&&!inputBlocked()){pendingAutoReload=null;reload()}
 }
 function knifeTrace(stab){
  const origin=cam.position,dir=cam.getWorldDirection(V()),col=window.bspCol,scale=col?.T.k||.02,reach=(stab?32:48)*scale;
@@ -1356,7 +1367,8 @@ function damageBot(b,d,part,pt,byPlayer=true,attacker=null,weaponId='',distance=
   hud();
  }
 }
-function reload(){if(BombMode.selected?.()||inputBlocked()||swapT>0||(cur()==='shield'&&Phase9.shieldRaised)||Phase9.handlingGrenade()||WeaponModes15C.active()||vm?.userData.weaponAnimation?.currentKind==='silencer')return;const k=cur()==='shield'?Phase9.shieldPistol():cur(),st=A[k],w=W[k];if(BombMode.locked()||k==='knife'||reloading||st.mag>=w.mag||st.res<=0)return;
+function reload(){if(BombMode.selected?.()||inputBlocked()||swapT>0||Phase9.handlingGrenade()||WeaponModes15C.active()||vm?.userData.weaponAnimation?.currentKind==='silencer')return;const k=cur()==='shield'?Phase9.shieldPistol():cur(),st=A[k],w=W[k];if(BombMode.locked()||k==='knife'||reloading||st.mag>=w.mag||st.res<=0)return;
+ if(cur()==='shield'&&Phase9.shieldRaised){say('LOWER SHIELD TO RELOAD');return;}
  // Retract scope before starting reload. Do not restore it when reload completes.
  if(aiming&&Combat12.scoped.has(k)){aiming=false;zoomIdx=0;syncAim();
   if(cam){cam.fov=baseFov;cam.updateProjectionMatrix()}}
