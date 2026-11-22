@@ -14,7 +14,8 @@ const Phase10=(()=>{
  };
  let config={players:16,difficulty:'normal',followers:3},roster=[],statCache=new Map(),playerDeaths=0,roundWinner=null;
  let lossStreak={CT:0,T:0},teamEco={CT:false,T:false};
- let matchStart=0,grenadeBudget={CT:-100,T:-100},radioMode=null,radioOpen=false,radioLast=-100,botVoiceLast=-100,radioSeq=0,voiceEpoch=0,voiceRequest=0;
+ let matchStart=0,grenadeBudget={CT:-100,T:-100},radioMode=null,radioOpen=false,radioLast=-100,botVoiceLast=-100,radioSeq=0,voiceEpoch=0,voiceRequest=0,announcementUntil=0;
+ const lastBackupByTeam={CT:-100,T:-100};
  const activeVoices=new Set(),radioIcons=new Map();
  const voiceCache=new Map(),textureCache=new Map(),effects=[],sounds=[];
  const CS16_RADIO_WAV=new Set(["blow", "bombdef", "bombpl", "circleback", "clear", "com_followcom", "com_getinpos", "com_go", "com_reportin", "ct_affirm", "ct_backup", "ct_coverme", "ct_enemys", "ct_fireinhole", "ct_imhit", "ct_inpos", "ct_point", "ct_reportingin", "ctwin", "elim", "enemydown", "fallback", "fireassis", "flankthem", "followme", "getout", "go", "hitassist", "hosdown", "letsgo", "locknload", "matedown", "meetme", "moveout", "negative", "position", "regroup", "rescued", "roger", "rounddraw", "sticktog", "stormfront", "takepoint", "terwin", "vip"]);
@@ -68,7 +69,7 @@ const Phase10=(()=>{
   b.cd=Math.max(b.cd||0,b.skill.reaction*.6);
   b.aiAccum=((sideIndex+(b.team==='T'?5:0))%11)*.007;b.scanTimer=(sideIndex%6)*.045;
   b.savedLoadout=prev.loadout||null;b.money=clamp(prev.money??800,0,16000);b.defuseKit=!!prev.defuseKit;b.armor=prev.armor??0;b.helmet=prev.helmet??false;
-  b.noticeElapsed=0;b.seenId=null;b.heard=null;b.threat=null;b.guardScanAt=0;b.guardYaw=null;b.radioUntil=0;b.voiceAt=-100;b.friendlyCue=null;b.reactionAt=-100;b.lastSeen=null;b.memoryShotAt=null;b.memoryProbeAt=0;b.reloadLeft=0;b.heCount=0;b.flashCount=0;b.smokeCount=0;b.visibleEnemy=null;b.memory=null;b.radioOrder=null;b.grenadeUsed=false;b.recoveryTime=0;b.stuck=0;b.layoutNav=null;b.nav=null;
+  b.noticeElapsed=0;b.seenId=null;b.heard=null;b.threat=null;b.guardScanAt=0;b.guardYaw=null;b.radioUntil=0;b.voiceAt=-100;b.voiceCueCounts={};b.nextBackupAt=-100;b.friendlyCue=null;b.reactionAt=-100;b.lastSeen=null;b.memoryShotAt=null;b.memoryProbeAt=0;b.reloadLeft=0;b.heCount=0;b.flashCount=0;b.smokeCount=0;b.visibleEnemy=null;b.memory=null;b.radioOrder=null;b.grenadeUsed=false;b.recoveryTime=0;b.stuck=0;b.layoutNav=null;b.nav=null;
   const rec={id,team:b.team,name:b.name,bot:b,kills:prev.kills,deaths:prev.deaths,money:b.money,alive:true};
   statCache.set(id,prev);roster.push(rec);return b;
  }
@@ -142,7 +143,7 @@ const Phase10=(()=>{
   if(killer&&killer!==b&&killer.botId&&killer.team!==b.team){
    const k=roster.find(r=>r.bot===killer);if(k){k.kills++;const st=statCache.get(k.id)||{};st.kills=k.kills;statCache.set(k.id,st);creditBot(killer,300,'KILL')}
   }
-  if(killer&&killer!==b&&Math.random()<.22)botTalk(killer,'enemy_down');
+  if(killer&&killer!==b&&Math.random()<.22)botCue(killer,'kill');
   if(sbOpen)renderScoreboard();
  }
  function onPlayerDeath(killer){Phase9.dropPlayerOnDeath?.();if(killer?.botId&&killer.team===playerTeam)creditBot(killer,-3300,'TEAMKILL');
@@ -195,6 +196,12 @@ const Phase10=(()=>{
   const t=now(),fresh=!b.threat||t-b.threat.t>.8||b.threat.pos.distanceToSquared(source)>9;
   b.threat={pos:source.clone(),t};
   if(fresh){b.scanTimer=0;b.guardScanAt=0;}
+  // Report genuine enemy fire, not a guessed enemy through a wall. Bound
+  // radio frequency globally per team and individually, even with 32 bots.
+  if(fresh&&b.hp>0&&t>(b.nextBackupAt||-100)&&t-lastBackupByTeam[b.team]>8&&
+      (b.hp<=65||b.visibleEnemy)){
+   if(botCue(b,'backup',true)){b.nextBackupAt=t+16;lastBackupByTeam[b.team]=t;}
+  }
  }
  function orientAwareness(b,order,dt){
   const t=now(),p=b.g.position;
@@ -265,7 +272,7 @@ const Phase10=(()=>{
     b.lastSeen={pos:target.pos.clone(),t:sampleTime,id:target.id,velocity,confirmed:b.noticeElapsed>=(b.skill?.reaction||.5),isP:target.isP,crouching:!!(target.isP?Phase9.crouching:target.bot?.crouching)};
     BombMode.observe?.(b,target.pos,target.id);
     b.visibleEnemy=b.noticeElapsed>=(b.skill?.reaction||.5)?{...target,pos:target.pos.clone(),velocity}:null;
-    if(b.visibleEnemy&&!b.spottedNotified){botTalk(b,'target_spotted');b.spottedNotified=true}
+    if(b.visibleEnemy&&!b.spottedNotified){botCue(b,'sighting');b.spottedNotified=true}
    }else{b.visibleEnemy=null;b.seenId=null;b.noticeElapsed=0;b.spottedNotified=false;listen(b)}
   }
   const enemy=b.visibleEnemy;
@@ -380,7 +387,7 @@ const Phase10=(()=>{
    if(name==='report'){
     // "Report in" requests a situational response, but reveals no hidden enemy.
     const ally=bots.filter(b=>!b.dead&&b.team===playerTeam).sort((a,b)=>a.g.position.distanceTo(P.pos)-b.g.position.distanceTo(P.pos))[0];
-    if(ally)botTalk(ally,ally.visibleEnemy?'target_spotted':'sector_clear',true);
+    if(ally)ally.visibleEnemy?botCue(ally,'sighting',true):botTalk(ally,'sector_clear',true);
    }
    return true;
   }
@@ -472,7 +479,7 @@ const Phase10=(()=>{
  function radioAllowed(team){return team===null||team===playerTeam}
  function removeRadioIcon(b){const icon=radioIcons.get(b);if(icon){icon.parent?.remove(icon);icon.material.dispose();radioIcons.delete(b)}}
  function stopVoice(v){activeVoices.delete(v);if(v.speaker&&v.speaker.radioUntil===v.until)v.speaker.radioUntil=0;try{v.source.stop()}catch(_){}try{v.source.disconnect();v.gain.disconnect()}catch(_){}}
- function resetVoices(){voiceEpoch++;botVoiceLast=-100;radioLast=-100;for(const v of activeVoices)stopVoice(v);for(const b of radioIcons.keys())removeRadioIcon(b);for(const b of bots)b.radioUntil=0;showRadioText.token++;$('radioStatus')?.classList.add('hidden')}
+ function resetVoices(){voiceEpoch++;botVoiceLast=-100;radioLast=-100;announcementUntil=0;lastBackupByTeam.CT=lastBackupByTeam.T=-100;for(const v of activeVoices)stopVoice(v);for(const b of radioIcons.keys())removeRadioIcon(b);for(const b of bots)b.radioUntil=0;showRadioText.token++;$('radioStatus')?.classList.add('hidden')}
  function radioPlay(channel,stem,volume=.5,team=playerTeam,speaker=null){
   if(!AC||!stem||!radioAllowed(team))return;
   const epoch=voiceEpoch,request=++voiceRequest,key=channel+'/'+stem;let task=voiceCache.get(key);
@@ -486,7 +493,7 @@ const Phase10=(()=>{
  }
  function botTalk(b,key,urgent=false,channel='bot',label=null){
   if(!b||b.dead||!running||!radioAllowed(b.team))return false;
-  const t=now();if(t-botVoiceLast<(urgent?.8:3.4)||t-(b.voiceAt??-100)<(urgent?2:7))return false;
+  const t=now();if(t<announcementUntil||t-botVoiceLast<(urgent?.8:3.4)||t-(b.voiceAt??-100)<(urgent?2:7))return false;
   botVoiceLast=t;b.voiceAt=t;
   // Text-only fallback if audio is locked; actual playback sets the icon duration.
   if(!AC)b.radioUntil=t+1.2;
@@ -494,16 +501,45 @@ const Phase10=(()=>{
   showRadioText((b.name||'BOT')+': '+(label||key.replaceAll('_',' ').toUpperCase()));
   return true;
  }
+ // Event-linked voice sets, all mapped to bundled original game assets.
+ // Rotate per bot/context. Keep the global and per-bot rate limits in botTalk.
+ const VOICE_CUES={
+  sighting:[['target_spotted','bot','TARGET SPOTTED!'],['ct_enemys','radio','ENEMY SPOTTED!'],['attacking_enemies','bot','ATTACKING ENEMIES!']],
+  backup:[['i_could_use_some_help','bot','I COULD USE SOME HELP!'],['ct_backup','radio','NEED BACKUP!'],['taking_fire_need_assistance2','bot','TAKING FIRE, NEED ASSISTANCE!'],['need_help','bot','NEED HELP!']],
+  friendly:[['hold_your_fire','bot','HOLD YOUR FIRE!'],['ct_imhit','radio',"I'M HIT!"],['negative','radio','NEGATIVE!']],
+  kill:[['enemy_down','bot','ENEMY DOWN!'],['got_him','bot','GOT HIM!'],['nice_shot','bot','NICE SHOT!']],
+  compliment:[['good_job_team','bot','GOOD JOB, TEAM!'],['nice_work_team','bot','NICE WORK, TEAM!'],['good_one','bot','GOOD ONE!']]
+ };
+ function botCue(b,context,urgent=false){
+  if(!b||b.dead||!VOICE_CUES[context])return false;
+  const counts=b.voiceCueCounts||(b.voiceCueCounts={});
+  const list=VOICE_CUES[context],idx=((b.teamIndex||0)+(counts[context]||0))%list.length;
+  const [stem,channel,label]=list[idx];
+  if(!botTalk(b,stem,urgent,channel,label))return false;
+  counts[context]=(counts[context]||0)+1;return true;
+ }
+ function celebratePlayerKill(){
+  if(!running||Math.random()>=.32)return;
+  const witness=bots.filter(b=>!b.dead&&b.team===playerTeam&&b.g.position.distanceToSquared(P.pos)<20*20)
+    .sort((a,b)=>a.g.position.distanceToSquared(P.pos)-b.g.position.distanceToSquared(P.pos))[0];
+  if(witness)botCue(witness,'kill');
+ }
+ function bombAnnouncement(event,site){
+  if(event!=='planted'||!running)return;
+  announcementUntil=Math.max(announcementUntil,now()+1.6);
+  radioPlay('radio','bombpl',.74,null);
+  showRadioText('THE BOMB HAS BEEN PLANTED'+(site?' · SITE '+site:''));
+ }
  function friendlyHit(b,source,team){
   if(!b||b.dead||team!==b.team||!source)return;
   const t=now();if(t-(b.reactionAt??-100)<3)return;
-  b.reactionAt=t;b.friendlyCue={pos:source.clone(),t};botTalk(b,'hold_your_fire',true,'bot','HOLD YOUR FIRE!');
+  b.reactionAt=t;b.friendlyCue={pos:source.clone(),t};botCue(b,'friendly',true);
  }
  function grenadeThrown(owner,team){
   if(owner==='player'){if(team===playerTeam&&running&&now()-radioLast>=.8){radioLast=now();radioPlay('radio','ct_fireinhole',.52,team);showRadioText('RADIO · FIRE IN THE HOLE!')}}
   else botTalk(owner,'ct_fireinhole',true,'radio','FIRE IN THE HOLE!');
  }
- function friendlyFlash(b,team){if(b.team===team)botTalk(b,'hold_your_fire',true,'bot','HOLD YOUR FIRE!')}
+ function friendlyFlash(b,team){if(b.team===team)botCue(b,'friendly',true)}
  function radioSpeaking(b){return !!b&&!b.dead&&b.team===playerTeam&&(b.radioUntil||0)>now()}
  function radioBlink(b){return radioSpeaking(b)&&Math.floor(now()*5)%2===0}
  function updateRadio(){
@@ -537,8 +573,23 @@ const Phase10=(()=>{
    creditBot(rec.bot,payout?.[rec.team]??(rec.team===winner?3250:1400),'ROUND PAYOUT');
   }
   if(sbOpen)renderScoreboard();
-  radioPlay('radio',winner==='CT'?'ctwin':'terwin',.72,null);
-  showRadioText(winner==='CT'?'COUNTER-TERRORISTS WIN':'TERRORISTS WIN');
+  // Objective callouts take priority over victory chatter. Never play both
+  // concurrently: the existing single-radio-voice mixer is intentional.
+  const epoch=voiceEpoch,seq=radioSeq;
+  announcementUntil=Math.max(announcementUntil,now()+(reason==='BOMB DEFUSED'?2.15:1.5));
+  const announcer=reason==='BOMB DEFUSED'?'bombdef':winner==='CT'?'ctwin':'terwin';
+  radioPlay('radio',announcer,.72,null);
+  showRadioText(reason==='BOMB DEFUSED'?'THE BOMB HAS BEEN DEFUSED':winner==='CT'?'COUNTER-TERRORISTS WIN':'TERRORISTS WIN');
+  if(reason==='BOMB DEFUSED')setTimeout(()=>{
+   if(epoch===voiceEpoch&&seq===radioSeq&&running)radioPlay('radio','ctwin',.65,null);
+  },1350);
+  // Short compliment once in a while, after the round announcement. Team
+  // channel only and skipped when no surviving teammate is available.
+  if(winner===playerTeam&&Math.random()<.65)setTimeout(()=>{
+   if(epoch!==voiceEpoch||seq!==radioSeq||!running)return;
+   const ally=bots.filter(b=>b.team===winner&&!b.dead);
+   if(ally.length)botCue(ally[(round+ally.length)%ally.length],'compliment',true);
+  },reason==='BOMB DEFUSED'?2750:2050);
  }
  // Touch activation must not depend on the primary finger's synthesized click.
  // Radio list scrolling is handled by its own pointer so it works while moving.
@@ -738,5 +789,5 @@ const Phase10=(()=>{
  function init(){initMatchSettings();setupRadio()}
  init();
  return {get config(){return config},get profiles(){return PROFILES},counts,setConfig,preview,resetMatch,roundStart,registerBot,prepareBotRound,creditBot,recordDefuseKit,onBotDeath,onPlayerDeath,
-  renderBoard,seenEnemy,noticeDamage,orientAwareness,goal,radioGoal,tacticalGoal,soundEvent,command,radioCommands:RADIO_COMMANDS,radioCategories:RADIO_CATEGORIES,selectRadio,openRadio,maybeBotGrenade,botTalk,friendlyHit,grenadeThrown,friendlyFlash,radioSpeaking,radioBlink,resetVoices,roundEnd,closeRadio,muzzlePlayer,muzzleBot,bloodImpact,updateFX,clearFX,debugBots:()=>bots.map(b=>({id:b.botId,team:b.team,dead:!!b.dead,role:b.objectiveRole,site:b.siteAssignment,radio:b.radioOrder?.mode,waypoint:b.localRoute?.from,pathLength:b.localRoute?.points?.length||0,destination:b.localRoute?.goal?.toArray(),position:b.g.position.toArray(),stuck:b.stuck||0,replans:b.localRoute?.replans||0,lastSeen:b.lastSeen?.pos?.toArray()})),getDebugState:()=>({players:config.players,difficulty:config.difficulty,roster:roster.length,orders:roster.filter(r=>r.bot.radioOrder).length,radioOpen,fx:effects.length})};
+  renderBoard,seenEnemy,noticeDamage,orientAwareness,goal,radioGoal,tacticalGoal,soundEvent,command,radioCommands:RADIO_COMMANDS,radioCategories:RADIO_CATEGORIES,selectRadio,openRadio,maybeBotGrenade,botTalk,botCue,celebratePlayerKill,bombAnnouncement,friendlyHit,grenadeThrown,friendlyFlash,radioSpeaking,radioBlink,resetVoices,roundEnd,closeRadio,muzzlePlayer,muzzleBot,bloodImpact,updateFX,clearFX,debugBots:()=>bots.map(b=>({id:b.botId,team:b.team,dead:!!b.dead,role:b.objectiveRole,site:b.siteAssignment,radio:b.radioOrder?.mode,waypoint:b.localRoute?.from,pathLength:b.localRoute?.points?.length||0,destination:b.localRoute?.goal?.toArray(),position:b.g.position.toArray(),stuck:b.stuck||0,replans:b.localRoute?.replans||0,lastSeen:b.lastSeen?.pos?.toArray()})),getDebugState:()=>({players:config.players,difficulty:config.difficulty,roster:roster.length,orders:roster.filter(r=>r.bot.radioOrder).length,radioOpen,fx:effects.length})};
 })();

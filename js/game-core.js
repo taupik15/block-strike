@@ -1361,7 +1361,7 @@ function damageBot(b,d,part,pt,byPlayer=true,attacker=null,weaponId='',distance=
   const death=b.crouching?'crouch_die':head?'head':part==='stomach'?'gutshot':'death'+(1+(Math.floor((b.t||0)*10)%3));b.deathClip=b.acts?.[death]?death:'death1';
   b.dead=.001;Phase9.dropBotWeapon(b);if(typeof clearHeldVisual==='function')clearHeldVisual(b);Phase10.onBotDeath(b,attacker);
   if(byPlayer&&friendly){money=Math.max(0,money-3300);kills--;}
-  if(byPlayer&&!friendly){kills++;money=Math.min(16000,money+300);say(head?'HEADSHOT!':'KILL');CS16SFX.play('events/enemy_died.wav',.11)}
+  if(byPlayer&&!friendly){kills++;money=Math.min(16000,money+300);say(head?'HEADSHOT!':'KILL');CS16SFX.play('events/enemy_died.wav',.11);Phase10.celebratePlayerKill?.()}
   killFeed(b,head,attacker,weaponId||kind,byPlayer);
   const enemyTeam=playerTeam==='CT'?'T':'CT';if(!BombMode.active()&&b.team===enemyTeam&&bots.filter(x=>x.team===enemyTeam).every(x=>x.dead)){Phase10.roundEnd(playerTeam);roundWait=3}
   hud();
