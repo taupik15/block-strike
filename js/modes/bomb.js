@@ -208,7 +208,7 @@ const BombMode=(()=>{
    escapeField=Object.fromEntries(['CT','T'].map(team=>[team,LocalBSPNav.distanceField(graph,safe.map(n=>n.id),team)]));
    bombField=LocalBSPNav.distanceField(graph,close.map(n=>n.id),'CT');
   }
-  marker(position,true);objectiveCash(actor);playOriginalSound('c4_plant.wav',.62);say('BOMB PLANTED · '+site.id);
+  marker(position,true);objectiveCash(actor);playOriginalSound('c4_plant.wav',.62);say('BOMB PLANTED · '+site.id);Phase10.bombAnnouncement?.('planted',site.id);
  }
  function defuse(actor){
   objectiveCash(actor);clearMarker();playOriginalSound('c4_disarmed.wav',.63);finish('CT','BOMB DEFUSED');
@@ -474,10 +474,21 @@ const BombMode=(()=>{
   document.body.classList.toggle('bomb-mode',enabled);
   GoldSrcSprites.updateBomb(enabled?phase:'inactive',enabled&&playerTeam==='CT'&&defuseKit,enabled&&carrier===human,playerTeam);
   $('kitStatus')?.classList.toggle('hidden',!enabled||playerTeam!=='CT'||!defuseKit||P.hp<=0);
-  if(!enabled){$('c4Chip')?.classList.add('hidden');updateProgressHud();return;}
+  if(!enabled){$('c4Chip')?.classList.add('hidden');button?.classList.add('hidden');updateProgressHud();return;}
   const use=options(human);
-  button.textContent=use==='pickup'?'⬇':'⚙';button.setAttribute('aria-label',use==='pickup'?'Take C4':'Hold to defuse');
-  button.classList.toggle('hidden',!isT||!use||use==='plant'||roundWait>0||Phase13.isSpectating());
+  // Make defuse discoverable on touch *before* the exact C4 hit/position test
+  // succeeds. E remains the PC control. Reaching C4 still uses the real
+  // collision/line-of-sight check, and the player must hold the button.
+  const canDefuse=use==='defuse'||locked()&&action?.type==='defuse';
+  const showDefuse=phase==='planted'&&playerTeam==='CT'&&P.hp>0;
+  const showPickup=use==='pickup';
+  const showButton=!!isT&&roundWait<=0&&!Phase13.isSpectating()&&(showDefuse||showPickup);
+  const duration=defuseKit?5:10;
+  button.textContent=showPickup?'AMBIL C4':canDefuse?'TAHAN DEFUSE · '+duration+'s':'DEKATI C4';
+  button.setAttribute('aria-label',showPickup?'Pick up C4':canDefuse?'Hold to defuse bomb, '+duration+' seconds':'Approach C4 to defuse');
+  button.disabled=showDefuse&&!canDefuse;
+  button.classList.toggle('ready',canDefuse);
+  button.classList.toggle('hidden',!showButton);
   dropButton?.classList.add('hidden');const chip=$('c4Chip');if(chip){chip.classList.toggle('hidden',carrier!==human||phase!=='carried'||P.hp<=0);chip.classList.toggle('on',selected);for(const gun of $('chips').querySelectorAll('.chip:not(#c4Chip)'))gun.classList.toggle('on',!selected&&Number(gun.dataset.index)===wi);}
   updateProgressHud();
   status.textContent=result||(
@@ -486,6 +497,7 @@ const BombMode=(()=>{
    carrier===human?'C4 · '+(selected?'EQUIPPED':'CARRIED'):
    playerTeam==='CT'?(defuseKit?'DEFUSE KIT · 5s':'DEFUSE · 10s'):'C4 CARRIED BY TEAMMATE'
   );
+  if(showDefuse&&canDefuse&&timer<duration)status.textContent+=' · NOT ENOUGH TIME';
   const roundLabel=$('bombScore');
   roundLabel.textContent='CT '+teamScores.CT+' : '+teamScores.T+' T';
  }
