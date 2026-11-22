@@ -367,6 +367,10 @@ const Phase9=(()=>{
  function hideReleasedGrenadeProp(){
   const view=grenadeView;
   if(!view||!['hegrenade','flashbang','smokegrenade'].includes(view.asset)||view.propHidden)return false;
+  if(view.group.children[0]?.userData.nativeMdl){
+   const props=[];view.group.traverse(o=>{if(o.isSkinnedMesh&&o.userData.mdlPart!=='rhand'&&o.userData.mdlPart!=='lhand')props.push(o)});
+   if(!props.length)return false;props.forEach(o=>o.visible=false);view.propHidden=true;return true;
+  }
   const meshes=[];
   view.group.traverse(o=>{if(o.isMesh&&/^GoldSrcViewmodel_[678]$/.test(o.name))meshes.push(o)});
   if(meshes.length!==3)return false;

@@ -31,7 +31,7 @@ const W={
 for(const [id,spec] of Object.entries(Combat12.TABLE))if(W[id]){W[id].dmg=spec.damage;const t=Combat12.timing[id];if(t){W[id].rate=t.rate;W[id].rl=t.reload}}
 W.shield={n:'TACTICAL SHIELD',dmg:0,rate:.2,mag:0,res:0,rl:2.1,rec:.013,auto:false,sp:.008,len:.65,col:0x56646e,price:2200,slot:'primary',sound:'usp1.wav',team:'CT'};
 let inventory=['usp','knife'],wi=0,playerTeam='CT',money=800,armor=0,helmet=false,defuseKit=false,nightVision=false,grenades={he:0,flash:0,smoke:0},selectedGrenade='he',buyTime=15,roundTime=120;
-const weaponModels={},weaponModelLoads={},weaponInstances={};
+const weaponModels={},weaponModelLoads={},weaponInstances={};let pendingWeaponSelection=0;
 let viewScene,viewCamera;
 const CTN=['gsg9','gign','sas','urban'], TN=['arctic','guerilla','leet','terror'], CTC={}, TC={};
 let ctState=0, ctWait=null;
@@ -71,7 +71,7 @@ function playerAmmo(id,mag,res){A[id]=Economy45.state(ammoPool,id,mag,res);retur
 function resetPlayerAmmo(){for(const key of Object.keys(ammoPool))delete ammoPool[key];for(const [id,w] of Object.entries(W))playerAmmo(id,w.mag);const pistol=playerTeam==='CT'?'usp':'glock18';Economy45.grant(ammoPool,pistol,W[pistol].mag*2)}
 function takePlayerReserve(id){return Economy45.take(ammoPool,id,inventory.filter(k=>k!==id))}
 const P={pos:new THREE.Vector3(0,0,26),vy:0,hp:100,yaw:0,pitch:0,on:true};
-let selectedMapId='dust_block',activeMapData=null,aiming=false,baseFov=CAMERA_PROFILE.worldFov(innerWidth/innerHeight);
+let selectedMapId='dust_block',activeMapData=null,aiming=false,baseFov=72;
 const ray=new THREE.Raycaster(), V=(x,y,z)=>new THREE.Vector3(x,y,z);
 const cur=()=>inventory[wi]||inventory[0]||'knife';
 /* AUDIO */
@@ -248,20 +248,27 @@ function ensureWeaponModel(k){return ensureWeaponAsset(weaponAssetName(k))}
 function ensureWeaponAsset(asset){
  if(weaponModels[asset])return Promise.resolve(weaponModels[asset]);
  if(weaponModelLoads[asset])return weaponModelLoads[asset];
- return weaponModelLoads[asset]=loadMatchModel('assets/models/weapons/'+asset+'.glb').then(g=>{weaponModels[asset]=g;return g}).catch(err=>{delete weaponModelLoads[asset];console.warn('Weapon model failed to load:',asset,err);throw err});
+ // The PC GoldSrc v_*.mdl is authoritative. Existing GLB remains the safe
+ // fallback for unsupported shield+grenade combinations or malformed models.
+ weaponModelLoads[asset]=(async()=>{
+  let result=null;
+  if(typeof GoldSrcMDL10!=='undefined'&&GoldSrcMDL10.sourceName(asset)){
+   try{result=await GoldSrcMDL10.load(asset,THREE)}
+   catch(error){console.warn('Native GoldSrc viewmodel fallback:',asset,error)}
+  }else if(typeof GoldSrcMDL10!=='undefined')GoldSrcMDL10.fallback(asset,'No combined v_*.mdl for this asset');
+  if(!result)result=await loadMatchModel('assets/models/weapons/'+asset+'.glb');
+  weaponModels[asset]=result;return result;
+ })().catch(err=>{console.warn('Weapon model failed to load:',asset,err);throw err}).finally(()=>{delete weaponModelLoads[asset]});
+ return weaponModelLoads[asset];
 }
 async function preloadViewmodels(){
- const assets=[...new Set([
-  playerTeam==='CT'?'usp':'glock18','knife','awp','scout',
-  ...Object.keys(ViewmodelCalibration)
- ])];
- let next=0,done=0;
- await waitForLoadTasks(Array.from({length:3},async()=>{
-  while(next<assets.length){
-   const id=assets[next++];
-   await ensureWeaponAsset(id);
-   $('loadStatus').textContent='Memuat model senjata '+(++done)+' / '+assets.length+'…';
-  }
+ // Startup needs only the equipped loadout, knife and plant/throw props.
+ // Purchased weapons, bots viewed in spectator and shield variants are lazy.
+ const assets=['usp','glock18','knife','c4','hegrenade'];
+ let done=0;
+ await waitForLoadTasks(assets.map(async id=>{
+  await ensureWeaponAsset(id);
+  $('loadStatus').textContent='Memuat model senjata '+(++done)+' / '+assets.length+'…';
  }));
 }
 function weaponSequenceNames(state,predicate){return state.clipNames.filter(n=>predicate(n.replace(/__\d+$/,'').toLowerCase()));}
@@ -341,7 +348,7 @@ function cloneViewmodel(gltf, asset){
  const model=THREE.SkeletonUtils.clone(gltf.scene);
  model.traverse(o=>{if(o.isMesh)o.frustumCulled=false});
  const [,x,y,z]=ViewmodelCalibration[asset];
- model.position.set(x,y,z);
+ if(gltf.nativeMdl){model.userData.nativeMdl=true;}else model.position.set(x,y,z);
  return model;
 }
 function mkGun(k){
@@ -355,7 +362,7 @@ function mkGun(k){
  }
  const gltf=weaponModels[asset];if(!gltf)return null;
  const g=new THREE.Group(),w=W[k],model=cloneViewmodel(gltf,asset);
- g.userData.viewAsset=asset;
+ g.userData.viewAsset=asset;g.userData.nativeMdl=!!gltf.nativeMdl;
  if(asset.startsWith('shield_'))g.userData.nativeShield15a=asset;
  g.add(model);
  const mixer=new THREE.AnimationMixer(model),actions={};gltf.animations.forEach(clip=>{actions[clip.name]=mixer.clipAction(clip)});
@@ -366,7 +373,8 @@ function mkGun(k){
   else if(state.currentKind!=='idle'){playWeaponAnimation('idle')}
  });
  g.userData.weaponAnimation=state;
- flash=new THREE.Object3D();flash.position.set(0,.02,-Math.max(.55,w.len+.15));g.add(flash);
+ flash=gltf.nativeMdl?model.getObjectByName('mdl_attach_0'):null;
+ if(!flash){flash=new THREE.Object3D();flash.position.set(0,.02,-Math.max(.55,w.len+.15));g.add(flash)}
  g.userData.flash=flash;weaponInstances[asset]=g;if(k==='shield')weaponInstances.shield=g;return g;
 }
 function refreshWeaponChips(){
@@ -375,7 +383,14 @@ function refreshWeaponChips(){
 function setW(i){
  if(BombMode.locked()||!inventory.length||!viewScene)return false;
  const selected=Phase14C.selectIndex(inventory,i,W),k=inventory[selected];
- if(!weaponModels[weaponAssetName(k)])return false;
+ if(!weaponModels[weaponAssetName(k)]){
+  const token=++pendingWeaponSelection;
+  ensureWeaponAsset(weaponAssetName(k)).then(()=>{
+   if(token===pendingWeaponSelection&&inventory.includes(k)&&running)setW(inventory.indexOf(k));
+  }).catch(error=>console.warn('Cannot equip weapon:',k,error));
+  return false;
+ }
+ pendingWeaponSelection++;
  BombMode.deselect?.();Phase9.cancelGrenade();WeaponModes15C.cancel();pendingKnife=pendingAutoReload=null;reloadSfxToken++;
  fh=fl=secondaryHeld=mouseSecondaryHeld=false;fireAimPointer=fireAimLast=adsPointer=adsAimLast=null;
  firedLatch=false;aiming=false;zoomIdx=0;
@@ -579,7 +594,7 @@ function startRound(){
 
 // Establish a valid camera even before the first gameplay tick (and after a round reset).
 function primeSpawnCamera(){
- cam.position.set(P.pos.x,P.pos.y+CAMERA_PROFILE.eyeHeight(window.bspCol,0),P.pos.z);
+ cam.position.set(P.pos.x,P.pos.y+(window.bspCol?.56:1.6),P.pos.z);
  cam.rotation.set(P.pitch,P.yaw,0,'YXZ');cam.updateMatrixWorld(true);
 }
 function botTickInterval(players){return players>24?.085:players>16?.06:.034;}
@@ -1535,8 +1550,8 @@ function update(dt){
  CS16SFX.step(dt,stepMove,P.on||inMedium,isWalking()&&!inMedium,Phase9.crouching,()=>CS16SFX.movementSurface(P.medium,P.waterLevel,()=>groundSoundSurface(P.pos)));
  if(l>.35&&P.on&&!isWalking()&&!Phase9.crouching&&performance.now()/1000>=(P.nextBotFootstep||0)){Phase10.soundEvent(playerTeam,P.pos,'step',.65);P.nextBotFootstep=performance.now()/1000+.42/Math.max(.35,l);}
  const motion=BSP.viewMotion(P.viewMotion||(P.viewMotion={}),travel,l,dt,P.on,(P.vel?.[0]*c-P.vel?.[1]*s||0)/(250*scale));
- cam.position.set(P.pos.x,P.pos.y+CAMERA_PROFILE.eyeHeight(window.bspCol,Phase9.crouchBlend)+motion.camera,P.pos.z);if(window.bspSky)window.bspSky.position.set(cam.position.x,cam.position.y,cam.position.z);P.recoil=Combat12.recoverRecoil(P.recoil,dt,!!(fh||fl));cam.rotation.set(P.pitch+(P.recoil?.pitch||0),P.yaw+(P.recoil?.yaw||0),0,'YXZ');
- baseFov=CAMERA_PROFILE.worldFov(cam.aspect);const targetFov=aiming&&scopeZoom(cur())?scopeZoom(cur()):baseFov;if(Math.abs(cam.fov-targetFov)>.1){cam.fov+=(targetFov-cam.fov)*Math.min(1,dt*12);cam.updateProjectionMatrix()}
+ cam.position.set(P.pos.x,P.pos.y+(window.bspCol?.56:1.6)-Phase9.crouchBlend*(window.bspCol?(Number.isInteger(bspCol.crouchHead)?16*scale:.25):.63)+motion.camera,P.pos.z);if(window.bspSky)window.bspSky.position.set(cam.position.x,cam.position.y,cam.position.z);P.recoil=Combat12.recoverRecoil(P.recoil,dt,!!(fh||fl));cam.rotation.set(P.pitch+(P.recoil?.pitch||0),P.yaw+(P.recoil?.yaw||0),0,'YXZ');
+ const targetFov=aiming&&scopeZoom(cur())?scopeZoom(cur()):baseFov;if(Math.abs(cam.fov-targetFov)>.1){cam.fov+=(targetFov-cam.fov)*Math.min(1,dt*12);cam.updateProjectionMatrix()}
  syncAim();
  cool-=dt;swapT-=dt;kick=Math.max(0,kick-dt*8);
  if(P.resumeZoom&&cool<=0){const z=P.resumeZoom;P.resumeZoom=null;if(cur()===z.weapon&&!reloading){aiming=true;zoomIdx=z.index;syncAim();Phase9.updateHud()}}
@@ -1584,9 +1599,9 @@ function renderActiveViewmodel(){
  const hidden=[];
  for(const child of viewScene.children){if(child!==subject&&child.userData.viewAsset&&child.visible){hidden.push(child);child.visible=false}}
  try{
-  const fov=CAMERA_PROFILE.getViewmodelFov(ViewmodelCalibration[subject.userData.viewAsset]?.[0]);
+  const fov=(subject.userData.nativeMdl||subject.children[0]?.userData.nativeMdl)?GoldSrcMDL10.profile.viewmodelFov:(ViewmodelCalibration[subject.userData.viewAsset]?.[0]||65);
   if(viewCamera.fov!==fov){viewCamera.fov=fov;viewCamera.updateProjectionMatrix()}
-  const vmOffset=CAMERA_PROFILE.viewmodelOffset();viewCamera.position.set(vmOffset[0],shieldViewCameraY(subject)+vmOffset[1],vmOffset[2]);
+  viewCamera.position.y=shieldViewCameraY(subject);
   R.autoClear=false;R.clearDepth();R.render(viewScene,viewCamera);return true;
  }finally{for(const child of hidden)child.visible=true;R.autoClear=true}
 }
@@ -1614,19 +1629,11 @@ function loop(t){
    R.autoClear=true;R.render(S,cam);RuntimeHealth.countDraws();
    RuntimeHealth.stage('viewmodel render');if(renderActiveViewmodel())RuntimeHealth.countDraws();
    RuntimeHealth.rendered();
-   if(typeof CameraDebug!=='undefined'&&CameraDebug.enabled)CameraDebug.update();
   }catch(error){RuntimeHealth.fail('render',error)}
   finally{R.autoClear=true;}
  }
  RuntimeHealth.end(t,updateOK);
 }
-/* Read-only camera measurement for the opt-in QA overlay. */
-if(typeof CameraDebug!=='undefined'&&CameraDebug.enabled)window.blockStrikeCameraState=()=>{
- const subject=Phase13.isSpectating()?Phase13.getViewmodel():Phase9.handlingGrenade()?Phase9.getViewmodel():BombMode.getViewmodel()||vm;
- return {worldFov:cam?.fov||baseFov,viewmodelFov:viewCamera?.fov||CAMERA_PROFILE.getViewmodelFov(),
-  eyeHeight:cam?.position.y-(Phase13.isSpectating()?(Phase13.getObserved()?.g.position.y??0):P.pos.y),
-  aspect:cam?.aspect||innerWidth/innerHeight,spectating:Phase13.isSpectating(),weapon:subject?.userData.viewAsset||'none'};
-};
 /* SETUP */
 function applyQ(){
  const mobile=matchMedia('(pointer: coarse)').matches;
@@ -1636,14 +1643,14 @@ function applyQ(){
 function resizeGameViewport(){
  const canvas=$('c'),w=Math.max(1,canvas.clientWidth||innerWidth),h=Math.max(1,canvas.clientHeight||innerHeight);
  if(!R||!cam||!viewCamera)return;
- if(cam.aspect!==w/h||viewCamera.aspect!==w/h){cam.aspect=viewCamera.aspect=w/h;baseFov=CAMERA_PROFILE.worldFov(w/h);if(!aiming||Phase13.isSpectating())cam.fov=baseFov;cam.updateProjectionMatrix();viewCamera.updateProjectionMatrix();}
+ if(cam.aspect!==w/h||viewCamera.aspect!==w/h){cam.aspect=viewCamera.aspect=w/h;cam.updateProjectionMatrix();viewCamera.updateProjectionMatrix();}
  const size=R.getSize(new THREE.Vector2());if(size.x!==w||size.y!==h)R.setSize(w,h,false);
 }
 function init(){
  R=new THREE.WebGLRenderer({canvas:$('c'),antialias:Q>0,powerPreference:'high-performance'});R.outputEncoding=THREE.sRGBEncoding;
  RuntimeHealth.bindCanvas($('c'));
- S=new THREE.Scene();cam=new THREE.PerspectiveCamera(baseFov,innerWidth/innerHeight,CAMERA_PROFILE.worldNear,CAMERA_PROFILE.worldFar);S.add(cam);Phase13.bindLight(cam);
- viewScene=new THREE.Scene();viewCamera=new THREE.PerspectiveCamera(CAMERA_PROFILE.getViewmodelFov(),innerWidth/innerHeight,CAMERA_PROFILE.viewmodelNear,CAMERA_PROFILE.viewmodelFar);
+ S=new THREE.Scene();cam=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,150);S.add(cam);Phase13.bindLight(cam);
+ viewScene=new THREE.Scene();viewCamera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.01,10);
  viewScene.add(new THREE.HemisphereLight(0xffffff,0x887766,1.3));const vl=new THREE.DirectionalLight(0xffffff,.7);vl.position.set(-1,2,3);viewScene.add(vl);
  build();applyQ();
  addEventListener('resize',resizeGameViewport);
