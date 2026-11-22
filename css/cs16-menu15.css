@@ -10,6 +10,8 @@
 #menu .cs-main-links button{display:flex;align-items:center;justify-content:space-between;background:transparent;border:0;border-radius:0;color:#f0f0e6;font-family:Arial,Helvetica,sans-serif;font-size:clamp(14px,1.85vw,23px);font-weight:500;letter-spacing:0;text-shadow:1px 2px 4px #0a0b05;padding:6px 8px;text-align:left;cursor:pointer;min-width:0}
 #menu .cs-main-links button:hover,#menu .cs-main-links button:focus-visible{background:#17180a82;color:#ffc54f;outline:1px solid #c5a25777}
 #menu .cs-main-links button small{font-size:10px;color:#c5bc9b;letter-spacing:1px}
+#menu #refreshGameStatus{font-size:10px;color:#eedba1;line-height:1.35;margin:0;max-width:330px;min-height:12px;overflow-wrap:anywhere}
+#menu #refreshGameBtn:disabled{opacity:.7;cursor:progress}
 #menu #offlineNotice{font-size:10px;color:#e8d9b5;line-height:1.5;text-align:left;margin:0;max-width:330px;letter-spacing:.2px;min-height:14px}
 #menu .cs-main-foot{position:absolute;z-index:2;bottom:max(8px,env(safe-area-inset-bottom));left:clamp(25px,6vw,90px);font-size:11px;font-weight:700;letter-spacing:1.1px;color:#f2c159;display:flex;align-items:center;gap:15px;text-shadow:0 2px 6px #000}
 #menu .cs-main-foot span,#menu .cs-main-foot small{font-size:9px;color:#ddd7c8;font-weight:400;letter-spacing:.3px}
