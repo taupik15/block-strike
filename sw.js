@@ -1,3 +1,4 @@
+/* AR.11.10.8: team-parity audit and connected bombsite search patrol; no combat or graph balance cheats. */
 /* AR.11.10.7: physically verified combat breakables, single active touch joystick, complete original radio asset mapping. */
 /* AR.11.10.6: C4 touch discoverability and event-linked team voice parity. */
 /* AR.11.10.5: spectator camera eye-height parity with player for BSP/non-BSP maps. */
