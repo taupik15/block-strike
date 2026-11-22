@@ -721,7 +721,8 @@ function botUpdate(b,dt){
   }
  }else if(!order?.hold&&!follow&&goalDistanceSq(goal)>order.radius*order.radius){mx=ux;mz=uz}
  let obstacleHold=false;
- if(!hasEnemy&&tryBotMemoryShot(b,order)){mx=0;mz=0;combatHold=true;}
+ if(!hasEnemy&&tryBotCoveredEnemyShot(b,order)){mx=0;mz=0;combatHold=true;obstacleHold=true;}
+ else if(!hasEnemy&&tryBotMemoryShot(b,order)){mx=0;mz=0;combatHold=true;}
  else if(!hasEnemy&&!b.remoteDoorRoute&&tryBotObstacleShot(b,order,goal,pathfinding)){mx=0;mz=0;combatHold=true;obstacleHold=true;}
  if(pathfinding&&Math.hypot(dx,dz)<.12){mx=0;mz=0;}
  // A marked GRAPH edge is only launched when actual momentum is adequate.
@@ -1077,6 +1078,24 @@ function tryBotMemoryShot(b,order){
 }
 // Deliberate obstacle attacks are quiet-navigation work only. Use the ordinary
 // weapon loop (ammo, spread, recoil, cadence), or a close-range knife stab.
+// Fire at an actual breakable between bot and an opponent when sightline
+// is otherwise physically open. This is distinct from navigation/path repair.
+function tryBotCoveredEnemyShot(b,order){
+ const col=window.bspCol,probe=b.obstructedEnemy,now=performance.now()/1000;
+ if(!col?.local||!probe||now-probe.t>.65||now-(b.obstacleSeenSince??now)<(b.skill?.reaction??.5)||b.dead||b.blinded>0||b.shieldRaised||b.pendingBotThrow||b.reloadLeft||b.cd>0||order?.busy||order?.urgent||order?.force||order?.hold||b.weaponId==='knife'&&!b.onGround||!W[b.weaponId]||!['pistol','primary'].includes(W[b.weaponId].slot)||!b.ammo||!b.onGround)return false;
+ const enemy=probe.isP?P.hp>0&&!over?P.pos:null:probe.bot&&!probe.bot.dead?probe.bot.g.position:null;
+ if(!enemy||enemy.distanceToSquared(probe.pos)>(col.T.k*32)**2||botFriendlyLane(b,enemy))return false;
+ const fresh=BSPBreakables.combatTarget(col,b,{pos:enemy,isP:probe.isP,id:probe.id,crouching:probe.isP?!!Phase9.crouching:!!probe.bot.crouching,remembered:b.lastSeen?.id===probe.id&&b.lastSeen.confirmed&&now-b.lastSeen.t<2},ray,obsM);
+ if(!fresh||fresh.item!==probe.item||!BSPBreakables.active(fresh.item)||botFriendlyLane(b,fresh.point))return false;
+ const origin=b.g.position.clone().add(V(0,(28-(b.crouching?Number.isInteger(col.crouchHead)?16:9:0))*col.T.k,0));
+ const delta=fresh.point.clone().sub(origin),dist=delta.length();if(dist<.01||dist>Combat12.shotRange(b.weaponId,W[b.weaponId].slot,col.T.k))return false;
+ const contact=botTraceBullet(b,origin,delta.normalize(),dist+col.T.k,0);
+ if(contact.hit||contact.wallContact?.object?.userData?.breakable!==fresh.item)return false;
+ b.g.rotation.y=Math.atan2(b.g.position.x-fresh.point.x,b.g.position.z-fresh.point.z);
+ b.aimPitch=Math.atan2(fresh.point.y-origin.y,Math.max(.1,Math.hypot(delta.x,delta.z)));
+ botShot(b,{pos:fresh.point,dist,memoryAim:fresh.point,obstacle:fresh.item});
+ return true;
+}
 function tryBotObstacleShot(b,order,goal,pathfinding){
  const col=window.bspCol,now=performance.now()/1000,knife=b.weaponId==='knife';
  if(!pathfinding||!col||b.dead||b.blinded>0||b.visibleEnemy||b.pendingBotThrow||b.shieldRaised||order.busy||order.urgent||order.force||order.hold||['avoid-flash','avoid-grenade','escape-bomb','reload-cover','take-cover','retreat','regroup'].includes(order.mode)||!W[b.weaponId]||(!knife&&(!['primary','pistol'].includes(W[b.weaponId].slot)||!(b.ammo>0)))||b.reloadLeft)return false;

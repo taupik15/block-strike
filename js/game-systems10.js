@@ -69,7 +69,7 @@ const Phase10=(()=>{
   b.cd=Math.max(b.cd||0,b.skill.reaction*.6);
   b.aiAccum=((sideIndex+(b.team==='T'?5:0))%11)*.007;b.scanTimer=(sideIndex%6)*.045;
   b.savedLoadout=prev.loadout||null;b.money=clamp(prev.money??800,0,16000);b.defuseKit=!!prev.defuseKit;b.armor=prev.armor??0;b.helmet=prev.helmet??false;
-  b.noticeElapsed=0;b.seenId=null;b.heard=null;b.threat=null;b.guardScanAt=0;b.guardYaw=null;b.radioUntil=0;b.voiceAt=-100;b.voiceCueCounts={};b.nextBackupAt=-100;b.friendlyCue=null;b.reactionAt=-100;b.lastSeen=null;b.memoryShotAt=null;b.memoryProbeAt=0;b.reloadLeft=0;b.heCount=0;b.flashCount=0;b.smokeCount=0;b.visibleEnemy=null;b.memory=null;b.radioOrder=null;b.grenadeUsed=false;b.recoveryTime=0;b.stuck=0;b.layoutNav=null;b.nav=null;
+  b.noticeElapsed=0;b.seenId=null;b.heard=null;b.threat=null;b.guardScanAt=0;b.guardYaw=null;b.radioUntil=0;b.voiceAt=-100;b.voiceCueCounts={};b.nextBackupAt=-100;b.friendlyCue=null;b.reactionAt=-100;b.lastSeen=null;b.obstructedEnemy=null;b.obstacleSeenId=null;b.obstacleSeenSince=0;b.memoryShotAt=null;b.memoryProbeAt=0;b.reloadLeft=0;b.heCount=0;b.flashCount=0;b.smokeCount=0;b.visibleEnemy=null;b.memory=null;b.radioOrder=null;b.grenadeUsed=false;b.recoveryTime=0;b.stuck=0;b.layoutNav=null;b.nav=null;
   const rec={id,team:b.team,name:b.name,bot:b,kills:prev.kills,deaths:prev.deaths,money:b.money,alive:true};
   statCache.set(id,prev);roster.push(rec);return b;
  }
@@ -143,7 +143,10 @@ const Phase10=(()=>{
   if(killer&&killer!==b&&killer.botId&&killer.team!==b.team){
    const k=roster.find(r=>r.bot===killer);if(k){k.kills++;const st=statCache.get(k.id)||{};st.kills=k.kills;statCache.set(k.id,st);creditBot(killer,300,'KILL')}
   }
-  if(killer&&killer!==b&&Math.random()<.22)botCue(killer,'kill');
+  if(killer&&killer!==b&&killer.team!==b.team&&Math.random()<.28){
+   const remaining=bots.filter(x=>x!==b&&!x.dead&&x.team!==killer.team).length;
+   botCue(killer,remaining===2?'remaining2':remaining===3?'remaining3':'kill');
+  }
   if(sbOpen)renderScoreboard();
  }
  function onPlayerDeath(killer){Phase9.dropPlayerOnDeath?.();if(killer?.botId&&killer.team===playerTeam)creditBot(killer,-3300,'TEAMKILL');
@@ -252,10 +255,22 @@ const Phase10=(()=>{
     const rank=t=>t.dist-(BombMode.isDefuser?.(t)&&b.team==='T'?vision*3+1:t.id===b.seenId?vision+1:0);
     return rank(a)-rank(c);
    }).slice(0,6);
+  b.obstructedEnemy=null;
+  let sightlineChecks=0;
   for(const target of candidates){
-   if(Phase9.blocksSight(b.g.position,target.pos,{startCrouch:!!b.crouching,endCrouch:!!(target.isP?Phase9.crouching:target.bot?.crouching)}))continue;
-   if(los(b,target.pos))return target;
+   const crouching=!!(target.isP?Phase9.crouching:target.bot?.crouching);
+   if(!Phase9.blocksSight(b.g.position,target.pos,{startCrouch:!!b.crouching,endCrouch:crouching})&&los(b,target.pos)){b.obstacleSeenId=null;return target;}
+   // Limited probes on real, destructible line-of-sight obstruction; never
+   // assign a hidden opponent as a visible combat target.
+   if(sightlineChecks++>=2||!window.bspCol?.local||!BSPBreakables.combatTarget)continue;
+   const remembered=b.lastSeen?.id===target.id&&b.lastSeen.confirmed&&now()-b.lastSeen.t<2;
+   const brush=BSPBreakables.combatTarget(window.bspCol,b,{...target,crouching,remembered},ray,obsM);
+   if(brush&&!b.obstructedEnemy){
+    if(b.obstacleSeenId!==target.id){b.obstacleSeenId=target.id;b.obstacleSeenSince=now();}
+    b.obstructedEnemy={...target,crouching,item:brush.item,point:brush.point,t:now()};
+   }
   }
+  if(!b.obstructedEnemy)b.obstacleSeenId=null;
   return null;
  }
  function seenEnemy(b,dt){
@@ -273,7 +288,7 @@ const Phase10=(()=>{
     BombMode.observe?.(b,target.pos,target.id);
     b.visibleEnemy=b.noticeElapsed>=(b.skill?.reaction||.5)?{...target,pos:target.pos.clone(),velocity}:null;
     if(b.visibleEnemy&&!b.spottedNotified){botCue(b,'sighting');b.spottedNotified=true}
-   }else{b.visibleEnemy=null;b.seenId=null;b.noticeElapsed=0;b.spottedNotified=false;listen(b)}
+   }else{if(b.spottedNotified&&Math.random()<.2)botCue(b,'lost');b.visibleEnemy=null;b.seenId=null;b.noticeElapsed=0;b.spottedNotified=false;listen(b)}
   }
   const enemy=b.visibleEnemy;
   if(enemy&&(enemy.isP?P.hp<=0||over:enemy.bot?.dead)){b.visibleEnemy=null;return null;}
@@ -293,7 +308,9 @@ const Phase10=(()=>{
    const d=p.distanceTo(s.pos),radius=(b.skill?.hearing||13)*s.range;
    if(d>radius)continue;const occluded=!!window.bspCol?.pointClip&&BSP.pointLineBlocked(window.bspCol,p.clone().add(V(0,.38,0)),s.pos.clone().add(V(0,.38,0)));if(occluded&&d>radius*.55)continue;const cost=d*(occluded?1.6:1)+4*(t-s.t)-(s.type==='defuse'?8:0);if(cost<bestScore){best=s;bestScore=cost}
   }
-  if(best){const p=best.pos.clone();p.x=Math.round(p.x/2)*2;p.z=Math.round(p.z/2)*2;b.heard={pos:p,t:best.t,type:best.type}}
+  if(best){const fresh=b.heard?.t!==best.t,p=best.pos.clone();p.x=Math.round(p.x/2)*2;p.z=Math.round(p.z/2)*2;b.heard={pos:p,t:best.t,type:best.type};
+   if(fresh&&best.type==='shot'&&Math.random()<.14)botCue(b,'heard');
+  }
  }
  function radioGoal(b){
   const ord=b.radioOrder;
@@ -383,11 +400,11 @@ const Phase10=(()=>{
   const t=now();if(t-radioLast<1.05)return false;
   const spec=RADIO_COMMANDS[name];if(!spec)return false;
   if(!spec.behavior){
-   radioLast=t;closeRadio();radioPlay('radio',spec.sound,.55,playerTeam);showRadioText('RADIO · '+spec.label);
+   radioLast=t;closeRadio();radioPlay('radio',spec.sound,.55,playerTeam);showRadioText((spec.previewOnly?'AUDIO PREVIEW · ':'RADIO · ')+spec.label);
    if(name==='report'){
     // "Report in" requests a situational response, but reveals no hidden enemy.
     const ally=bots.filter(b=>!b.dead&&b.team===playerTeam).sort((a,b)=>a.g.position.distanceTo(P.pos)-b.g.position.distanceTo(P.pos))[0];
-    if(ally)ally.visibleEnemy?botCue(ally,'sighting',true):botTalk(ally,'sector_clear',true);
+    if(ally)ally.visibleEnemy?botCue(ally,'sighting',true):botCue(ally,'clear',true);
    }
    return true;
   }
@@ -424,7 +441,9 @@ const Phase10=(()=>{
   const label=`RADIO · ${spec.label}${changed?' · '+changed+' BOT':' · NO AVAILABLE ALLIES'}${allies.length>available.length?' · C4 PRIORITY':''}`;
   showRadioText(label);
   if(best){const token=++radioSeq;
-   setTimeout(()=>{if(token!==radioSeq||!running||best.dead||best.team!==playerTeam)return;botTalk(best,spec.behavior==='backup'?'be_right_there':spec.behavior==='attack'?'attacking':'roger_that',true)},850+Math.random()*400)
+   setTimeout(()=>{if(token!==radioSeq||!running||best.dead||best.team!==playerTeam)return;
+    botCue(best,spec.behavior==='backup'?'backup':spec.behavior==='attack'?'attack':['hold','cover','stick'].includes(spec.behavior)?'hold':'acknowledge',true);
+   },850+Math.random()*400)
   }
   return changed>0;
  }
@@ -463,13 +482,22 @@ const Phase10=(()=>{
   getout:{label:'Get Out!',sound:'getout',behavior:'retreat'},
   position:{label:'Take Position!',sound:'position',behavior:'hold'},
   ctpoint:{label:'Take the Point!',sound:'ct_point',behavior:'attack'},
-  ctaffirm:{label:'Affirmative!',sound:'ct_affirm'}
+  ctaffirm:{label:'Affirmative!',sound:'ct_affirm'},
+  comgo:{label:'Commander: Go!',sound:'com_go',behavior:'resume'},
+  flankthem:{label:'Flank Them!',sound:'flankthem',behavior:'attack'},
+  hitassist:{label:'Taking Fire!',sound:'hitassist',behavior:'backup'},
+  blow:{label:'Bomb Exploded (archive)',sound:'blow',previewOnly:true},
+  elim:{label:'Team Eliminated (archive)',sound:'elim',previewOnly:true},
+  rounddraw:{label:'Round Draw (archive)',sound:'rounddraw',previewOnly:true},
+  hosdown:{label:'Hostage Down (archive)',sound:'hosdown',previewOnly:true},
+  rescued:{label:'Hostage Rescued (archive)',sound:'rescued',previewOnly:true},
+  vip:{label:'VIP Event (archive)',sound:'vip',previewOnly:true}
  };
  const RADIO_CATEGORIES={
   z:['cover','takepoint','hold','regroup','follow','takingfire','meetme','followcom','position'],
   x:['go','fallback','stick','getinpos','attack','report','moveout','letsgo','circleback'],
   c:['roger','enemy','backup','sectorclear','inpos','reporting','negative','enemydown','fireinhole'],
-  more:['imhit','locknload','matedown','getout','ctpoint','ctaffirm']
+  more:['imhit','locknload','matedown','getout','ctpoint','ctaffirm','comgo','flankthem','hitassist','blow','elim','rounddraw','hosdown','rescued','vip']
  };
  function selectRadio(index){const name=RADIO_CATEGORIES[radioMode]?.[index];if(name)command(name);return !!name}
  function showRadioText(message){const el=$('radioStatus');if(!el)return;el.textContent=message;el.classList.remove('hidden');const token=++showRadioText.token;setTimeout(()=>{if(token===showRadioText.token)el.classList.add('hidden')},2800)}
@@ -483,7 +511,15 @@ const Phase10=(()=>{
  function radioPlay(channel,stem,volume=.5,team=playerTeam,speaker=null){
   if(!AC||!stem||!radioAllowed(team))return;
   const epoch=voiceEpoch,request=++voiceRequest,key=channel+'/'+stem;let task=voiceCache.get(key);
-  if(!task){task=fetch(channel==='radio'&&CS16_RADIO_WAV.has(stem)?'assets/cs16-extra-sounds/radio/'+stem+'.wav':'assets/phase10/audio/'+key+'.mp3').then(r=>{if(!r.ok)throw Error('radio asset '+r.status);return r.arrayBuffer()}).then(bytes=>AC.decodeAudioData(bytes)).catch(e=>{voiceCache.delete(key);console.warn(e.message);return null});voiceCache.set(key,task)}
+  if(!task){
+   const original=channel==='radio'&&CS16_RADIO_WAV.has(stem);
+   const primary=original?'assets/cs16-extra-sounds/radio/'+stem+'.wav':'assets/phase10/audio/'+key+'.mp3';
+   const load=url=>fetch(url).then(r=>{if(!r.ok)throw Error('radio asset '+r.status+' '+url);return r.arrayBuffer()}).then(bytes=>AC.decodeAudioData(bytes));
+   // Preserve original GoldSrc WAV first; only fetch the bundled MP3 backup
+   // when that exact WAV fails to load/decode. No eager bulk decoding on iOS.
+   task=load(primary).catch(e=>original?load('assets/phase10/audio/radio/'+stem+'.mp3').catch(()=>{throw e}):Promise.reject(e))
+     .catch(e=>{voiceCache.delete(key);console.warn(e.message);return null});voiceCache.set(key,task);
+  }
   task.then(buffer=>{if(!buffer||!AC||epoch!==voiceEpoch||request!==voiceRequest||!radioAllowed(team)||!running||(speaker&&(speaker.dead||!bots.includes(speaker))))return;
    const source=AC.createBufferSource(),gain=AC.createGain();source.buffer=buffer;gain.gain.value=clamp(volume*masterVolume,0,.9);source.connect(gain);gain.connect(AC.destination);
    for(const old of activeVoices)stopVoice(old);
@@ -503,12 +539,21 @@ const Phase10=(()=>{
  }
  // Event-linked voice sets, all mapped to bundled original game assets.
  // Rotate per bot/context. Keep the global and per-bot rate limits in botTalk.
+ const BUNDLED_BOT_CUES=new Set(['affirmative','all_clear_here','area_clear','attacking','attacking_enemies','be_right_there','clear','cover_me','enemy_down','good_job_team','good_one','got_him','hang_on_i_heard_something','hold_your_fire','i_could_use_some_help','i_got_nothing','i_got_your_back','i_got_your_back2','i_heard_something_over_there','i_lost_him','ill_go_too','ill_go_with_you','im_going_to_wait_here','im_waiting_here','lets_wait_here','need_help','negative','nice_shot','nice_work_team','ok_cmdr_lets_go','ok_sir_lets_go','reporting_in','returning_fire','roger','roger_that','taking_fire_need_assistance2','target_spotted','three_to_go','two_to_go','weve_got_the_situation','you_heard_the_man_lets_go']);
  const VOICE_CUES={
   sighting:[['target_spotted','bot','TARGET SPOTTED!'],['ct_enemys','radio','ENEMY SPOTTED!'],['attacking_enemies','bot','ATTACKING ENEMIES!']],
-  backup:[['i_could_use_some_help','bot','I COULD USE SOME HELP!'],['ct_backup','radio','NEED BACKUP!'],['taking_fire_need_assistance2','bot','TAKING FIRE, NEED ASSISTANCE!'],['need_help','bot','NEED HELP!']],
-  friendly:[['hold_your_fire','bot','HOLD YOUR FIRE!'],['ct_imhit','radio',"I'M HIT!"],['negative','radio','NEGATIVE!']],
-  kill:[['enemy_down','bot','ENEMY DOWN!'],['got_him','bot','GOT HIM!'],['nice_shot','bot','NICE SHOT!']],
-  compliment:[['good_job_team','bot','GOOD JOB, TEAM!'],['nice_work_team','bot','NICE WORK, TEAM!'],['good_one','bot','GOOD ONE!']]
+  backup:[['i_could_use_some_help','bot','I COULD USE SOME HELP!'],['ct_backup','radio','NEED BACKUP!'],['taking_fire_need_assistance2','bot','TAKING FIRE, NEED ASSISTANCE!'],['need_help','bot','NEED HELP!'],['cover_me','bot','COVER ME!']],
+  friendly:[['hold_your_fire','bot','HOLD YOUR FIRE!'],['ct_imhit','radio',"I'M HIT!"],['negative','radio','NEGATIVE!'],['negative','bot','NEGATIVE!']],
+  kill:[['enemy_down','bot','ENEMY DOWN'],['got_him','bot','GOT HIM'],['nice_shot','bot','NICE SHOT']],
+  compliment:[['good_job_team','bot','GOOD JOB TEAM'],['nice_work_team','bot','NICE WORK TEAM'],['good_one','bot','GOOD ONE'],['weve_got_the_situation','bot','WEVE GOT THE SITUATION']],
+  acknowledge:[['affirmative','bot','AFFIRMATIVE'],['roger','bot','ROGER'],['roger_that','bot','ROGER THAT'],['be_right_there','bot','BE RIGHT THERE'],['ok_cmdr_lets_go','bot','OK CMDR LETS GO'],['ok_sir_lets_go','bot','OK SIR LETS GO'],['you_heard_the_man_lets_go','bot','YOU HEARD THE MAN LETS GO'],['ill_go_too','bot','ILL GO TOO'],['ill_go_with_you','bot','ILL GO WITH YOU']],
+  hold:[['im_waiting_here','bot','IM WAITING HERE'],['im_going_to_wait_here','bot','IM GOING TO WAIT HERE'],['lets_wait_here','bot','LETS WAIT HERE'],['i_got_your_back','bot','I GOT YOUR BACK'],['i_got_your_back2','bot','I GOT YOUR BACK2']],
+  clear:[['all_clear_here','bot','ALL CLEAR HERE'],['area_clear','bot','AREA CLEAR'],['i_got_nothing','bot','I GOT NOTHING'],['clear','bot','CLEAR'],['reporting_in','bot','REPORTING IN']],
+  heard:[['hang_on_i_heard_something','bot','HANG ON I HEARD SOMETHING'],['i_heard_something_over_there','bot','I HEARD SOMETHING OVER THERE']],
+  lost:[['i_lost_him','bot','I LOST HIM']],
+  attack:[['attacking','bot','ATTACKING'],['returning_fire','bot','RETURNING FIRE']],
+  remaining2:[['two_to_go','bot','TWO TO GO']],
+  remaining3:[['three_to_go','bot','THREE TO GO']]
  };
  function botCue(b,context,urgent=false){
   if(!b||b.dead||!VOICE_CUES[context])return false;
@@ -789,5 +834,5 @@ const Phase10=(()=>{
  function init(){initMatchSettings();setupRadio()}
  init();
  return {get config(){return config},get profiles(){return PROFILES},counts,setConfig,preview,resetMatch,roundStart,registerBot,prepareBotRound,creditBot,recordDefuseKit,onBotDeath,onPlayerDeath,
-  renderBoard,seenEnemy,noticeDamage,orientAwareness,goal,radioGoal,tacticalGoal,soundEvent,command,radioCommands:RADIO_COMMANDS,radioCategories:RADIO_CATEGORIES,selectRadio,openRadio,maybeBotGrenade,botTalk,botCue,celebratePlayerKill,bombAnnouncement,friendlyHit,grenadeThrown,friendlyFlash,radioSpeaking,radioBlink,resetVoices,roundEnd,closeRadio,muzzlePlayer,muzzleBot,bloodImpact,updateFX,clearFX,debugBots:()=>bots.map(b=>({id:b.botId,team:b.team,dead:!!b.dead,role:b.objectiveRole,site:b.siteAssignment,radio:b.radioOrder?.mode,waypoint:b.localRoute?.from,pathLength:b.localRoute?.points?.length||0,destination:b.localRoute?.goal?.toArray(),position:b.g.position.toArray(),stuck:b.stuck||0,replans:b.localRoute?.replans||0,lastSeen:b.lastSeen?.pos?.toArray()})),getDebugState:()=>({players:config.players,difficulty:config.difficulty,roster:roster.length,orders:roster.filter(r=>r.bot.radioOrder).length,radioOpen,fx:effects.length})};
+  renderBoard,seenEnemy,noticeDamage,orientAwareness,goal,radioGoal,tacticalGoal,soundEvent,command,radioCommands:RADIO_COMMANDS,radioCategories:RADIO_CATEGORIES,selectRadio,openRadio,maybeBotGrenade,botTalk,botCue,voiceCues:VOICE_CUES,bundledBotCues:BUNDLED_BOT_CUES,radioWav:CS16_RADIO_WAV,celebratePlayerKill,bombAnnouncement,friendlyHit,grenadeThrown,friendlyFlash,radioSpeaking,radioBlink,resetVoices,roundEnd,closeRadio,muzzlePlayer,muzzleBot,bloodImpact,updateFX,clearFX,debugBots:()=>bots.map(b=>({id:b.botId,team:b.team,dead:!!b.dead,role:b.objectiveRole,site:b.siteAssignment,radio:b.radioOrder?.mode,waypoint:b.localRoute?.from,pathLength:b.localRoute?.points?.length||0,destination:b.localRoute?.goal?.toArray(),position:b.g.position.toArray(),stuck:b.stuck||0,replans:b.localRoute?.replans||0,lastSeen:b.lastSeen?.pos?.toArray()})),getDebugState:()=>({players:config.players,difficulty:config.difficulty,roster:roster.length,orders:roster.filter(r=>r.bot.radioOrder).length,radioOpen,fx:effects.length})};
 })();

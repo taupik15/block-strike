@@ -244,6 +244,33 @@ window.BSPBreakables=(()=>{
   if(BSP.traceAll(open,a,b).hit||!LocalBSPNav.walkable(open,a,b))return null;
   return {item,point:hit.point.clone()};
  }
+ // A glass pane in the actual sightline can be intentionally destroyed by
+ // a bot aiming toward an opponent. Opaque brushes require a recently confirmed
+ // enemy position. Never infer enemies through ordinary world walls, and never
+ // permit a second intact brush to be skipped. Caller still checks teammates.
+ function combatTarget(col,bot,target,raycaster,visualObstacles){
+  const k=col?.T?.k;
+  if(!items.length||!k||!col.pointClip||!bot?.g?.position||!target?.pos||!raycaster||!bot.onGround||bot.medium==='ladder'||bot.medium==='water')return null;
+  const eye=bot.g.position.clone().add(V(0,(28-(bot.crouching?Number.isInteger(col.crouchHead)?16:9:0))*k,0));
+  const chest=target.pos.clone().add(V(0,(28-(target.crouching?Number.isInteger(col.crouchHead)?16:9:0))*k,0));
+  const diff=chest.sub(eye),range=diff.length();if(range<=k||range>600*k)return null;
+  const direction=diff.normalize();raycaster.set(eye,direction);raycaster.far=range;
+  const face=raycaster.intersectObjects(rays)[0],item=face?.object?.userData?.breakable;
+  if(!item||item.bombTarget||!items.includes(item)||item.entry.destroyed||!col.breakables?.includes(item.entry)||face.distance>=range-k*.3||item.material!==0&&!target.remembered)return null;
+  if(visualObstacles){raycaster.set(eye,direction);raycaster.far=range;
+   const front=raycaster.intersectObjects(visualObstacles)[0];
+   if(front&&front.distance<face.distance-k*.25&&front.object?.userData?.breakable!==item)return null;
+  }
+  const before=face.point.clone().addScaledVector(direction,-Math.min(k*.25,face.distance*.4));
+  if(BSP.pointLineBlocked(col,eye,before))return null;
+  // Bullet visibility uses the point hull, not the 32-unit standing player
+  // hull. A player need not fit through a pane for an aimed bullet to reach it.
+  if(BSP.pointLineBlocked(col,eye,target.pos.clone().add(V(0,(28-(target.crouching?Number.isInteger(col.crouchHead)?16:9:0))*k,0))))return null;
+  raycaster.set(eye,direction);raycaster.far=range;
+  const obstructing=raycaster.intersectObjects(rays);
+  if(obstructing.some(h=>h.distance<range-k*.25&&h.object?.userData?.breakable!==item))return null;
+  return {item,point:face.point.clone(),targetId:target.id};
+ }
  function active(item){return !!item&&items.includes(item)&&!item.entry.destroyed;}
- return {mount,register,hit,blast,bombExplode,reset,refresh,clear,passageTarget,active,takeEffects};
+ return {mount,register,hit,blast,bombExplode,reset,refresh,clear,passageTarget,combatTarget,active,takeEffects};
 })();
