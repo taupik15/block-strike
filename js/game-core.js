@@ -35,7 +35,36 @@ const weaponModels={},weaponModelLoads={},weaponInstances={};
 let viewScene,viewCamera;
 const CTN=['gsg9','gign','sas','urban'], TN=['arctic','guerilla','leet','terror'], CTC={}, TC={};
 let ctState=0, ctWait=null;
-let Q=1,SENS=.0045,R,S,cam,sun,vm,flash,running=false,over=false,t0=0,reloading=0,cool=0,kick=0,fh=false,fl=false,jmp=false,jx=0,jy=0,swapT=0,hudT=0,dmgA=0,hitT=0,msgT=0,roundWait=0,round=0,kills=0;
+// AR.11.10.3: RAF-aligned FPS ceiling. No extra timer or background loop.
+const FrameLimiter=(()=>{
+ const KEY='bs.fpsCap',allowed=[30,45,60];
+ const mobile=(()=>{try{return matchMedia('(pointer: coarse)').matches}catch(_){return false}})();
+ const recommended=mobile?30:60;
+ const normal=value=>allowed.includes(Number(value))?Number(value):recommended;
+ let fps=recommended,due=0;
+ try{const saved=localStorage.getItem(KEY);if(saved!==null)fps=normal(saved)}catch(_){}
+ const reset=()=>{due=0};
+ function allow(t){
+  if(!Number.isFinite(t))return true;
+  const interval=1000/fps;
+  if(due&&t+.65<due)return false;
+  // Anchor to the RAF clock, rather than setTimeout, to avoid timer throttling,
+  // drift and the 45 Hz / 60 Hz panel cadence mismatch.
+  if(due&&t-due<interval*2)due+=interval;
+  else due=t+interval;
+  return true;
+ }
+ function set(value){fps=normal(value);reset();try{localStorage.setItem(KEY,String(fps))}catch(_){}return fps}
+ return Object.freeze({allow,reset,set,get fps(){return fps},get recommended(){return recommended},get mobile(){return mobile}});
+})();
+window.BlockStrikeFPS=FrameLimiter;
+
+function storedQuality(){
+ const fallback=FrameLimiter.mobile?0:1;
+ try{const raw=localStorage.getItem('bs.graphicsQuality');if(raw!==null&&['0','1','2'].includes(raw))return Number(raw)}catch(_){}
+ return fallback;
+}
+let Q=storedQuality(),SENS=.0045,R,S,cam,sun,vm,flash,running=false,over=false,t0=0,reloading=0,cool=0,kick=0,fh=false,fl=false,jmp=false,jx=0,jy=0,swapT=0,hudT=0,dmgA=0,hitT=0,msgT=0,roundWait=0,round=0,kills=0;
 const K={w:0,a:0,s:0,d:0},obs=[],obsM=[],bots=[],tr=[],pt=[],A={};
 const ammoPool={};let freezeLeft=0;
 function playerAmmo(id,mag,res){A[id]=Economy45.state(ammoPool,id,mag,res);return A[id]}
@@ -1532,10 +1561,11 @@ function renderActiveViewmodel(){
 }
 function loop(t){
  requestAnimationFrame(loop);
- if(document.hidden||inputSuspended){t0=t;RuntimeHealth.lifecycleWait?.(document.hidden?'hidden':'input suspended');return}
+ if(document.hidden||inputSuspended){t0=t;if(typeof FrameLimiter!=='undefined')FrameLimiter.reset();RuntimeHealth.lifecycleWait?.(document.hidden?'hidden':'input suspended');return}
+ if(!running||matchLoading||!R){t0=t;if(typeof FrameLimiter!=='undefined')FrameLimiter.reset();RuntimeHealth.idle();return;}
+ if(RuntimeHealth.blocked()){if(typeof FrameLimiter!=='undefined')FrameLimiter.reset();return;}
+ if(typeof FrameLimiter!=='undefined'&&!FrameLimiter.allow(t))return;
  const elapsed=t0>0?Math.max(0,t-t0):0;t0=t;
- if(!running||matchLoading||!R){RuntimeHealth.idle();return;}
- if(RuntimeHealth.blocked())return;
  RuntimeHealth.lifecycleWait?.(null);
  // Foreground jank is not a page suspension. Drop excess elapsed time instead
  // of invalidating active touch/keyboard ownership or running huge catch-up steps.
@@ -1588,7 +1618,8 @@ function newGame(){
  resetPlayerAmmo();
  inventory=[playerTeam==='CT'?'usp':'glock18','knife'];wi=0;setW(0);startRound();
 }
-$('q').onchange=e=>{Q=+e.target.value;if(R)applyQ()};
+$('q').value=String(Q);
+$('q').onchange=e=>{Q=+e.target.value;try{localStorage.setItem('bs.graphicsQuality',String(Q))}catch(_){}if(R)applyQ()};
 $('sn').onchange=e=>SENS=+e.target.value;
 // Imported BSPs must preserve the GoldSrc X/Y/Z axes and the camera's screen-right.
 // Check the actual loaded API rather than trusting a release label or a zSign field.
@@ -1783,7 +1814,7 @@ let inputSuspended=false;
 function resumeGameplayInput(time=performance.now(),force=false){
  if(document.hidden||(!inputSuspended&&!force))return false;
  // Release all owned pointers again before the first fresh gesture; keep match/menu/layout state.
- resetInputs();P.jumpHeld=false;inputSuspended=false;t0=time;
+ resetInputs();P.jumpHeld=false;inputSuspended=false;t0=time;if(typeof FrameLimiter!=='undefined')FrameLimiter.reset();
  if(R&&cam&&viewCamera)resizeGameViewport();
  return true;
 }

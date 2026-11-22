@@ -1,6 +1,6 @@
 /* Runtime watchdog: local diagnostics, bounded recovery, no telemetry uploads. */
 const RuntimeHealth=(()=>{
- const VERSION='pre26AR.10',label=document.getElementById('runtimeHealth'),toggle=document.getElementById('runtimeHealthToggle');
+ const VERSION='pre26AR.11.10.3',label=document.getElementById('runtimeHealth'),toggle=document.getElementById('runtimeHealthToggle');
  let enabled=false,lost=false,halted=false,stageName='startup',fault=null,warningUntil=0,frameAt=0,updateAt=0,updateMs=0,renderMs=0,renderOK=false,frameGap=0,frameAverage=0,updateAverage=0,renderAverage=0,failUpdate=0,failRender=0,lastPaint=-Infinity,frames=0,bound=null;
  const clock=()=>performance.now();
  let lifecycleReason=null,lifecycleAt=0;
@@ -23,8 +23,12 @@ const RuntimeHealth=(()=>{
   if(!adaptive||!renderOK||lost||halted||frameGap<=0||frameGap>250){slowFor=fastFor=0;return;}
   // A long CPU/GPU stall is not a reliable resolution sample. Hysteresis avoids
   // repeated resize allocations and does not change texture assets or simulation time.
-  const now=clock();if(frameGap>34){slowFor+=frameGap;fastFor=0;}
-  else if(frameGap<22){fastFor+=frameGap;slowFor=0;}
+  // Compare measured cadence to the selected cap, not hard-coded 60 FPS.
+  // Otherwise intentional 30 FPS would be mistaken for overload. A rolling
+  // average smooths the uneven 45-on-60-Hz panel cadence.
+  const target=1000/(typeof FrameLimiter!=='undefined'?FrameLimiter.fps:60);
+  const now=clock();if(frameAverage>target*1.3){slowFor+=frameGap;fastFor=0;}
+  else if(frameAverage<target*1.08){fastFor+=frameGap;slowFor=0;}
   else {slowFor=fastFor=0;}
   const min=Math.min(baseRatio,.65);
   if(now-ratioAt>=2500&&slowFor>=1800&&currentRatio>min){applyRatio(Math.max(min,Math.round(currentRatio*.85*100)/100));ratioAt=now;slowFor=fastFor=0;}
@@ -42,7 +46,7 @@ const RuntimeHealth=(()=>{
   const pos=p?[p.x,p.y,p.z].map(n=>Number.isFinite(n)?n.toFixed(1):String(n)).join(', '):'-';
   const input=typeof jx==='number'&&typeof jy==='number'?`${jx.toFixed(2)},${jy.toFixed(2)}`:'-';
   const count=typeof bots!=='undefined'?bots.length:0;
-  const lines=[`BS ${VERSION} | ${map} | ${count} bots`,`${frameAverage>0?(1000/frameAverage).toFixed(0):'-'} FPS | frame ${frameGap.toFixed(0)} ms | sim ${updateAverage.toFixed(1)} | render ${renderAverage.toFixed(1)} ms`, `pos ${pos} | stick ${input} | tex ${r?.info?.memory?.textures??'-'} | geo ${r?.info?.memory?.geometries??'-'}`,`draw ${drawCalls} | DPR ${r?.getPixelRatio?.()?.toFixed(2)??'-'}`];
+  const lines=[`BS ${VERSION} | ${map} | ${count} bots`,`${frameAverage>0?(1000/frameAverage).toFixed(0):'-'} FPS (cap ${typeof FrameLimiter!=='undefined'?FrameLimiter.fps:60}) | frame ${frameGap.toFixed(0)} ms | sim ${updateAverage.toFixed(1)} | render ${renderAverage.toFixed(1)} ms`, `pos ${pos} | stick ${input} | tex ${r?.info?.memory?.textures??'-'} | geo ${r?.info?.memory?.geometries??'-'}`,`draw ${drawCalls} | DPR ${r?.getPixelRatio?.()?.toFixed(2)??'-'}`];
   lines.push(`ticks ${simOKCount} | frames ${renderOKCount} / ${frames}`);
   const col=typeof window!=='undefined'?window.bspCol:null;
   if(col?.local&&p&&typeof BSP!=='undefined'){

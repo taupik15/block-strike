@@ -67,6 +67,7 @@
   id('hudScaleValue').value=id('hudScale').value+'%';
   id('sensitivityValue').value=(Number(id('sn').value)*1000).toFixed(1);
   id('volumeValue').value=Math.round(Number(id('volume').value)*100)+'%';
+  id('fpsCap').value=String(FrameLimiter.fps);id('fpsCapValue').value=FrameLimiter.fps+' FPS';
   applyAppearance();
  }
  function persistPrefs(){prefs.playerName=name();trySave(KEY,prefs);applyAppearance()}
@@ -76,16 +77,17 @@
  id('hudScale').addEventListener('input',event=>{prefs.hudScale=number(event.target.value,100,80,125);id('hudScaleValue').value=prefs.hudScale+'%';persistPrefs()});
  id('sn').addEventListener('input',event=>{id('sensitivityValue').value=(Number(event.target.value)*1000).toFixed(1);event.target.dispatchEvent(new Event('change',{bubbles:false}))});
  id('volume').addEventListener('input',event=>{id('volumeValue').value=Math.round(Number(event.target.value)*100)+'%'});
+ id('fpsCap').addEventListener('change',event=>{id('fpsCapValue').value=FrameLimiter.set(event.target.value)+' FPS'});
  id('optionsDefaults').addEventListener('click',()=>{
   prefs={...defaults};persistPrefs();
-  for(const [field,value] of [['q','1'],['sn','0.0045'],['volume','0.8'],['weaponHand','right'],['crouchMode','toggle'],['classicModels','on']]){
+  for(const [field,value] of [['q',FrameLimiter.mobile?'0':'1'],['fpsCap',String(FrameLimiter.recommended)],['sn','0.0045'],['volume','0.8'],['weaponHand','right'],['crouchMode','toggle'],['classicModels','on']]){
    const e=id(field);e.value=value;e.dispatchEvent(new Event(field==='volume'?'input':'change',{bubbles:true}));
   }
   syncPrefs();id('optionsStatus').textContent='Defaults restored';
  });
  // Settings use a reversible editing session: Cancel/X restores controls and saved values.
  let optionsSnapshot=null;
- const nativeOptions=['q','sn','volume','weaponHand','crouchMode','classicModels'];
+ const nativeOptions=['q','fpsCap','sn','volume','weaponHand','crouchMode','classicModels'];
  const captureOptions=()=>{
   optionsSnapshot={prefs:{...prefs},fields:Object.fromEntries(nativeOptions.map(key=>[key,id(key).value]))};
  };
