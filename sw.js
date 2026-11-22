@@ -1,3 +1,4 @@
+/* AR.11.10.3: explicit in-app update activation, FPS settings and efficient refresh. */
 /* AR.11.10.2: Chateau source GRAPH physically validated stairs, safe reverse links, cache upgrade. */
 /* AR.11.10.1 Chateau real-BSP live-bot choke recovery; versioned cache refresh. */
 /* AR.11.10 cumulative release from deployed AR.11.1. Shell/cache rollover only. */
@@ -45,7 +46,9 @@ async function migrateAssets(cache) {
  const names=(await caches.keys()).filter(k=>k.startsWith(prefix)&&k!==cacheName);
  const previous=await Promise.all(names.map(async name=>{const old=await caches.open(name);return {old,keys:new Set((await old.keys()).map(r=>r.url))}}));
  const existing=new Set((await cache.keys()).map(r=>r.url));let next=0;
- await Promise.all(Array.from({length:4},async()=>{
+ // Throttle old-cache digest migration on mobile: avoid four parallel large
+ // SHA-256 reads competing with the browser and heating the device on update.
+ await Promise.all(Array.from({length:2},async()=>{
   while(next<assets.length){const i=next++,key=assets[i];if(existing.has(key))continue;
    for(const {old,keys} of previous){if(!keys.has(key))continue;
     try{const response=await old.match(key);if(!response||response.status!==200||response.redirected)continue;
@@ -98,6 +101,16 @@ self.addEventListener('fetch',event=>{
 });
 let preparing=null;
 self.addEventListener('message',event=>{
+ if(event.data?.type==='ACTIVATE_UPDATE'){
+  // Do not claim another game tab that may still be running the old scripts.
+  event.waitUntil((async()=>{
+   const port=event.ports?.[0];
+   const tabs=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+   if(tabs.length>1){port?.postMessage({type:'blocked',tabs:tabs.length});return;}
+   port?.postMessage({type:'activating'});
+   await self.skipWaiting();
+  })());return;
+ }
  const port=event.ports[0];if(!port||!['OFFLINE_STATUS','OFFLINE_PREPARE'].includes(event.data?.type))return;
  const send=data=>{try{port.postMessage(data)}catch(_){}};
  event.waitUntil((async()=>{

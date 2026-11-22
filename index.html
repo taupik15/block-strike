@@ -21,7 +21,7 @@
 <link rel="stylesheet" href="css/quickbuy15.css">
 <link rel="stylesheet" href="css/cs16-source.css">
 <link rel="stylesheet" href="css/cs16-complete.css">
-<link rel="stylesheet" href="css/cs16-menu15.css">
+<link rel="stylesheet" href="css/cs16-menu15.css?v=16.4.7-pre26AR.11.10.3">
 <link rel="stylesheet" href="css/spectator15e.css?v=16.4.7-pre26E">
 <link rel="stylesheet" href="css/bomb.css?v=16.4.7-pre26J">
 <link rel="stylesheet" href="css/mobile-cs16.css?v=16.4.7-pre26AR.11.5">
@@ -93,11 +93,13 @@
    <button id="selectMapBtn" type="button" class="hidden" aria-hidden="true" tabindex="-1">New Match (legacy)</button>
    <button id="findServersBtn" type="button" aria-describedby="offlineNotice">Find Servers <small>Offline</small></button>
    <button id="settingsBtn" type="button">Options</button>
+   <button id="refreshGameBtn" type="button">Refresh Game <small>Check Update</small></button>
    <button id="creditsBtn" type="button">Credits</button>
    <button id="resumeBtn" class="hidden" type="button">Resume Game</button>
    <button id="quitBtn" type="button">Quit</button>
   </div>
   <p id="offlineNotice" role="status">Single-player · offline · Dust Block</p>
+  <p id="refreshGameStatus" role="status" aria-live="polite">Update via GitHub Pages · AR.11.10.3</p>
  </div>
  <div class="cs-main-foot">BLOCK STRIKE <span>HTML5 / THREE.JS · CLASSIC UI</span> <small>WASD · MOUSE · B BUY · ESC MENU</small></div>
 </div>
@@ -152,6 +154,8 @@
     <label class="cs-field"><span>GoldSrc sprites — optional local override</span><input id="goldsrcSpriteFile" type="file" accept=".zip,application/zip"></label>
     <button type="button" id="goldsrcSpriteRemove">Use built-in sprites / forget local override</button><p id="goldsrcSpriteStatus" class="cs-help" role="status">GoldSrc sprites load automatically from the bundled pack when available. An optional ZIP you have permission to use overrides it and is saved on this device.</p>
     <label class="cs-field"><span>Graphics quality</span><select id="q"><option value="0">Low · better battery</option><option value="1" selected>Medium</option><option value="2">High</option></select></label>
+    <label class="cs-field"><span>Frame rate limit</span><select id="fpsCap" aria-describedby="fpsCapHint"><option value="30">30 FPS · Battery Saver</option><option value="45">45 FPS · Balanced</option><option value="60">60 FPS · Smooth</option></select><output id="fpsCapValue" for="fpsCap">30 FPS</output></label>
+    <p class="cs-help" id="fpsCapHint">30 FPS recommended for iPhone 13 and busy 32-player matches. 45/60 FPS are maximum targets, not guaranteed; higher rates may increase heat and battery use. The game lowers resolution if sustained frames are slow.</p>
     <label class="cs-field"><span>HUD size</span><input id="hudScale" type="range" min="80" max="125" step="5" value="100"><output id="hudScaleValue" for="hudScale">100%</output></label>
     <p class="cs-help">Graphics changes adjust render resolution and shadows. Screen resolution is managed by Safari and your device.</p>
    </section>
@@ -259,7 +263,7 @@
 <script src="js/local-cache.js?v=16.4.7-pre25B"></script>
 <script src="js/vendor/pako-inflate.min.js"></script>
 <script src="js/yapb-waypoints.js?v=16.4.7-pre26AR.11.10.2"></script>
-<script src="js/bsp-local-nav.js?v=16.4.7-pre26AR.11.10.2"></script>
+<script src="js/bsp-local-nav.js?v=16.4.7-pre26AR.11.10.3"></script>
 <script src="js/map-media.js?v=16.4.7-pre26AR.11.10.2"></script>
 <script src="js/map-library.js?v=16.4.7-pre25B"></script>
 <script src="js/global-wads.js?v=16.4.7-pre26AR.2"></script>
@@ -281,8 +285,8 @@
 <script src="js/weapon-calibration.js?v=16.4.7-pre26AR.11.10.2"></script>
 <script src="js/economy-rules.js?v=16.4.7-pre5"></script>
 <script src="js/native-hitboxes.js?v=16.4.7-pre12"></script>
-<script src="js/runtime-health.js?v=16.4.7-pre26AR.11.10.2"></script>
-<script src="js/game-core.js?v=16.4.7-pre26AR.11.10.2"></script>
+<script src="js/runtime-health.js?v=16.4.7-pre26AR.11.10.3"></script>
+<script src="js/game-core.js?v=16.4.7-pre26AR.11.10.3"></script>
 <script src="js/game-systems8.js?v=16.4.7-pre26AR.11.10.2"></script>
 <script src="js/grenade14d.js?v=16.4.7-pre23H"></script>
 <script src="js/grenade-fx15b.js?v=16.4.7-pre23H"></script>
@@ -296,7 +300,7 @@
 <script src="js/game-systems14b.js"></script>
 <script src="js/game-systems14c.js?v=16.4.7-pre15"></script>
 <script src="js/quickbuy15.js?v=16.4.7-pre15"></script>
-<script src="js/cs16-menu15.js?v=16.4.7-pre26AR.2"></script>
-<script src="js/offline.js?v=16.4.7-pre26AM"></script>
+<script src="js/cs16-menu15.js?v=16.4.7-pre26AR.11.10.3"></script>
+<script src="js/offline.js?v=16.4.7-pre26AR.11.10.3"></script>
 </body>
 </html>
