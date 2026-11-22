@@ -38,8 +38,15 @@ body.playing.bomb-mode.spectating #bombHud{top:calc(env(safe-area-inset-top) + 3
 /* C4 is a separate objective slot, not part of the firearm switch cycle. */
 #c4Chip{cursor:pointer;touch-action:none;color:var(--gold);font-family:inherit;font-weight:700}
 #c4Chip.hidden{display:none!important}
-#bombControls #bombUse{min-width:44px;border-radius:50%;font-size:22px;padding:0}
-body.playing.bomb-mode:not(.pc):not(.spectating) #bombControls{bottom:calc(var(--safe-b, 0px) + 78px)}
+/* Large, explicit hold-action for touch. Do not cover the firing controls. */
+#bombControls #bombUse{min-width:132px;min-height:52px;border-radius:6px;font-size:12px;letter-spacing:.035em;padding:0 12px;white-space:nowrap;box-shadow:0 2px 8px #0009}
+#bombControls #bombUse.ready{background:#46563dde;border-color:#f3d27c;color:#fff2c7}
+#bombControls #bombUse:disabled{opacity:.76;color:#ddd0a5;background:#202620db;cursor:default}
+body.playing.bomb-mode:not(.pc):not(.spectating) #bombControls{bottom:calc(var(--safe-b, 0px) + 92px)}
+@media (orientation:landscape) and (max-height:450px){
+ body.playing.bomb-mode:not(.pc):not(.spectating) #bombControls{bottom:calc(var(--safe-b, 0px) + 82px)}
+ #bombControls #bombUse{min-height:46px;min-width:118px;font-size:11px}
+}
 body.playing.layout-edit>#chips,body.layout-edit>#chips{visibility:visible!important;display:flex!important;z-index:65!important;touch-action:none;pointer-events:auto!important;min-width:100px;min-height:32px}
 body.layout-edit>#chips:empty::before{content:'WEAPON SLOTS · C4';border:1px dashed currentColor;padding:6px;font-size:11px}
 body.layout-edit>#chips.layout-selected{outline:2px solid #fcce64;outline-offset:3px}
