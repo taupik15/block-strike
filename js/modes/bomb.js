@@ -64,6 +64,9 @@ const BombMode=(()=>{
    const approaches=guardPoints(goal,3,8).filter(p=>stations.every(q=>q.distanceTo(p)>1.35));
    return {...zone,goal,guards:[...stations,...approaches]};
   });
+  // Compute safe, two-way sweep routes once per map, never once per AI tick.
+  // The source is the *validated* directed GRAPH, not guessed nearby points.
+  for(const s of sites)s.sweepNodes={CT:siteSweepNodes(s,'CT'),T:siteSweepNodes(s,'T')};
   teamScores={CT:0,T:0};losses={CT:0,T:0};roundWinner='';result='';plan=null;sitePressure.clear();ctPressure.clear();
  }
  function roundStart(){
@@ -75,7 +78,7 @@ const BombMode=(()=>{
   if(active()){
    const terrorists=bots.filter(b=>b.team==='T');
    carrier=playerTeam==='T'&&(round===1||round%2===1)?human:terrorists[(round-1)%terrorists.length]||human;
-   for(const bot of bots){bot.localRoute=null;bot.remoteDoorRoute=null;bot.remoteDoorRetry=0;bot.bombRouteInfo=null;bot.bombEscaping=false;bot.retakeFailedUntil=0;bot.siteAssignment=null;bot.objectiveRole=null;bot.siteSlot=null;bot.guardStation=null;}
+   for(const bot of bots){bot.localRoute=null;bot.remoteDoorRoute=null;bot.remoteDoorRetry=0;bot.bombRouteInfo=null;bot.bombEscaping=false;bot.retakeFailedUntil=0;bot.siteAssignment=null;bot.objectiveRole=null;bot.siteSlot=null;bot.guardStation=null;bot.siteSweep=null;bot.siteClearSince=0;bot.siteSweepNext=0;bot.siteSweepIndex=0;}
    assignTeams();
   }
  }
@@ -303,6 +306,68 @@ const BombMode=(()=>{
   }
   return {pos:point,radius:node?(node.crouch?.5:.8):spot?1.1:fallbackRadius,looks:looks.length?looks:[anchor],stationId:node?.id??null,stationCrouch:!!node?.crouch};
  }
+
+ // Search movement near a *cleared* bombsite. Each candidate is reached from
+ // the site and can return through team-legal, validated GRAPH links. Never
+ // invent routes across BSP walls, missing links, or one-way drops.
+ function siteSweepNodes(site,team){
+  if(!graph?.nodes?.length)return [];
+  const entry=graph.nodes.filter(n=>n.edges?.length&&LocalBSPNav.teamAllows(n,team)&&V(...n.pos).distanceToSquared(site.goal)<2.8**2)
+   .sort((a,b)=>V(...a.pos).distanceToSquared(site.goal)-V(...b.pos).distanceToSquared(site.goal))[0];
+  if(!entry)return [];
+  const returns=LocalBSPNav.distanceField(graph,[entry.id],team).dist;
+  const travel=new Map([[entry.id,0]]),queue=[entry.id];
+  // Bound the actual path length, rather than relying on straight-line distance.
+  for(let i=0;i<queue.length;i++){
+   const node=graph.nodes[queue[i]],cost=travel.get(node.id);
+   for(const id of node.edges){const next=graph.nodes[id];if(!LocalBSPNav.teamAllows(next,team))continue;
+    const step=Math.max(.01,V(...node.pos).distanceTo(V(...next.pos))),total=cost+step;
+    if(total>24||total>=(travel.get(id)??Infinity))continue;
+    travel.set(id,total);queue.push(id);
+   }
+  }
+  return [...travel.keys()].filter(id=>{
+   const n=graph.nodes[id],d=V(...n.pos).distanceTo(site.goal);
+   return n.edges?.length&&!n.ladder&&!n.water&&!n.crouch&&d>=3.5&&d<=12&&Math.abs(n.pos[1]-site.goal.y)<1.8&&returns[id]<=24;
+  }).sort((a,b)=>{
+   const aa=graph.nodes[a].pos,bb=graph.nodes[b].pos;
+   return Math.atan2(aa[2]-site.goal.z,aa[0]-site.goal.x)-Math.atan2(bb[2]-site.goal.z,bb[0]-site.goal.x);
+  }).slice(0,48);
+ }
+ // Both teams can search a quiet area. CTs retain a site guard when possible;
+ // T attackers keep their plant/escort objective. Planted C4, confirmed threats,
+ // radio orders and active actions always outrank a voluntary sweep.
+ function siteSweepGoal(bot,site,guard){
+  if(!graph||phase!=='carried'||!bot||bot.dead||bot.radioOrder||bot===carrier){if(bot){bot.siteSweep=null;bot.siteClearSince=0;}return null;}
+  const t=performance.now()/1000,p=pos(bot),contact=bot.visibleEnemy||bot.obstructedEnemy&&t-bot.obstructedEnemy.t<2.5||
+   bot.lastSeen&&t-bot.lastSeen.t<4||bot.threat&&t-bot.threat.t<4||bot.heard&&t-bot.heard.t<3;
+  if(contact){bot.siteSweep=null;bot.siteClearSince=0;bot.siteSweepNext=Math.max(bot.siteSweepNext||0,t+5);return null;}
+  if(bot.siteSweep&&bot.siteSweep.site!==site.id)bot.siteSweep=null;
+  const active=bot.siteSweep;
+  if(active){
+   const node=graph.nodes[active.node];
+   if(!node||t>=active.until||p.distanceTo(V(...node.pos))<=1.15){
+    bot.siteSweep=null;bot.siteClearSince=0;bot.siteSweepNext=t+7+(bot.teamIndex%4);
+   }else return {pos:V(...node.pos),mode:'site-sweep',radius:.85,stationId:node.id,site:site.id};
+  }
+  const d=Math.hypot(p.x-guard.pos.x,p.z-guard.pos.z);
+  if(d>Math.max(1.55,guard.radius+.65)||Math.abs(p.y-guard.pos.y)>1.3){bot.siteClearSince=0;return null;}
+  if(!bot.siteClearSince)bot.siteClearSince=t;
+  if(t-bot.siteClearSince<5.5+(bot.teamIndex%4)*1.1||t<(bot.siteSweepNext||0))return null;
+  // Only one patrol per team/site at once. A lone defender stays near the site.
+  if(bots.some(other=>other!==bot&&!other.dead&&other.team===bot.team&&other.siteSweep?.site===site.id))return null;
+  const covered=bot.team!=='CT'||bots.some(other=>other!==bot&&!other.dead&&other.team==='CT'&&other.siteAssignment===site.id&&
+   !other.siteSweep&&pos(other).distanceTo(site.goal)<9);
+  const possible=(site.sweepNodes?.[bot.team]||[]).filter(id=>{
+   const dist=V(...graph.nodes[id].pos).distanceTo(site.goal);
+   return dist<=(covered?(bot.team==='T'?9.5:12):6.5);
+  });
+  if(!possible.length){bot.siteSweepNext=t+7;return null;}
+  const index=((bot.siteSweepIndex||0)*7+(bot.teamIndex||0)*3)%possible.length,node=graph.nodes[possible[index]];
+  bot.siteSweepIndex=(bot.siteSweepIndex||0)+1;
+  bot.siteSweep={site:site.id,node:node.id,until:t+12};bot.siteClearSince=0;
+  return {pos:V(...node.pos),mode:'site-sweep',radius:.85,stationId:node.id,site:site.id};
+ }
  function routeInfo(bot){
   const t=performance.now()/1000,p=pos(bot);let info=bot.bombRouteInfo;
   if(info&&info.anchor===position&&t<info.until&&p.distanceToSquared(info.from)<4)return info;
@@ -465,7 +530,8 @@ const BombMode=(()=>{
   }
   const target=sites.find(s=>s.id===bot.siteAssignment)||sites[0];
   if(!target)return null;
-  return {...cover(target.guards,bot,target.goal,2,bot.team==='CT'),mode:bot.team==='CT'?'defend':'advance',site:target.id};
+  const station=cover(target.guards,bot,target.goal,2,bot.team==='CT');
+  return siteSweepGoal(bot,target,station)||{...station,mode:bot.team==='CT'?'defend':'advance',site:target.id};
  }
  function resumeAdvance(bot){if(active()&&bot.team==='T'&&bot.objectiveRole==='escort'){bot.objectiveRole='attacker';bot.siteAssignment=plan?.attack||bot.siteAssignment;}return botGoal(bot)}
  function route(bot,goal,stationId=null,allowRemote=true){const point=V(goal.x,goal.y,goal.z);return graph?LocalBSPNav.steer(graph,bot,point,performance.now()/1000,stationId,allowRemote):point}
