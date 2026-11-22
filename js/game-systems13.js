@@ -3,7 +3,7 @@
 const Phase13=(()=>{
  'use strict';
  let spectating=false,observed=null,spectatorView=null,spectatorKey='',queuedTeam=null,deadThisRound=false;
- let specMode='first',autoDirector=true,directorClock=0,orbitYaw=0,orbitPitch=.33,freeYaw=0,freePitch=0,mapHeight=44;
+ let specMode='first',autoDirector=true,directorClock=0,orbitYaw=0,orbitPitch=.33,freeYaw=0,freePitch=0,mapHeight=44,spectatorCrouchBlend=0;
  const freePos=new THREE.Vector3(),mapCenter=new THREE.Vector3(),specKeys={forward:false,back:false,left:false,right:false,up:false,down:false};
  let specGesture=null,specAnalog=null,specViewToken=0;
 
@@ -91,7 +91,7 @@ const Phase13=(()=>{
  function watchBot(next){
   if(next===observed)return next;
   if(observed?.g)observed.g.visible=true;
-  observed=next;clearSpecWeapon();
+  observed=next;spectatorCrouchBlend=Number(!!next?.crouching);clearSpecWeapon();
   if(next)syncObservedVisual();
   return next;
  }
@@ -223,7 +223,7 @@ const Phase13=(()=>{
   const previous=specMode;specMode=next;resetSpecMovement();
   if(specMode==='chase'){orbitYaw=observed?.g.rotation.y||0;orbitPitch=.33}
   if(specMode==='free'&&previous!=='free'){
-   freePos.copy(['map','chase-map'].includes(previous)&&observed?observed.g.position.clone().add(new THREE.Vector3(0,spectatorEyeHeight(window.bspCol,!!observed.crouching),0)):cam.position);freeYaw=observed?.g.rotation.y??cam.rotation.y;freePitch=0;
+   freePos.copy(['map','chase-map'].includes(previous)&&observed?observed.g.position.clone().add(new THREE.Vector3(0,spectatorEyeHeight(window.bspCol,Number(!!observed.crouching)),0)):cam.position);freeYaw=observed?.g.rotation.y??cam.rotation.y;freePitch=0;
   }
   if(specMode==='map'&&previous!=='map'){
    const ct=activeMapData?.spawn?.ct,t=activeMapData?.spawn?.t;
@@ -284,9 +284,8 @@ const Phase13=(()=>{
  }
  // The BSP actor origin is at the center of the collision hull, not its feet.
  // Match the human camera's stand/crouch heights. A non-BSP map uses feet origin.
- function spectatorEyeHeight(col,crouching){
-  const standing=col?0.56:1.6;
-  return standing-(crouching?(col?(Number.isInteger(col.crouchHead)?16*(col.T?.k||.02):.25):.63):0);
+ function spectatorEyeHeight(col,crouchBlend){
+  return CAMERA_PROFILE.eyeHeight(col,crouchBlend);
  }
  function updateSpectator(dt){if(!spectating)return;
   if(!Spectator15E.alive(observed,playerTeam)){pickBot(1)}
@@ -302,7 +301,7 @@ const Phase13=(()=>{
   // ceilings on BSP maps (human standing eye height is only 0.56).
   const base=subject?(subject.visualMount||subject.g).getWorldPosition(new THREE.Vector3()):null;
   const eye=base?.clone();
-  if(eye)eye.y=subject.g.getWorldPosition(new THREE.Vector3()).y+spectatorEyeHeight(window.bspCol,!!subject.crouching);
+  if(eye){spectatorCrouchBlend=CAMERA_PROFILE.blendCrouch(spectatorCrouchBlend,!!subject.crouching,dt);eye.y=subject.g.getWorldPosition(new THREE.Vector3()).y+spectatorEyeHeight(window.bspCol,spectatorCrouchBlend);}
   if(specMode==='first'){
    subject.g.visible=false;updateSpectatorWeapon(subject,dt);
    cam.position.copy(eye);const aim=BombMode.isDefusing?.(subject)?BombMode.defuseLook(cam.position,subject.g.rotation.y):botAim(subject,cam.position);cam.rotation.set(aim.pitch,aim.yaw,0,'YXZ');
@@ -319,7 +318,7 @@ const Phase13=(()=>{
   }else if(specMode==='chase-map'){
    cam.position.set(base.x,base.y+34,base.z);cam.rotation.set(-Math.PI/2,subject.g.rotation.y,0,'YXZ');
   }
-  if(cam.fov!==baseFov){cam.fov=baseFov;cam.updateProjectionMatrix()}
+  const targetFov=CAMERA_PROFILE.worldFov(cam.aspect);if(cam.fov!==targetFov){cam.fov=targetFov;cam.updateProjectionMatrix()}
   if(window.bspSky)window.bspSky.position.copy(cam.position);
   // HUD state changes are inexpensive; batch with the game frame rather than forcing layout on pointermove.
   hudSpecClock+=dt;if(hudSpecClock>.15){hudSpecClock=0;updateSpecHud()}
