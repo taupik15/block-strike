@@ -4,8 +4,13 @@
  * p_/w_ models are outside this viewmodel-only integration.
  */
 (function(global){'use strict';
- const VERSION='AR.11.10.9-MDL';
- const PROFILE=Object.freeze({viewmodelFov:73.74,globalScale:.02,globalOffset:[0,0,0]});
+ const VERSION='AR.11.10.9-MDL.1';
+ // Camera-local depth clearance: original GoldSrc viewmodels place the back of
+ // the forearms/stock on or behind the Three.js near plane (0.01). The old
+ // transform produced giant near-plane skin triangles and vanished weapons.
+ // Move the whole MDL rig forward, preserving every native bone, animation,
+ // mesh, per-model shape and world-camera parameter. No individual offsets.
+ const PROFILE=Object.freeze({viewmodelFov:73.74,globalScale:.02,globalOffset:[0,0,-.30]});
  const report={};
  const i32=(v,o)=>v.getInt32(o,true),u16=(v,o)=>v.getUint16(o,true),i16=(v,o)=>v.getInt16(o,true),f32=(v,o)=>v.getFloat32(o,true);
  function checked(view,at,count=1){if(!Number.isSafeInteger(at)||at<0||at+count>view.byteLength)throw Error('MDL offset out of range '+at+'+'+count);return at;}

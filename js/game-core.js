@@ -252,10 +252,13 @@ function ensureWeaponAsset(asset){
  // fallback for unsupported shield+grenade combinations or malformed models.
  weaponModelLoads[asset]=(async()=>{
   let result=null;
-  if(typeof GoldSrcMDL10!=='undefined'&&GoldSrcMDL10.sourceName(asset)){
+  // Emergency visual rollback for a device that cannot render native MDL:
+  // append ?mdlLegacy=1 to the game URL. No setting/save data is changed.
+  const legacyMDL=typeof location!=='undefined'&&new URLSearchParams(location.search).get('mdlLegacy')==='1';
+  if(!legacyMDL&&typeof GoldSrcMDL10!=='undefined'&&GoldSrcMDL10.sourceName(asset)){
    try{result=await GoldSrcMDL10.load(asset,THREE)}
    catch(error){console.warn('Native GoldSrc viewmodel fallback:',asset,error)}
-  }else if(typeof GoldSrcMDL10!=='undefined')GoldSrcMDL10.fallback(asset,'No combined v_*.mdl for this asset');
+  }else if(typeof GoldSrcMDL10!=='undefined')GoldSrcMDL10.fallback(asset,legacyMDL?'User selected legacy GLB via mdlLegacy=1':'No matching combined native MDL');
   if(!result)result=await loadMatchModel('assets/models/weapons/'+asset+'.glb');
   weaponModels[asset]=result;return result;
  })().catch(err=>{console.warn('Weapon model failed to load:',asset,err);throw err}).finally(()=>{delete weaponModelLoads[asset]});
