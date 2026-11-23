@@ -1,3 +1,4 @@
+/* AR11.10.20-WEAPON.1.1-C4: BSP C4 blast scaling, world prop clone, C4 VFX, debug OFF. */
 /* AR11.10.20-WEAPON.1: optional local skin importer and included M1887. */
 /* AR11.10.19-AUTH.1: economy parity, YaPB shard reuse, cold-start prefetch, offline settings, release QA. */
 /* AR11.10.15-COMBAT.1: mobile resume, bounded bullet chains, C4 water separation. */
