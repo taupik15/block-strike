@@ -222,9 +222,20 @@ const BombMode=(()=>{
   finish('T','BOMB EXPLODED');clearMarker();
   if(typeof playWorldSound==='function')playWorldSound('c4_explode1.wav',origin,.82);else playOriginalSound('c4_explode1.wav',.82);
   GrenadeFX15B.init(S);GrenadeFX15B.burst('c4',origin);
-  const damage=p=>Math.max(0,390*(1-p.distanceTo(origin)/blastRadius));
-  for(const bot of bots)if(alive(bot)&&damage(bot.g.position)>0)damageBot(bot,damage(bot.g.position),'chest',null,false,null,'c4',0,'explosion');
-  if(P.hp>0&&damage(P.pos)>0)hurt(damage(P.pos),origin,'explosion',null,'chest','c4');
+  // CS 1.6 C4 uses RadiusDamage's classic distance falloff rather than
+  // requiring line-of-sight. A nearby wall does NOT negate the blast. Water
+  // separation still applies, as in the original GoldSrc RadiusDamage path.
+  const col=window.bspCol;
+  const wet=!!(col?.pointClip&&BSP.pointWater(col,position));
+  const damage=(point,waterLevel=0)=>{
+   if(Grenade14D.waterSeparates(wet,waterLevel))return 0;
+   return Math.max(0,390*(1-point.distanceTo(origin)/blastRadius));
+  };
+  for(const bot of bots)if(alive(bot)){
+   const value=damage(bot.g.position,bot.waterLevel||0);
+   if(value>0)damageBot(bot,value,'chest',null,false,null,'c4',0,'explosion');
+  }
+  if(P.hp>0){const value=damage(P.pos,P.waterLevel||0);if(value>0)hurt(value,origin,'explosion',null,'chest','c4');}
  }
  function aliveTeam(team){return playerTeam===team&&P.hp>0||bots.some(b=>b.team===team&&!b.dead)}
  function update(dt){
