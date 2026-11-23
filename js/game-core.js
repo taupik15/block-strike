@@ -660,7 +660,7 @@ function startRound(){
    :mkCT(x,z,i===0?playerClass:CTN[(round+i)%CTN.length],'CT');
   b.name=(i===0?playerClass:(allyTeam==='T'?TN[(round+i)%TN.length]:CTN[(round+i)%CTN.length])).toUpperCase();Phase10.registerBot(b,i);Phase10.prepareBotRound(b);
  }
- bots.forEach(b=>{if(window.bspCol){b.g.position.y=BSP.snapSpawn(bspCol,b.g.position.x,b.g.position.z);if(b.body&&!b.fallbackRig)b.body.position.y=-.72;if(!b.nativeHitboxes)b.parts.forEach(p=>p.position.y-=.72)}});
+ bots.forEach(b=>{if(window.bspCol){b.g.position.y=BSP.snapSpawn(bspCol,b.g.position.x,b.g.position.z);if(b.body&&!b.fallbackRig)b.body.position.y=b.body.userData.nativeMdl?b.body.position.y-.72:-.72;if(!b.nativeHitboxes)b.parts.forEach(p=>p.position.y-=.72)}});
  bots.forEach(b=>{
   b.g.rotation.y=b.team==='CT'?0:Math.PI;
   b.baseBodyY=b.body?.position.y??0;Phase11.initBotPose(b);

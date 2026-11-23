@@ -164,6 +164,7 @@ const report={};
   }
   const clips=[],clipCounts=new Map();
   for(const seq of parsed.sequences){
+   if(options.preview&&seq.name!=='idle1')continue;
    const times=[],positionTracks=bones.map(()=>[]),rotationTracks=bones.map(()=>[]);
    for(let frame=0;frame<seq.frames;frame++){
     times.push(frame/seq.fps);

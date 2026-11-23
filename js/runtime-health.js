@@ -1,6 +1,6 @@
 /* Runtime watchdog: local diagnostics, bounded recovery, no telemetry uploads. */
 const RuntimeHealth=(()=>{
- const VERSION='AR11.10.22I.1',label=document.getElementById('runtimeHealth'),toggle=document.getElementById('runtimeHealthToggle');
+ const VERSION='AR11.10.22I.2',label=document.getElementById('runtimeHealth'),toggle=document.getElementById('runtimeHealthToggle');
  let enabled=false,lost=false,halted=false,stageName='startup',fault=null,warningUntil=0,frameAt=0,updateAt=0,updateMs=0,renderMs=0,renderOK=false,frameGap=0,frameAverage=0,updateAverage=0,renderAverage=0,failUpdate=0,failRender=0,lastPaint=-Infinity,frames=0,bound=null;
  const clock=()=>performance.now();
  let lifecycleReason=null,lifecycleAt=0;

@@ -531,7 +531,8 @@ const Phase10=(()=>{
  function radioPlay(channel,stem,volume=.5,team=playerTeam,speaker=null){
   if(!AC||!stem||!radioAllowed(team))return;
   const identity=team===null?'announcer':speaker?speaker.body?.userData?.characterVoice:playerAvatar?.userData?.characterVoice;
-  const custom=CharacterImport.audio(identity,channel,stem);
+  const custom=CharacterImport.audio(identity,channel,stem),female=CharacterImport.femaleVoiceActive(identity);
+  if(female&&!custom)return; // Missing line: text only rather than a male voice.
   const epoch=voiceEpoch,request=++voiceRequest,key=channel+'/'+stem,cacheKey=custom?'custom/'+CharacterImport.voiceRevision+'/'+(identity==='announcer'?'announcer':identity.id)+'/'+key:key;const task=voiceCache.load(cacheKey,()=>{
    const original=channel==='radio'&&CS16_RADIO_WAV.has(stem);
    const primary=original?'assets/cs16-extra-sounds/radio/'+stem+'.wav':'assets/phase10/audio/'+key+'.mp3';
@@ -539,7 +540,7 @@ const Phase10=(()=>{
    // Preserve original GoldSrc WAV first; only fetch the bundled MP3 backup
    // when that exact WAV fails to load/decode. No eager bulk decoding on iOS.
    const fallback=()=>load(primary).catch(e=>original?load('assets/phase10/audio/radio/'+stem+'.mp3').catch(()=>{throw e}):Promise.reject(e));
-   return (custom?custom.arrayBuffer().then(bytes=>AC.decodeAudioData(bytes)).catch(fallback):fallback()).catch(e=>{console.warn(e.message);return null});
+   return (custom?custom.arrayBuffer().then(bytes=>AC.decodeAudioData(bytes)).catch(e=>female?null:fallback()):fallback()).catch(e=>{console.warn(e.message);return null});
   });
   task.then(buffer=>{if(!buffer||!AC||epoch!==voiceEpoch||request!==voiceRequest||!radioAllowed(team)||!running||(speaker&&(speaker.dead||!bots.includes(speaker))))return;
    const source=AC.createBufferSource(),gain=AC.createGain();source.buffer=buffer;gain.gain.value=clamp(volume*masterVolume,0,.9);source.connect(gain);gain.connect(AC.destination);

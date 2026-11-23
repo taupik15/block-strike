@@ -30,7 +30,8 @@ const CS16SFX=(()=>{
   const a=audio();if(!a)return false;
   const token=epoch;
   const custom=slot?(CharacterImport.audio(slot,'player',file.split('/').pop().replace(/\.wav$/i,''))||(voiceKey&&CharacterImport.audio(slot,'player',voiceKey))):null;
-  const sourceTask=custom?cache.load(custom,()=>custom.arrayBuffer().then(bytes=>a.decodeAudioData(bytes))).then(b=>b||load(file)):load(file);
+  const female=slot&&CharacterImport.femaleVoiceActive(slot);if(female&&!custom)return false;
+  const sourceTask=custom?cache.load(custom,()=>custom.arrayBuffer().then(bytes=>a.decodeAudioData(bytes))).then(b=>b||(female?null:load(file))):load(file);
   sourceTask.then(buffer=>{if(!buffer||!ctx||ctx.state!=='running'||token!==epoch||document.hidden)return;
    // Reserve room for player effects: positional bot footsteps are optional voices.
    if(active.size>=(quiet?6:10))return;
