@@ -7,11 +7,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#171d12">
 <title>BLOCK STRIKE</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=AR11.10.22I">
 <link rel="stylesheet" href="css/gui-theme.css">
 <link rel="stylesheet" href="css/mobile.css">
 <link rel="stylesheet" href="css/cs-hud.css?v=16.4.7-pre19">
-<link rel="stylesheet" href="css/classic.css">
+<link rel="stylesheet" href="css/classic.css?v=AR11.10.22I">
 <link rel="stylesheet" href="css/tahap9.css?v=16.4AH">
 <link rel="stylesheet" href="css/tahap10.css">
 <link rel="stylesheet" href="css/tahap11.css?v=16.4.1">
@@ -25,7 +25,7 @@
 <link rel="stylesheet" href="css/spectator15e.css?v=16.4.7-pre26E">
 <link rel="stylesheet" href="css/bomb.css?v=16.4.7-pre26AR.11.10.6">
 <link rel="stylesheet" href="css/mobile-cs16.css?v=16.4.7-pre26AR.11.10.7">
-<link rel="stylesheet" href="css/weapon-import.css?v=AR11.10.20-WEAPON1">
+<link rel="stylesheet" href="css/weapon-import.css?v=AR11.10.21-CHAR4-PACKS">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/ui/pwa-180.png">
 <link rel="icon" href="assets/ui/cross.svg" type="image/svg+xml">
@@ -100,7 +100,7 @@
    <button id="quitBtn" type="button">Quit</button>
   </div>
   <p id="offlineNotice" role="status">Single-player · offline-ready · Dust Block + 4 classic maps</p>
-  <p id="refreshGameStatus" role="status" aria-live="polite">Update via GitHub Pages · AR11.10.15-COMBAT.1</p>
+  <p id="refreshGameStatus" role="status" aria-live="polite">Update via GitHub Pages · AR11.10.22I</p>
  </div>
  <div class="cs-main-foot">BLOCK STRIKE <span>HTML5 / THREE.JS · CLASSIC UI</span> <small>WASD · MOUSE · B BUY · ESC MENU</small></div>
 </div>
@@ -122,9 +122,12 @@
    <section class="cs-options-panel" data-options-panel="multiplayer">
     <h3>Multiplayer</h3>
     <label class="cs-field"><span>Player name</span><input id="playerNickname" type="text" maxlength="24" autocomplete="off" value="PLAYER" placeholder="Your name"></label>
-    <label class="cs-field"><span>Character models</span><select id="classicModels"><option value="on">CS 1.6 Classic</option><option value="off">Previous Skins</option></select></label>
+    <label class="cs-field"><span>Character source</span><select id="classicModels"><option value="stock">CS 1.6 Original</option><option value="mod">Imported Characters / Mods</option><option value="legacy">Previous Skins (legacy)</option></select></label>
+    <label class="cs-field"><span>Character pack</span><select id="characterPackOption" aria-label="Character pack"></select><button type="button" id="manageCharacterPacks">Manage packs</button></label>
     <label class="cs-field"><span>Weapon hand</span><select id="weaponHand"><option value="right">Right Hand</option><option value="left">Left Hand</option></select></label>
-    <p class="cs-help">Model changes apply at the start of the next match. Your name is shown on the local scoreboard.</p>
+    <label class="cs-field"><span>Weapon source</span><select id="weaponSource"><option value="stock">CS 1.6 Original</option><option value="mod">Imported Weapons / Mods</option></select></label>
+    <label class="cs-field"><span>Weapon pack</span><select id="weaponPackOption" aria-label="Weapon pack"></select><button type="button" id="manageWeaponPacks">Manage packs</button></label>
+    <p class="cs-help">Select Imported Mods and a pack for each category. Changes apply next new match. Missing slots use original CS assets; mods stay saved. Female radio belongs to the selected character pack and only confirmed female characters.</p>
    </section>
    <section class="cs-options-panel hidden" data-options-panel="keyboard">
     <h3>Keyboard controls</h3><div class="cs-key-table">
@@ -154,17 +157,22 @@
     <button type="button" id="fullscreenToggle">Enter fullscreen</button><p id="fullscreenStatus" class="cs-help" role="status">Fullscreen support depends on your browser.</p>
     <label class="cs-field"><span>GoldSrc sprites — optional local override</span><input id="goldsrcSpriteFile" type="file" accept=".zip,application/zip"></label>
     <button type="button" id="goldsrcSpriteRemove">Use built-in sprites / forget local override</button><p id="goldsrcSpriteStatus" class="cs-help" role="status">GoldSrc sprites load automatically from the bundled pack when available. An optional ZIP you have permission to use overrides it and is saved on this device.</p>
-    <label class="cs-field"><span>Graphics quality</span><select id="q"><option value="0">Low · better battery</option><option value="1" selected>Medium</option><option value="2">High</option></select></label>
-    <label class="cs-field"><span>Frame rate limit</span><select id="fpsCap" aria-describedby="fpsCapHint"><option value="30">30 FPS · Battery Saver</option><option value="45">45 FPS · Balanced</option><option value="60">60 FPS · Smooth</option></select><output id="fpsCapValue" for="fpsCap">30 FPS</output></label>
-    <p class="cs-help" id="fpsCapHint">30 FPS recommended for iPhone 13 and busy 32-player matches. 45/60 FPS are maximum targets, not guaranteed; higher rates may increase heat and battery use. The game lowers resolution if sustained frames are slow.</p>
+    <label class="cs-field"><span>Graphics quality</span><select id="q"><option value="-1">Ultra Low · low-end devices</option><option value="0">Low · Battery Saver</option><option value="1" selected>Medium · Balanced</option><option value="2">High · Maximum Quality</option></select></label>
+    <label class="cs-field"><span>Frame rate limit</span><select id="fpsCap" aria-describedby="fpsCapHint"><option value="20">20 FPS · Low-end devices</option><option value="30">30 FPS · Battery Saver</option><option value="45">45 FPS · Balanced</option><option value="60">60 FPS · Smooth</option></select><output id="fpsCapValue" for="fpsCap">30 FPS</output></label>
+    <p class="cs-help" id="fpsCapHint">20 FPS + Ultra Low recommended for older low-end phones. 30 FPS recommended for mobile; higher rates may increase heat and battery use. Frame rate is a maximum target, not a guarantee.</p>
+    <label class="cs-field"><span>Adaptive resolution</span><select id="adaptiveResolution"><option value="auto">Auto · mobile recommended</option><option value="on">On</option><option value="off">Off · fixed resolution</option></select></label>
+    <label class="cs-field"><span>Automatic character LOD</span><select id="autoCharacterLOD"><option value="auto">Auto · reduce offscreen work</option><option value="off">Off · full animation updates</option></select></label>
+    <label class="cs-field"><span>GPU compatibility</span><select id="gpuCompatibilityMode"><option value="auto">Auto · original models first</option><option value="compatible">Prefer compatible stock models</option></select></label>
+    <p class="cs-help">GPU model preference applies on the next new match. Imported characters retain priority; safety checks and humanoid fallback remain enabled in both modes. Adaptive resolution never changes HUD, FPS cap, hitboxes or bot rules.</p>
     <label class="cs-field"><span>HUD size</span><input id="hudScale" type="range" min="80" max="125" step="5" value="100"><output id="hudScaleValue" for="hudScale">100%</output></label>
-    <p class="cs-help">Graphics changes adjust render resolution and shadows. Screen resolution is managed by Safari and your device.</p>
+    <p class="cs-help">Graphics presets change 3D render resolution, shadows and cosmetic effects. HUD, aim, damage, bot AI and smoke coverage are unchanged. Reload the game after changing quality to apply antialiasing (WebGL context setting).</p>
    </section>
    <section class="cs-options-panel hidden" data-options-panel="storage">
     <h3>Storage / Offline</h3>
     <p class="cs-help">Online play streams bundled maps, model, WAD, and YaPB GRAPH as needed. This optional button downloads every packaged asset, including unused GRAPH shards, for offline use. It is not required to start a match.</p>
+    <button type="button" id="openCharacterImportStorage">Import Character / Voice</button>
     <button type="button" id="openWeaponImportStorage">Import Weapon / Shield / Grenade / C4</button>
-    <p class="cs-help">Ganti model, animasi, gambar, dan suara pada slot senjata yang sudah ada. Disimpan di perangkat, tidak diunggah. M1887 Silver sudah tersedia sebagai pengganti visual M3.</p>
+    <p class="cs-help">Ganti model, animasi, gambar, dan suara pada slot senjata yang sudah ada. Disimpan di perangkat, tidak diunggah.</p>
     <button type="button" id="offlinePrepare" disabled>Prepare all offline assets (large download)</button><p id="offlineCacheStatus" class="cs-help" role="status">Menyiapkan cache aplikasi…</p>
    </section>
    <section class="cs-options-panel hidden" data-options-panel="voice"><h3>Voice Communication</h3><p class="cs-help">Voice chat is unavailable in offline bot matches. Radio commands and their sound effects remain available during gameplay. No microphone permission is requested.</p></section>
@@ -179,17 +187,32 @@
  </div>
 </div>
 <div id="creditsScreen" class="screen hidden"><section class="dialog"><h2>Credits &amp; asset notices</h2><p>BLOCK STRIKE · Three.js / WebGL. Model dan suara GoldSrc berasal dari paket yang disediakan pengguna, dengan atribusi <a href="https://cs16planet.ru/modeli-oruzhiya-cs-16/26189-standartnye-modeli-oruzhija-dlja-cs-16.html">CS16planet.ru</a>.</p><p>HUD: Armory Xtreme / CS16Forge. GUI: CSGO GUI 1.6 Fixed. Map, tekstur dan karakter dipertahankan dari Tahap 7. Hak aset pihak ketiga tetap milik pemiliknya; izin redistribusi publik belum terverifikasi.</p><p><a href="ASSET_NOTICES.md" target="_blank" rel="noopener">Baca catatan aset lengkap</a></p><button data-close="creditsScreen">0 &nbsp; BACK</button></section></div>
+<div id="characterImportScreen" class="screen hidden" role="dialog" aria-modal="true" aria-label="Import character">
+ <div class="cs-window weapon-import-window"><header class="cs-window-head"><strong>Character &amp; Voice Pack Manager</strong><button type="button" id="characterClose">×</button></header>
+ <div class="weapon-import-body"><section class="mod-pack-panel" aria-label="Character pack manager"><label class="cs-field"><span>Selected pack (edit / next match)</span><select id="characterPackEdit"></select></label>
+ <label class="cs-field"><span>Pack name</span><input type="text" maxlength="70" id="characterPackName" placeholder="Name for new pack or rename"></label>
+ <div class="mod-pack-actions"><button type="button" id="characterPackCreate">Create new pack</button><button type="button" id="characterPackRename">Rename pack</button><button type="button" id="characterPackDelete">Delete pack</button></div>
+ <p class="cs-help" id="characterPackStatus" role="status" aria-live="polite"></p></section><label class="cs-field"><span>Replace slot in selected pack</span><select id="characterSlot"></select></label>
+ <label class="cs-field"><span>Name (optional)</span><input id="characterName" maxlength="70" type="text"></label>
+ <label class="cs-field" id="characterGenderRow"><span>Character voice gender</span><select id="characterGender"><option value="unknown">Unknown / default voice</option><option value="male">Male</option><option value="female">Female</option></select><button type="button" id="characterSaveGender">Save gender</button></label>
+ <label class="cs-field"><span>ZIP / MDL + T.MDL / WAV / MP3 / OGG / JPG / PNG</span><input type="file" id="characterFiles" multiple accept=".zip,.mdl,.wav,.mp3,.ogg,.jpg,.jpeg,.png"></label>
+ <p class="cs-help">Choose Female voice pack in the selected pack to install shared radio and character voices for confirmed female mod characters only. Choose a single model slot to set its voice gender. Recognized models are classified automatically. Models and voices apply next new match. Local only.</p><p id="characterStatus" role="status" aria-live="polite" class="cs-help"></p></div>
+ <footer class="cs-actions"><button id="characterReset" type="button">Restore default</button><button id="characterApply" type="button" class="cs-primary">Import / Replace</button></footer></div></div>
 <div id="weaponImportScreen" class="screen hidden" role="dialog" aria-modal="true" aria-label="Import weapon skin">
  <div class="cs-window weapon-import-window">
-  <header class="cs-window-head"><strong>Import Weapon / Replace Skin</strong><button type="button" id="weaponImportClose" aria-label="Close import">×</button></header>
+  <header class="cs-window-head"><strong>Weapon Pack Manager</strong><button type="button" id="weaponImportClose" aria-label="Close import">×</button></header>
   <div class="cs-window-content weapon-import-body">
+   <section class="mod-pack-panel" aria-label="Weapon pack manager"><label class="cs-field"><span>Selected pack (edit / next match)</span><select id="weaponPackEdit"></select></label>
+ <label class="cs-field"><span>Pack name</span><input type="text" maxlength="70" id="weaponPackName" placeholder="Name for new pack or rename"></label>
+ <div class="mod-pack-actions"><button type="button" id="weaponPackCreate">Create new pack</button><button type="button" id="weaponPackRename">Rename pack</button><button type="button" id="weaponPackDelete">Delete pack</button></div>
+ <p class="cs-help" id="weaponPackStatus" role="status" aria-live="polite"></p></section>
    <h3>Same slot, new appearance</h3>
-   <p class="cs-help">Pilih slot lama yang ingin ditimpa. Harga, damage, ammo, firing rate, dan aturan membeli tidak berubah. File disimpan hanya di perangkat ini.</p>
+   <p class="cs-help">Create a pack before importing a different mod collection. Replacing a slot only changes that pack. Harga, damage, ammo, firing rate, dan aturan membeli tidak berubah. File disimpan hanya di perangkat ini.</p>
    <label class="cs-field"><span>Replace weapon / shield / grenade / C4</span><select id="weaponImportSlot"></select></label>
    <div class="weapon-import-preview"><img id="weaponImportPreview" alt="Current skin preview" hidden></div>
-   <label class="cs-field"><span>Skin name (optional)</span><input type="text" id="weaponImportName" maxlength="70" placeholder="e.g. M1887 Silver"></label>
+   <label class="cs-field"><span>Skin name (optional)</span><input type="text" id="weaponImportName" maxlength="70" placeholder="e.g. Custom Weapon Skin"></label>
    <label class="cs-field"><span>ZIP pack or loose MDL / GLB / WAV / JPG / PNG</span><input id="weaponImportFiles" type="file" accept=".zip,.mdl,.glb,.wav,.jpg,.jpeg,.png,.rar" multiple></label>
-   <p class="cs-help">ZIP dapat berisi v_*.mdl (first-person), p_*.mdl, w_*.mdl, WAV dan gambar. RAR/7z perlu dikonversi ke ZIP; file M1887 Silver yang lu kirim sudah terpasang sebagai pilihan bawaan. File ZIP impor lain bebas nama modelnya karena target slot dipilih di sini.</p>
+   <p class="cs-help">ZIP dapat berisi v_*.mdl (first-person), p_*.mdl, w_*.mdl, WAV dan gambar. RAR/7z perlu dikonversi ke ZIP. Nama model dalam ZIP bebas karena target slot dipilih di sini.</p>
    <div class="weapon-import-buttons"><button type="button" id="weaponImportRemove">Remove custom skin</button><button type="button" id="weaponImportStock" hidden>Use original CS M3</button></div>
    <p id="weaponImportStatus" class="cs-help" role="status" aria-live="polite"></p>
   </div>
@@ -219,7 +242,7 @@
     <label class="cs-field"><span>Map</span><select id="createMap"><option value="dust_block">Dust Block · Elimination</option></select></label>
     <label class="cs-field"><span>Maximum players</span><input id="matchPlayers" type="number" min="2" max="32" step="1" value="16" inputmode="numeric" aria-describedby="matchPerformanceHint"></label>
     <div id="dustMapPreview" class="cs-map-row"><div class="cs-map-thumb" role="img" aria-label="Dust Block arena preview"></div><div><strong>DUST BLOCK</strong><p>Team elimination · 1 human + bots.</p></div></div>
-    <div class="map-library-actions"><button type="button" id="openMapImport">Import Map</button><button type="button" id="openWeaponImport">Import Weapon</button><button type="button" id="removeSavedMap" class="hidden">Delete map</button><button type="button" id="repairMapWads" class="hidden">Add missing WAD</button><input type="file" id="repairWadFiles" accept=".wad,application/octet-stream" multiple hidden></div>
+    <div class="map-library-actions"><button type="button" id="openMapImport">Import Map</button><button type="button" id="openWeaponImport">Import Weapon</button><button type="button" id="openCharacterImport">Import Character</button><button type="button" id="removeSavedMap" class="hidden">Delete map</button><button type="button" id="repairMapWads" class="hidden">Add missing WAD</button><input type="file" id="repairWadFiles" accept=".wad,application/octet-stream" multiple hidden></div>
     <p id="savedMapReport" class="hidden" role="status"></p>
     <canvas id="savedMapOverview" class="hidden" width="144" height="108" aria-label="Map overview"></canvas>
     <div id="bspImport" class="hidden">
@@ -282,28 +305,29 @@
 <script src="js/vendor/three.min.js"></script>
 <script src="js/vendor/GLTFLoader.js"></script>
 <script src="js/vendor/SkeletonUtils.js"></script>
-<script src="js/bsp-render.js?v=16.4.7-pre26AR.11.10.2"></script>
+<script src="js/bsp-render.js?v=AR11.10.22C"></script>
 <script src="js/bsp-physics.js?v=16.4.7-pre26AR.11.10.2"></script>
 <script src="js/bsp-local.js?v=16.4.7-pre26AR.11.10.2"></script>
 <script src="js/local-cache.js?v=16.4.7-pre25B"></script>
 <script src="js/vendor/pako-inflate.min.js"></script>
 <script src="js/yapb-waypoints.js?v=16.4.7-pre26AR.11.10.19-AUTH.1"></script>
-<script src="js/bsp-local-nav.js?v=16.4.7-pre26AR.11.10.9-MDL.1"></script>
+<script src="js/bsp-local-nav.js?v=AR11.10.22E"></script>
 <script src="js/map-media.js?v=AR11.10.20-WEAPON111-C4HOTFIX"></script>
 <script src="js/map-library.js?v=16.4.7-pre25B"></script>
 <script src="js/global-wads.js?v=16.4.7-pre26AR.2"></script>
 <script src="js/map-importer.js?v=16.4.7-pre26AR.11.10.2"></script>
-<script src="js/bundled-maps.js?v=16.4.7-pre26AR.11.10.9-MDL.2-MAPS.1"></script>
-<script src="js/goldsrc-sprites.js?v=AR11.10.20-WEAPON1"></script>
-<script src="js/modes/bomb.js?v=AR11.10.20-WEAPON111-C4HOTFIX"></script>
+<script src="js/bundled-maps.js?v=AR11.10.22F"></script>
+<script src="js/goldsrc-sprites.js?v=AR11.10.22B"></script>
+<script src="js/modes/bomb.js?v=AR11.10.22F"></script>
 <script src="js/bsp-doors.js?v=16.4.7-pre26AR.11.10.7"></script>
 <script>window.NAV_BOTS=true; /* Tahap 7B: aktifkan A* nav untuk bot (T→CT sudah jalan, CT→T masih fallback) */</script>
-<script src="js/nav-graph.js?v=16.4.7-pre22"></script>
+<script src="js/nav-graph.js?v=AR11.10.22E"></script>
 <script src="js/combat12.js?v=16.4.7-pre26AR.11.10.15-COMBAT.1"></script>
 <script src="js/attack14f.js?v=16.4.2"></script>
-<script src="js/safari14e.js?v=16.4.7-pre25A"></script>
+<script src="js/safari14e.js?v=AR11.10.22I"></script>
 <script src="js/cs16-vgui.js"></script>
-<script src="js/cs16-sfx.js?v=16.4.7-pre26K"></script>
+<script src="js/asset-memory.js?v=AR11.10.22F"></script>
+<script src="js/cs16-sfx.js?v=AR11.10.22F"></script>
 <script src="js/cs16-bots.js"></script>
 <script src="js/weapon-modes15c.js?v=16.4.4"></script>
 <script src="js/bot-tactics15d.js?v=16.4.7-pre26AM"></script>
@@ -311,25 +335,31 @@
 <script src="js/weapon-calibration.js?v=16.4.7-pre26AR.11.10.2"></script>
 <script src="js/economy-rules.js?v=16.4.7-pre26AR.11.10.19-AUTH.1"></script>
 <script src="js/native-hitboxes.js?v=16.4.7-pre12"></script>
-<script src="js/runtime-health.js?v=AR11.10.20-WEAPON111-C4HOTFIX"></script>
-<script src="js/goldsrc-mdl10.js?v=16.4.7-pre26AR.11.10.9-MDL.2-MAPS.1-SHIELD.1"></script>
-<script src="js/weapon-import.js?v=AR11.10.20-WEAPON1"></script>
-<script src="js/game-core.js?v=AR11.10.20-WEAPON111-C4HOTFIX"></script>
-<script src="js/game-systems8.js?v=AR11.10.20-WEAPON1"></script>
+<script src="js/graphics-quality.js?v=AR11.10.22I"></script>
+<script src="js/runtime-health.js?v=AR11.10.22I"></script>
+<script src="js/goldsrc-mdl10.js?v=AR11.10.21-CHAR1"></script>
+<script src="js/mod-packs.js?v=AR11.10.21-CHAR4-PACKS"></script>
+<script src="js/weapon-import.js?v=AR11.10.21-CHAR4-PACKS"></script>
+<script src="js/character-import.js?v=AR11.10.21-CHAR4-PACKS"></script>
+<script src="js/character-compat.js?v=AR11.10.22A"></script>
+<script src="js/game-core.js?v=AR11.10.22I"></script>
+<script src="js/game-systems8.js?v=AR11.10.22F"></script>
 <script src="js/grenade14d.js?v=16.4.7-pre23H"></script>
-<script src="js/grenade-fx15b.js?v=AR11.10.20-WEAPON111-C4HOTFIX"></script>
-<script src="js/game-systems9.js?v=AR11.10.20-WEAPON1"></script>
-<script src="js/game-systems10.js?v=16.4.7-pre26AR.11.10.19-AUTH.1"></script>
+<script src="js/grenade-fx15b.js?v=AR11.10.22B"></script>
+<script src="js/game-systems9.js?v=AR11.10.22F"></script>
+<script src="js/game-systems10.js?v=AR11.10.22F"></script>
 <script src="js/game-systems11.js?v=16.4.7-pre12"></script>
-<script src="js/classic-ui.js?v=AR11.10.20-WEAPON1"></script>
+<script src="js/classic-ui.js?v=AR11.10.22A"></script>
 <script src="js/layout-nav.js?v=16.4.7-pre26AR.7"></script>
 <script src="js/spectator15e.js"></script>
-<script src="js/game-systems13.js?v=16.4.7-pre26AR.11.10.9-MDL.2"></script>
+<script src="js/game-systems13.js?v=AR11.10.22B"></script>
 <script src="js/game-systems14b.js?v=16.4.7-pre26AR.11.10.9-MDL.2-MAPS.1-SHIELD.1"></script>
 <script src="js/game-systems14c.js?v=16.4.7-pre15"></script>
 <script src="js/quickbuy15.js?v=16.4.7-pre15"></script>
-<script src="js/cs16-menu15.js?v=16.4.7-pre26AR.11.10.9-MDL.2-MAPS.1"></script>
-<script src="js/weapon-import-menu.js?v=AR11.10.20-WEAPON1"></script>
+<script src="js/cs16-menu15.js?v=AR11.10.22I"></script>
+<script src="js/weapon-import-menu.js?v=AR11.10.21-CHAR4-PACKS"></script>
+<script src="js/character-import-menu.js?v=AR11.10.21-CHAR4-PACKS"></script>
+<script src="js/mod-packs-menu.js?v=AR11.10.21-CHAR4-PACKS"></script>
 <script src="js/offline.js?v=16.4.7-pre26AR.11.10.5"></script>
 </body>
 </html>

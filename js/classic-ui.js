@@ -61,15 +61,16 @@ $('buyMenu').addEventListener('keydown',e=>{
 });
 addEventListener('keydown',e=>{if($('buyMenu').classList.contains('hidden'))return;if(/^Digit[1-8]$/.test(e.code)){e.preventDefault();renderBuyTab(Object.keys(BUY)[+e.code[5]-1])}if(e.code==='Digit9')closeBuyMenu()});
 const CLASS_NAMES={gign:'GIGN',gsg9:'GSG-9',sas:'SAS',urban:'SEAL TEAM 6',arctic:'ARCTIC AVENGERS',guerilla:'GUERILLA WARFARE',leet:'ELITE CREW',terror:'PHOENIX CONNEXION'};
-function showClasses(){
+async function showClasses(){
+ await CharacterImport.ready;
  $('teamScreen').classList.add('hidden');$('classScreen').classList.remove('hidden');$('classTitle').textContent=playerTeam==='CT'?'CT Forces / Choose a class':'Terrorists / Choose a class';
  const names=playerTeam==='CT'?CTN:TN;if(!names.includes(playerClass))playerClass=names[0];
- $('classOptions').replaceChildren();names.forEach((id,i)=>{const b=document.createElement('button');b.dataset.class=id;b.className='class-card'+(playerClass===id?' selected':'');b.innerHTML='<img src="assets/ui/cs16/'+id+'.png" alt="'+CLASS_NAMES[id]+'"><strong>'+(i+1)+' &nbsp; '+CLASS_NAMES[id]+'</strong>';b.onclick=()=>{playerClass=id;document.querySelectorAll('.class-card').forEach(c=>c.classList.toggle('selected',c.dataset.class===id))};$('classOptions').appendChild(b)});
+ $('classOptions').replaceChildren();names.forEach((id,i)=>{const b=document.createElement('button');b.dataset.class=id;b.className='class-card'+(playerClass===id?' selected':'');const image=document.createElement('img');image.src=CharacterImport.image(id)||'assets/ui/cs16/'+id+'.png';image.alt=CLASS_NAMES[id];const title=document.createElement('strong');title.textContent=(i+1)+' '+(CharacterImport.active(id)?.name||CLASS_NAMES[id]);b.append(image,title);b.onclick=()=>{playerClass=id;document.querySelectorAll('.class-card').forEach(c=>c.classList.toggle('selected',c.dataset.class===id))};$('classOptions').appendChild(b)});
 }
 function createPlayerClass(){
- if(playerAvatar){S.remove(playerAvatar);playerAvatar.traverse(o=>{if(o.isSkinnedMesh)o.skeleton.dispose()})}
+ if(playerAvatar){S.remove(playerAvatar);playerAvatar.traverse(o=>{if(o.isSkinnedMesh)o.skeleton.dispose()});playerAvatar=null}
  const gl=(playerTeam==='CT'?CTC:TC)[playerClass];if(!gl)return;
- playerAvatar=THREE.SkeletonUtils.clone(gl.scene);playerAvatar.name='PLAYER_'+playerClass;playerAvatar.visible=false;playerAvatar.position.copy(P.pos);S.add(playerAvatar);
+ try{playerAvatar=THREE.SkeletonUtils.clone(gl.scene)}catch(e){CharacterCompat.record(playerClass,'Player rig clone: '+String(e?.message||e));return;}playerAvatar.name='PLAYER_'+playerClass;playerAvatar.visible=false;playerAvatar.position.copy(P.pos);S.add(playerAvatar);
 }
 $('classBack').onclick=()=>{$('classScreen').classList.add('hidden');$('teamScreen').classList.remove('hidden')};
 $('startMatch').onclick=beginMatch;
@@ -84,8 +85,7 @@ document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.c
 $('pauseBtn').onclick=()=>{pauseToMenu();$('resumeBtn').classList.toggle('hidden',over||RuntimeHealth.halted())};
 $('resumeBtn').onclick=()=>{if(!R||over||RuntimeHealth.blocked())return;$('menu').classList.add('hidden');document.body.classList.add('playing');running=true;t0=performance.now();resetInputs()};
 $('volume').oninput=e=>masterVolume=+e.target.value;
-const classicModelsField=$('classicModels');
-if(classicModelsField){
- try{classicModelsField.value=localStorage.getItem('block-strike-classic-characters')==='off'?'off':'on'}catch(e){classicModelsField.value='on'}
- classicModelsField.addEventListener('change',()=>{try{localStorage.setItem('block-strike-classic-characters',classicModelsField.value)}catch(e){}});
-}
+const classicModelsField=$('classicModels'),weaponSourceField=$('weaponSource');
+classicModelsField.value=CharacterImport.mode;weaponSourceField.value=WeaponImport.mode;
+classicModelsField.addEventListener('change',()=>CharacterImport.setMode(classicModelsField.value));
+weaponSourceField.addEventListener('change',()=>WeaponImport.setMode(weaponSourceField.value));

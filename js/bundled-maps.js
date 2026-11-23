@@ -33,7 +33,7 @@ const BundledMaps=(()=>{
   if(total>MAX_TOTAL)throw Error('Bundled map exceeds memory budget.');
   const loaded=new Array(entry.files.length);
   let next=0;
-  await Promise.all(Array.from({length:Math.min(4,entry.files.length)},async()=>{
+  await Promise.all(Array.from({length:Math.min(AssetMemory.constrained()?1:4,entry.files.length)},async()=>{
    while(next<entry.files.length){
     const i=next++;
     loaded[i]=await get(entry.files[i]);

@@ -127,14 +127,15 @@ const Phase9=(()=>{
   model.quaternion.copy(forward.multiply(zup));model.scale.setScalar(.025);
  }
  function loadWorldModel(k){
-  if(!worldLoads[k])worldLoads[k]=(async()=>{
-   const custom=await WeaponImport.modelFor(k,THREE,'world');
+  if(!worldLoads[k]){const task=(async()=>{
+   const custom=await AssetMemory.build(()=>WeaponImport.modelFor(k,THREE,'world'));
    if(custom)return {scene:custom.scene,native:true};
-   const source=await new Promise((resolve,reject)=>new THREE.GLTFLoader().load('assets/models/world/'+k+'.glb',g=>resolve(g.scene),undefined,reject));
+   const source=(await loadMatchModel('assets/models/world/'+k+'.glb')).scene;
    return {scene:source,native:false};
-  })().catch(e=>{console.warn('Dropped model',k,e);return null});
+  })().catch(e=>{if(worldLoads[k]===task)delete worldLoads[k];console.warn('Dropped model',k,e);return null});worldLoads[k]=task;}
   return worldLoads[k];
  }
+ async function releaseWorldModels(){const pending=Object.values(worldLoads);for(const key of Object.keys(worldLoads))delete worldLoads[key];const models=await Promise.allSettled(pending);AssetMemory.releaseSources(models.filter(r=>r.status==='fulfilled').map(r=>r.value));}
  // Anchor to the local floor, not the nearest spawn's elevation (wrong on
  // Aztec bridges and other multi-level BSP maps). The player position in BSP
  // is hull-center, while an item uses physical floor height.
@@ -160,7 +161,7 @@ const Phase9=(()=>{
   loadWorldModel(id).then(source=>{
    if(!source||!alive())return;
    const gl=source.native?THREE.SkeletonUtils.clone(source.scene):source.scene.clone(true);
-   if(!source.native)orientGoldSrcWorld(gl);holder.add(gl);holder.updateWorldMatrix(true,true);
+   if(!source.native)orientGoldSrcWorld(gl);gl.userData.ownedWorldClone=source.native;holder.add(gl);holder.updateWorldMatrix(true,true);
    const bounds=new THREE.Box3().setFromObject(gl);
    if(Number.isFinite(bounds.min.y))gl.position.y+=holder.position.y-bounds.min.y;
    fallback.visible=false;
@@ -183,7 +184,8 @@ const Phase9=(()=>{
   const marker=new THREE.Mesh(new THREE.BoxGeometry(.20,.055,.15),new THREE.MeshStandardMaterial({color:0x685d3f}));mesh.add(marker);
   const item={mesh,marker,alive:true};kitDrops.push(item);mountWorldItem(mesh,'thighpack',floor,()=>item.alive,marker);return true;
  }
- function removeKit(item){if(!item.alive)return;item.alive=false;item.mesh.parent?.remove(item.mesh);kitDrops.splice(kitDrops.indexOf(item),1);item.marker.geometry.dispose();item.marker.material.dispose()}
+ function releaseWorldClones(holder){for(const child of holder.children)if(child.userData.ownedWorldClone)AssetMemory.skeletons(child)}
+ function removeKit(item){if(!item.alive)return;item.alive=false;releaseWorldClones(item.mesh);item.mesh.parent?.remove(item.mesh);kitDrops.splice(kitDrops.indexOf(item),1);item.marker.geometry.dispose();item.marker.material.dispose()}
  function scanKits(dt){
   if(!kitDrops.length||roundWait)return;
   kitScan-=dt;if(kitScan>0)return;kitScan=.18;
@@ -220,7 +222,7 @@ const Phase9=(()=>{
  }
  function dropForPurchase(k){const d=makeDrop(k,P.pos.clone(),A[k]?.mag||0,0,crouching);if(!d)return false;/* Preserve personal reserve on purchase, even when changing caliber. */return true}
  function dropPlayerOnDeath(){const k=inventory.find(id=>W[id].slot==='primary')||inventory.find(id=>W[id].slot==='pistol');if(k){const d=makeDrop(k,P.pos.clone(),A[k]?.mag||0,0,crouching);if(d)d.res=takePlayerReserve(k)}}
- function removeDrop(d){if(!d||!d.alive)return;d.alive=false;S?.remove(d.mesh);dropped.splice(dropped.indexOf(d),1);d.marker.geometry.dispose();d.marker.material.dispose();if(pickupCandidate===d){pickupCandidate=null;$('pickupPrompt').classList.add('hidden')}}
+ function removeDrop(d){if(!d||!d.alive)return;d.alive=false;releaseWorldClones(d.mesh);S?.remove(d.mesh);dropped.splice(dropped.indexOf(d),1);d.marker.geometry.dispose();d.marker.material.dispose();if(pickupCandidate===d){pickupCandidate=null;$('pickupPrompt').classList.add('hidden')}}
  function nearestDrop(){
   let closest=null,best=2.4;
   for(const d of dropped){if(d.flight)continue;const dist=Math.hypot(P.pos.x-d.mesh.position.x,P.pos.z-d.mesh.position.z);if(dist<best&&Math.abs(P.pos.y-d.mesh.position.y)<2.6&&itemSightClear(cam.position,d.mesh.position.clone().add(new THREE.Vector3(0,.25,0)))){best=dist;closest=d}}
@@ -345,7 +347,7 @@ const Phase9=(()=>{
   const names={he:'hegrenade',flash:'flashbang',smoke:'smokegrenade'};
   loadWorldModel(names[type]).then(source=>{if(!source||!container.userData.active)return;
    const clone=THREE.SkeletonUtils?.clone?THREE.SkeletonUtils.clone(source.scene):source.scene.clone(true);
-   if(!source.native)orientGoldSrcWorld(clone);container.add(clone);
+   if(!source.native)orientGoldSrcWorld(clone);clone.userData.ownedWorldClone=!!THREE.SkeletonUtils?.clone;container.add(clone);
    const fallback=container.userData.fallback;if(fallback)fallback.visible=false;
   });
  }
@@ -549,7 +551,7 @@ const Phase9=(()=>{
   }
   return flashOrder();
  }
- function removeProjectile(p){p.mesh.userData.active=false;S.remove(p.mesh);const i=projectiles.indexOf(p);if(i>=0)projectiles.splice(i,1);
+ function removeProjectile(p){p.mesh.userData.active=false;releaseWorldClones(p.mesh);S.remove(p.mesh);const i=projectiles.indexOf(p);if(i>=0)projectiles.splice(i,1);
   p.mesh.userData.fallback.geometry.dispose();p.mesh.userData.fallback.material.dispose();}
  function effectHE(pos,owner='player',team=owner==='player'?playerTeam:owner.team){
   sound(rnd()<.5?'hegrenade-1.wav':'hegrenade-2.wav',.72,pos);
@@ -802,7 +804,7 @@ const Phase9=(()=>{
  }
  setup();
  return {get famasBurst(){return famasBurst},get glockBurst(){return glockBurst},burstOn:k=>k==='famas'?famasBurst:k==='glock18'?glockBurst:false,get crouching(){return crouching},get crouchBlend(){return crouchBlend},get shieldRaised(){return shieldRaised},
-  loadWorldModel,orientGoldSrcWorld,unsilenced,firingSound,shieldPistol,lowerShield,secondaryAction,toggleNightVision,updateHud,
+  loadWorldModel,releaseWorldModels,orientGoldSrcWorld,unsilenced,firingSound,shieldPistol,lowerShield,secondaryAction,toggleNightVision,updateHud,
   setCrouchInput,updateCrouch,releaseControls,blockShieldHit,shieldImpact,
   shieldActiveWeapon,tossItem,advanceDropFlight,dropBotWeapon,dropForPurchase,dropPlayerOnDeath,dropPlayerWeapon,dropDefuseKit,canSeeItem,itemFloor,clearItemDrops,pickupNearest,useNearby,blocksSight,throwGrenade,commitGrenade,cancelGrenade,cycleGrenade,handlingGrenade:()=>!!pendingThrow,getViewmodel:()=>grenadeView?.group||null,throwBotGrenade,grenadeThreat,resetRound,resetMatch,update,
   getDebugState:()=>({projectiles:projectiles.length,smoke:smokeClouds.length,pendingThrow:pendingThrow?.stage||null,

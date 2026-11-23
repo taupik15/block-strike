@@ -78,16 +78,20 @@
  id('sn').addEventListener('input',event=>{id('sensitivityValue').value=(Number(event.target.value)*1000).toFixed(1);event.target.dispatchEvent(new Event('change',{bubbles:false}))});
  id('volume').addEventListener('input',event=>{id('volumeValue').value=Math.round(Number(event.target.value)*100)+'%'});
  id('fpsCap').addEventListener('change',event=>{id('fpsCapValue').value=FrameLimiter.set(event.target.value)+' FPS'});
+ for(const field of Object.keys(GraphicsQuality.performanceFields)){
+  const el=id(field);el.value=GraphicsQuality.preference(field);
+  el.addEventListener('change',event=>{el.value=GraphicsQuality.setPreference(field,event.target.value);if(field==='adaptiveResolution'&&R&&S)applyQ();});
+ }
  id('optionsDefaults').addEventListener('click',()=>{
   prefs={...defaults};persistPrefs();
-  for(const [field,value] of [['q',FrameLimiter.mobile?'0':'1'],['fpsCap',String(FrameLimiter.recommended)],['sn','0.0045'],['volume','0.8'],['weaponHand','right'],['crouchMode','toggle'],['classicModels','on']]){
+  for(const [field,value] of [['q',FrameLimiter.mobile?'0':'1'],['fpsCap',String(FrameLimiter.recommended)],['sn','0.0045'],['volume','0.8'],['weaponHand','right'],['crouchMode','toggle'],['classicModels','stock'],['weaponSource','stock'],...Object.keys(GraphicsQuality.performanceFields).map(field=>[field,GraphicsQuality.performanceFields[field].defaultValue])]){
    const e=id(field);e.value=value;e.dispatchEvent(new Event(field==='volume'?'input':'change',{bubbles:true}));
   }
   syncPrefs();id('optionsStatus').textContent='Defaults restored';
  });
  // Settings use a reversible editing session: Cancel/X restores controls and saved values.
  let optionsSnapshot=null;
- const nativeOptions=['q','fpsCap','sn','volume','weaponHand','crouchMode','classicModels'];
+ const nativeOptions=['q','fpsCap','sn','volume','weaponHand','crouchMode','classicModels','weaponSource','characterPackOption','weaponPackOption',...Object.keys(GraphicsQuality.performanceFields)];
  const captureOptions=()=>{
   optionsSnapshot={prefs:{...prefs},fields:Object.fromEntries(nativeOptions.map(key=>[key,id(key).value]))};
  };

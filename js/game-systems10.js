@@ -17,7 +17,8 @@ const Phase10=(()=>{
  let matchStart=0,grenadeBudget={CT:-100,T:-100},radioMode=null,radioOpen=false,radioLast=-100,botVoiceLast=-100,radioSeq=0,voiceEpoch=0,voiceRequest=0,announcementUntil=0;
  const lastBackupByTeam={CT:-100,T:-100};
  const activeVoices=new Set(),radioIcons=new Map();
- const voiceCache=new Map(),textureCache=new Map(),effects=[],sounds=[];
+ document.addEventListener('blockstrike:character-change',()=>{for(const k of voiceCache.keys())if(k.startsWith('custom/'))voiceCache.delete(k)});
+ const voiceCache=AssetMemory.audioCache(4,12),textureCache=new Map(),effects=[],sounds=[];
  const CS16_RADIO_WAV=new Set(["blow", "bombdef", "bombpl", "circleback", "clear", "com_followcom", "com_getinpos", "com_go", "com_reportin", "ct_affirm", "ct_backup", "ct_coverme", "ct_enemys", "ct_fireinhole", "ct_imhit", "ct_inpos", "ct_point", "ct_reportingin", "ctwin", "elim", "enemydown", "fallback", "fireassis", "flankthem", "followme", "getout", "go", "hitassist", "hosdown", "letsgo", "locknload", "matedown", "meetme", "moveout", "negative", "position", "regroup", "rescued", "roger", "rounddraw", "sticktog", "stormfront", "takepoint", "terwin", "vip"]);
 
  const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
@@ -50,7 +51,7 @@ const Phase10=(()=>{
   document.querySelectorAll('[data-players]').forEach(button=>button.addEventListener('click',()=>setConfig({players:+button.dataset.players})));
   document.querySelectorAll('[data-team]').forEach(button=>button.addEventListener('click',()=>queueMicrotask(preview)));
  }
- function resetMatch(){lossStreak={CT:0,T:0};teamEco={CT:false,T:false};resetVoices();radioSeq++;sounds.length=0;statCache.clear();roster=[];playerDeaths=0;matchStart=now();roundWinner=null;closeRadio();}
+ function resetMatch(){voiceCache.clear();lossStreak={CT:0,T:0};teamEco={CT:false,T:false};resetVoices();radioSeq++;sounds.length=0;statCache.clear();roster=[];playerDeaths=0;matchStart=now();roundWinner=null;closeRadio();}
  function roundStart(){for(const rec of roster){const b=rec.bot,st=statCache.get(rec.id);if(st){
   const active={id:b.weaponId,mag:b.ammo,res:b.reserve,silenced:!!b.silenced},pistol=W[b.weaponId]?.slot==='pistol'?active:b.pistolState;
   const main=b.emptyPrimary||(b.weaponId==='knife'?pistol:active);
@@ -198,11 +199,25 @@ const Phase10=(()=>{
   }
  }
  function botVec(b,raw){return new THREE.Vector3(raw.x,raw.y,raw.z)}
- function frontOf(b,target){
-  const p=b.g.position;const dx=target.x-p.x,dz=target.z-p.z,dist=Math.hypot(dx,dz)||1;
-  if(p.distanceTo(target)<2.1)return true;
-  const facing=new THREE.Vector3(-Math.sin(b.g.rotation.y),0,-Math.cos(b.g.rotation.y));
-  return facing.dot(new THREE.Vector3(dx/dist,0,dz/dist))>Math.cos(Math.PI*(b.skill?.aim>=1.16?100:b.skill?.aim<.7?80:90)/180);
+ function frontOf(b,target,distance,fx,fz,threshold){
+  const p=b.g.position,dx=target.x-p.x,dz=target.z-p.z,dist=Math.hypot(dx,dz)||1;
+  if(distance<2.1)return true;
+  return fx*(dx/dist)+fz*(dz/dist)>threshold;
+ }
+ function visionCandidates(b){
+  // Compute facing once, rank each eligible candidate once, and never allocate
+  // candidate objects for actors that are out of range/FOV. Same stable top six.
+  const pos=b.g.position,vision=b.skill?.vision||44,fx=-Math.sin(b.g.rotation.y),fz=-Math.cos(b.g.rotation.y);
+  const threshold=Math.cos(Math.PI*(b.skill?.aim>=1.16?100:b.skill?.aim<.7?80:90)/180),ranked=[];
+  const consider=(id,other,p,isP)=>{
+   const dist=p.distanceTo(pos);if(!(dist<vision)||!frontOf(b,p,dist,fx,fz,threshold))return;
+   const target={id,bot:other,pos:p,isP,dist};
+   const rank=dist-(BombMode.isDefuser?.(target)&&b.team==='T'?vision*3+1:id===b.seenId?vision+1:0);
+   ranked.push({target,rank});
+  };
+  if(b.team!==playerTeam&&!over&&P.hp>0)consider('human',null,P.pos,true);
+  for(const other of bots)if(other!==b&&!other.dead&&other.team!==b.team)consider(other.botId||other,other,other.g.position,false);
+  ranked.sort((a,c)=>a.rank-c.rank);return ranked.slice(0,6).map(x=>x.target);
  }
  // Only a damage event or an audible, recent event reveals a bearing, not wall vision.
  function noticeDamage(b,source,team){
@@ -253,24 +268,12 @@ const Phase10=(()=>{
   b.g.rotation.y+=clamp(delta,-dt*3.8,dt*3.8);
  }
  function selectVisible(b){
-  const others=[];
-  if(b.team!==playerTeam&&!over&&P.hp>0)others.push({id:'human',pos:P.pos,isP:true,bot:null});
-  for(const other of bots){if(other===b||other.dead||other.team===b.team)continue;others.push({id:other.botId||other,bot:other,pos:other.g.position,isP:false})}
-  // Limit expensive ray casts: closest six candidates within vision and FOV.
-  const pos=b.g.position,vision=b.skill?.vision||44;
-  const candidates=others.map(target=>({...target,dist:target.pos.distanceTo(pos)}))
-   .filter(t=>t.dist<vision&&frontOf(b,t.pos)).sort((a,c)=>{
-    // Keep a confirmed or pending visual contact when it remains visible;
-    // another enemy moving slightly closer must not restart reaction timing.
-    // A confirmed defuser remains the higher-priority target for T.
-    const rank=t=>t.dist-(BombMode.isDefuser?.(t)&&b.team==='T'?vision*3+1:t.id===b.seenId?vision+1:0);
-    return rank(a)-rank(c);
-   }).slice(0,6);
+  const candidates=visionCandidates(b);
   b.obstructedEnemy=null;
   let sightlineChecks=0;
   for(const target of candidates){
    const crouching=!!(target.isP?Phase9.crouching:target.bot?.crouching);
-   if(!Phase9.blocksSight(b.g.position,target.pos,{startCrouch:!!b.crouching,endCrouch:crouching})&&los(b,target.pos)){b.obstacleSeenId=null;return target;}
+   if(!Phase9.blocksSight(b.g.position,target.pos,{startCrouch:!!b.crouching,endCrouch:crouching})&&los(b,target.pos,crouching)){b.obstacleSeenId=null;return target;}
    // Limited probes on real, destructible line-of-sight obstruction; never
    // assign a hidden opponent as a visible combat target.
    if(sightlineChecks++>=2||!window.bspCol?.local||!BSPBreakables.combatTarget)continue;
@@ -338,6 +341,12 @@ const Phase10=(()=>{
   }
   return null;
  }
+ function coverCandidates(nodes,p){
+  const candidates=[],q=new THREE.Vector3();
+  for(const n of nodes){if(n.valid===false||!n.edges.length||Math.abs(n.pos[1]-p.y)>=1.5)continue;
+   const d=p.distanceTo(q.fromArray(n.pos));if(d>1.7&&d<9)candidates.push({n,d});
+  }return candidates.sort((a,b)=>a.d-b.d).slice(0,18);
+ }
  function tacticalGoal(b,objective,enemy){
   const p=b.g.position,t=now(),memory=b.lastSeen&&t-b.lastSeen.t<4?b.lastSeen:null;
   if(objective?.force||objective?.busy||objective?.urgent)return null;
@@ -351,7 +360,7 @@ const Phase10=(()=>{
    b.coverCheck=t+3;
    const nodes=activeMapData.local.graph.nodes,from=BSP.toHammer(bspCol.T,p.toArray());
    const threat=BSP.toHammer(bspCol.T,enemy.pos.toArray());
-   const candidates=nodes.filter(n=>n.valid!==false&&n.edges.length&&Math.abs(n.pos[1]-p.y)<1.5).map(n=>({n,d:p.distanceTo(V(...n.pos))})).filter(x=>x.d>1.7&&x.d<9).sort((a,b)=>a.d-b.d).slice(0,18);
+   const candidates=coverCandidates(nodes,p);
    for(const {n} of candidates){if(BSP.traceAll(bspCol,n.h,threat).hit&&LocalBSPNav.walkable(bspCol,from,n.h,450)){b.coverGoal=V(...n.pos);b.coverUntil=t+4;return {pos:b.coverGoal,mode:'take-cover',radius:1,force:true}}}
   }
   if(!enemy&&objective?.mode!=='defend'&&(!objective||!BombMode.planted())){
@@ -521,16 +530,17 @@ const Phase10=(()=>{
  function resetVoices(){voiceEpoch++;botVoiceLast=-100;radioLast=-100;announcementUntil=0;lastBackupByTeam.CT=lastBackupByTeam.T=-100;for(const v of activeVoices)stopVoice(v);for(const b of radioIcons.keys())removeRadioIcon(b);for(const b of bots)b.radioUntil=0;showRadioText.token++;$('radioStatus')?.classList.add('hidden')}
  function radioPlay(channel,stem,volume=.5,team=playerTeam,speaker=null){
   if(!AC||!stem||!radioAllowed(team))return;
-  const epoch=voiceEpoch,request=++voiceRequest,key=channel+'/'+stem;let task=voiceCache.get(key);
-  if(!task){
+  const identity=team===null?'announcer':speaker?speaker.body?.userData?.characterVoice:playerAvatar?.userData?.characterVoice;
+  const custom=CharacterImport.audio(identity,channel,stem);
+  const epoch=voiceEpoch,request=++voiceRequest,key=channel+'/'+stem,cacheKey=custom?'custom/'+CharacterImport.voiceRevision+'/'+(identity==='announcer'?'announcer':identity.id)+'/'+key:key;const task=voiceCache.load(cacheKey,()=>{
    const original=channel==='radio'&&CS16_RADIO_WAV.has(stem);
    const primary=original?'assets/cs16-extra-sounds/radio/'+stem+'.wav':'assets/phase10/audio/'+key+'.mp3';
    const load=url=>fetch(url).then(r=>{if(!r.ok)throw Error('radio asset '+r.status+' '+url);return r.arrayBuffer()}).then(bytes=>AC.decodeAudioData(bytes));
    // Preserve original GoldSrc WAV first; only fetch the bundled MP3 backup
    // when that exact WAV fails to load/decode. No eager bulk decoding on iOS.
-   task=load(primary).catch(e=>original?load('assets/phase10/audio/radio/'+stem+'.mp3').catch(()=>{throw e}):Promise.reject(e))
-     .catch(e=>{voiceCache.delete(key);console.warn(e.message);return null});voiceCache.set(key,task);
-  }
+   const fallback=()=>load(primary).catch(e=>original?load('assets/phase10/audio/radio/'+stem+'.mp3').catch(()=>{throw e}):Promise.reject(e));
+   return (custom?custom.arrayBuffer().then(bytes=>AC.decodeAudioData(bytes)).catch(fallback):fallback()).catch(e=>{console.warn(e.message);return null});
+  });
   task.then(buffer=>{if(!buffer||!AC||epoch!==voiceEpoch||request!==voiceRequest||!radioAllowed(team)||!running||(speaker&&(speaker.dead||!bots.includes(speaker))))return;
    const source=AC.createBufferSource(),gain=AC.createGain();source.buffer=buffer;gain.gain.value=clamp(volume*masterVolume,0,.9);source.connect(gain);gain.connect(AC.destination);
    for(const old of activeVoices)stopVoice(old);

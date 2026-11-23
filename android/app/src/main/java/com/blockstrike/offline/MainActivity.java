@@ -9,6 +9,10 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.DisplayCutout;
+import android.widget.FrameLayout;
 import android.webkit.CookieManager;
 import android.webkit.ServiceWorkerClient;
 import android.webkit.ServiceWorkerController;
@@ -31,6 +35,7 @@ public final class MainActivity extends Activity {
     private static final String START_URL = "https://" + HOST + "/index.html";
     private static final int FILE_CHOOSER = 101;
     private WebView webView;
+    private boolean activityPaused;
     private android.webkit.ValueCallback<Uri[]> pendingFiles;
 
     @Override public void onCreate(Bundle savedInstanceState) {
@@ -48,7 +53,7 @@ public final class MainActivity extends Activity {
         webView = new WebView(this);
         webView.setBackgroundColor(0xff171d12);
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        // Use the Activity hardware-accelerated window; avoid forcing an extra layer buffer.
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true); // localStorage and IndexedDB for maps/weapon imports
@@ -61,12 +66,16 @@ public final class MainActivity extends Activity {
         s.setLoadWithOverviewMode(true);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setJavaScriptCanOpenWindowsAutomatically(false);
-        s.setUserAgentString(s.getUserAgentString() + " BlockStrikeAndroid/1.0");
+        s.setUserAgentString(s.getUserAgentString() + " BlockStrikeAndroid/1.1");
         if (Build.VERSION.SDK_INT >= 26) s.setSafeBrowsingEnabled(true);
         CookieManager.getInstance().setAcceptCookie(false);
 
         final GameAssets assets = new GameAssets();
         webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                notifyLifecycle();
+            }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
                 return assets.respond(req.getUrl(), req.getMethod());
             }
@@ -111,7 +120,22 @@ public final class MainActivity extends Activity {
                 }
             }
         });
-        setContentView(webView);
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackgroundColor(0xff171d12);
+        frame.addView(webView, new FrameLayout.LayoutParams(-1, -1));
+        if (Build.VERSION.SDK_INT >= 28) {
+            // Landscape cutouts must not cover touch controls. WebView occupies the safe rectangle.
+            frame.setOnApplyWindowInsetsListener((view, insets) -> {
+                DisplayCutout cutout = insets.getDisplayCutout();
+                view.setPadding(cutout == null ? 0 : cutout.getSafeInsetLeft(),
+                        cutout == null ? 0 : cutout.getSafeInsetTop(),
+                        cutout == null ? 0 : cutout.getSafeInsetRight(),
+                        cutout == null ? 0 : cutout.getSafeInsetBottom());
+                return insets.consumeDisplayCutout();
+            });
+        }
+        setContentView(frame);
+        frame.requestApplyInsets();
         webView.loadUrl(START_URL);
     }
 
@@ -133,6 +157,15 @@ public final class MainActivity extends Activity {
 
     private void immersive() {
         Window w = getWindow();
+        if (Build.VERSION.SDK_INT >= 30) {
+            w.setDecorFitsSystemWindows(false);
+            WindowInsetsController controller = w.getInsetsController();
+            if (controller != null) {
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                controller.hide(WindowInsets.Type.systemBars());
+                return;
+            }
+        }
         w.getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
                 View.SYSTEM_UI_FLAG_FULLSCREEN |
@@ -146,14 +179,33 @@ public final class MainActivity extends Activity {
         super.onWindowFocusChanged(focus);
         if (focus) immersive();
     }
+    private void notifyLifecycle() {
+        if (webView == null) return;
+        webView.evaluateJavascript("document.dispatchEvent(new CustomEvent('blockstrike:native-lifecycle',{detail:{paused:"
+                + activityPaused + "}}))", null);
+    }
     @Override protected void onPause() {
+        activityPaused = true;
+        notifyLifecycle();
         if (webView != null) webView.onPause();
         super.onPause();
     }
     @Override protected void onResume() {
         super.onResume();
+        activityPaused = false;
         if (webView != null) webView.onResume();
+        notifyLifecycle();
         immersive();
+    }
+    @Override protected void onDestroy() {
+        if (pendingFiles != null) { pendingFiles.onReceiveValue(null); pendingFiles = null; }
+        if (webView != null) {
+            if (webView.getParent() instanceof android.view.ViewGroup)
+                ((android.view.ViewGroup) webView.getParent()).removeView(webView);
+            webView.destroy();
+            webView = null;
+        }
+        super.onDestroy();
     }
     @Override public void onBackPressed() {
         if (webView != null && webView.canGoBack()) webView.goBack();

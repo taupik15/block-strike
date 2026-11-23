@@ -13,3 +13,29 @@
 #weaponImportScreen .cs-actions{display:flex;gap:8px;flex-wrap:wrap}
 #weaponImportScreen #weaponImportStatus{min-height:2.4em;overflow-wrap:anywhere}
 @media(max-height:450px){#weaponImportScreen .weapon-import-body{gap:5px;padding:8px 12px}#weaponImportScreen .weapon-import-preview{height:65px}#weaponImportScreen .cs-field{margin:0}}
+
+/* AR11.10.20 WEAPON.1: small overlay consistent with existing CS windows. */
+#characterImportScreen{z-index:1100;align-items:center;justify-content:center;background:rgba(0,0,0,.76)}
+#characterImportScreen:not(.hidden){display:flex}
+#characterImportScreen .weapon-import-window{width:min(700px,calc(100vw - 34px));max-height:min(90dvh,650px);overflow:auto}
+#characterImportScreen .weapon-import-body{padding:14px 18px;display:flex;flex-direction:column;gap:12px}
+#characterImportScreen .weapon-import-body h3{margin:0;color:#d6c195}
+#characterImportScreen .weapon-import-body .cs-help{margin:0;line-height:1.45}
+#characterImportScreen .weapon-import-body input[type=file]{max-width:100%;font-size:12px}
+#characterImportScreen .weapon-import-preview{height:110px;background:#1b211d;display:flex;align-items:center;justify-content:center;border:1px solid #6c6b58}
+#characterImportScreen .weapon-import-preview img{max-width:100%;max-height:100%;object-fit:contain}
+#characterImportScreen .weapon-import-buttons{display:flex;gap:8px;flex-wrap:wrap}
+#characterImportScreen .weapon-import-buttons button{flex:1 0 180px}
+#characterImportScreen .cs-actions{display:flex;gap:8px;flex-wrap:wrap}
+#characterImportScreen #characterStatus{min-height:2.4em;overflow-wrap:anywhere}
+@media(max-height:450px){#characterImportScreen .weapon-import-body{gap:5px;padding:8px 12px}#characterImportScreen .weapon-import-preview{height:65px}#characterImportScreen .cs-field{margin:0}}
+
+#characterGenderRow[hidden]{display:none!important}
+#characterGenderRow button{white-space:nowrap}
+/* Local pack controls remain scrollable inside the existing landscape dialogs. */
+.mod-pack-panel{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid #6c6b58;background:#20271c;min-width:0}
+.mod-pack-actions{display:flex;gap:6px;flex-wrap:wrap}
+.mod-pack-actions button{flex:1 1 110px;min-height:32px}
+.mod-pack-panel select,.mod-pack-panel input{min-width:0;max-width:100%}
+.mod-pack-panel p{overflow-wrap:anywhere}
+@media(max-height:450px){.mod-pack-panel{gap:4px;padding:5px}.mod-pack-actions button{min-height:28px}}

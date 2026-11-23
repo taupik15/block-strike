@@ -1,3 +1,16 @@
+/* AR11.10.22I-FINAL: validated cumulative release; no new gameplay changes. */
+/* AR11.10.22H: platform lifecycle, touch menus, immersive APK. */
+/* AR11.10.22G: configurable adaptive resolution, character LOD and GPU model preference. */
+/* AR11.10.22F: bounded memory caches and match-boundary resource release. */
+/* AR11.10.22E: exact bot vision, collision and graph CPU optimizations. */
+/* AR11.10.22D: conservative offscreen character pose scheduling and rigid attachment optimization. */
+/* AR11.10.22C: conservative static render batching and WebGL1-compatible indexed BSP. */
+/* AR11.10.22B-GRAPHICS: graphics presets, bounded cosmetic budgets and 20 FPS. */
+/* AR11.10.22A: capability-checked character loaders and rigid humanoid fallback. */
+/* AR11.10.21-CHAR4-PACKS: independent local character/voice and weapon packs; atomic legacy migration. */
+/* AR11.10.21-CHAR3: generic character and weapon source labels; no changes to import or voice routing. */
+/* AR11.10.21-CHAR2-VOICE: source selectors and gender-safe local voice packs. */
+/* AR11.10.21-CHAR1: character slots, local voice packs and native hitboxes. */
 /* WEAPON.1.2-SNIPER: hidden bot hit proxies restored for bullet traces; sniper crosshair policy; PWA cache rollover. */
 /* PWA-FULLSCREEN.1: Android installed PWA landscape fullscreen; refresh manifest cache. */
 /* AR11.10.20-WEAPON.1.1-C4: BSP C4 blast scaling, world prop clone, C4 VFX, debug OFF. */

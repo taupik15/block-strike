@@ -53,7 +53,7 @@
   const workspaces = new WeakMap();
   function workspace(n) {
     return {scores:new Float64Array(n), parents:new Int32Array(n), closed:new Uint8Array(n),
-      priorities:[], ids:[], busy:false};
+      priorities:[], ids:[], heuristic:new Float64Array(n), busy:false};
   }
   NG.pathGraph = function (graph, start, goal, skip, weight) {
     if (!graph || !Number.isInteger(start) || !Number.isInteger(goal)) return null;
@@ -65,10 +65,12 @@
     // A callback can run another search on the same graph. Do not share live scratch.
     if(w.busy)w=workspace(n);
     w.busy=true;
-    const {scores:g,parents:came,closed,priorities:f,ids}=w;
-    g.fill(Infinity);came.fill(-1);closed.fill(0);f.length=ids.length=0;
+    const {scores:g,parents:came,closed,priorities:f,ids,heuristic}=w;
+    g.fill(Infinity);came.fill(-1);closed.fill(0);heuristic.fill(NaN);f.length=ids.length=0;
     const dest=P[goal];
-    const h=i=>{const p=P[i];return Math.hypot(p[0]-dest[0],p[1]-dest[1],p[2]-dest[2]);};
+    // Search-local only: dynamic blocked edges and weights are still evaluated
+    // normally. Never share scores or heuristic values across goals/searches.
+    const h=i=>{const v=heuristic[i];if(!Number.isNaN(v))return v;const p=P[i];return heuristic[i]=Math.hypot(p[0]-dest[0],p[1]-dest[1],p[2]-dest[2]);};
     // Strict comparisons retain the previous heap's equal-priority ordering.
     function push(cost,id){
       let i=f.length;while(i>0){const p=(i-1)>>1;if(f[p]<=cost)break;f[i]=f[p];ids[i]=ids[p];i=p;}

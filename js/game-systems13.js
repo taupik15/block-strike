@@ -76,7 +76,7 @@ const Phase13=(()=>{
   $('specMode').value='first';$('spectatorHud').classList.add('hidden');$('spectatorTop').classList.add('hidden');$('spectatorMove').classList.add('hidden');document.body.classList.remove('spectating');
   lightEnabled=false;if(flashlight)flashlight.visible=false;$('flashBtn').classList.remove('active');clearBlood()}
  function beforeRound(){const changed=!!queuedTeam&&queuedTeam!==playerTeam;
-  if(changed){playerTeam=queuedTeam;playerClass=(playerTeam==='CT'?'gign':'arctic');Phase10.resetMatch();money=window.PhaseMenu15?.rules.startMoney??800}
+  if(changed){playerTeam=queuedTeam;playerClass=(playerTeam==='CT'?'gign':'arctic');createPlayerClass();Phase10.resetMatch();money=window.PhaseMenu15?.rules.startMoney??800}
   if(deadThisRound||changed){armor=0;helmet=false;defuseKit=false;nightVision=false;grenades={he:0,flash:0,smoke:0};
    inventory=[playerTeam==='CT'?'usp':'glock18','knife'];wi=0;
    resetPlayerAmmo();
@@ -409,16 +409,16 @@ const Phase13=(()=>{
  // Budget costly support checks across a frame; marks are cosmetic only.
  let wallMarkAttempts=0;
  function wallHit(hit,direction,origin=null){
-  if(!S||!hit||!direction||wallMarkAttempts>=12)return false;
+  if(!S||!hit||!direction||wallMarkAttempts>=graphicsProfile().wallAttempts)return false;
   const col=window.bspCol;
   if(origin&&col?.pointClip&&BSP.pointLineBlocked(col,origin,hit.point.clone().addScaledVector(direction,-.01)))return false;
   wallMarkAttempts++;
-  return surfaceDecal(hit,direction,.115,bulletMarkTexture(),bulletDecals,48,.85);
+  return surfaceDecal(hit,direction,.115,bulletMarkTexture(),bulletDecals,graphicsProfile().bulletDecals,.85);
  }
  function bloodHit(bot,hit,head=false,hasSprite=false,origin=null){if(!S||!hit)return;
   const pos=hit.clone(),toward=origin?pos.clone().sub(origin).normalize():null;
   const img=head?'blood_v1_bigblood1':'blood_v1_bigblood2';
-  for(let n=0;n<(hasSprite?0:head?5:3);n++){
+  for(let n=0;n<GraphicsQuality.effectCount(hasSprite?0:head?5:3,Q);n++){
    const tex=bloodTexture(n%2?'blood_v1_blood1':'blood_v1_blood3');
    const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false,opacity:.92,color:0xffffff}));
    sprite.position.copy(pos).add(new THREE.Vector3((Math.random()-.5)*.4,(Math.random()-.5)*.5,(Math.random()-.5)*.4));
@@ -428,10 +428,11 @@ const Phase13=(()=>{
   if(toward?.lengthSq()>0){
    const rayBlood=new THREE.Raycaster(pos.clone().addScaledVector(toward,.03),toward,.01,3.5);
    const surface=rayBlood.intersectObjects(obsM,false)[0],col=window.bspCol;
-   if(surface&&!(col?.pointClip&&BSP.pointLineBlocked(col,pos,surface.point.clone().addScaledVector(toward,-.025))))surfaceDecal(surface,toward,head?1.2:.8,bloodTexture(img),bloodDecals,20,.92);
+   if(surface&&!(col?.pointClip&&BSP.pointLineBlocked(col,pos,surface.point.clone().addScaledVector(toward,-.025))))surfaceDecal(surface,toward,head?1.2:.8,bloodTexture(img),bloodDecals,graphicsProfile().bloodDecals,.92);
   }
-  while(bloodBursts.length>26){const o=bloodBursts.shift();o.obj.parent?.remove(o.obj);o.obj.material.dispose()}
+  while(bloodBursts.length>graphicsProfile().bloodSprites){const o=bloodBursts.shift();o.obj.parent?.remove(o.obj);o.obj.material.dispose()}
  }
+ function trimGraphics(){const profile=graphicsProfile();while(bulletDecals.length>profile.bulletDecals)removeDecal(bulletDecals.shift());while(bloodDecals.length>profile.bloodDecals)removeDecal(bloodDecals.shift());while(bloodBursts.length>profile.bloodSprites){const o=bloodBursts.shift();o.obj.parent?.remove(o.obj);o.obj.material.dispose();}}
  function updateBlood(dt){wallMarkAttempts=0;for(let i=bloodBursts.length-1;i>=0;i--){const b=bloodBursts[i];b.age+=dt;b.obj.material.opacity=Math.max(0,.92*(1-b.age/b.life));if(b.age>=b.life){b.obj.parent?.remove(b.obj);b.obj.material.dispose();bloodBursts.splice(i,1)}}}
  function clearBlood(){wallMarkAttempts=0;for(const d of [...bloodDecals,...bulletDecals])removeDecal(d);bloodDecals.length=bulletDecals.length=0;
   for(const p of bloodBursts){p.obj.parent?.remove(p.obj);p.obj.material.dispose()}bloodBursts.length=0}
@@ -540,6 +541,6 @@ const Phase13=(()=>{
  setup();
  return {moveSpeed,isSpectating,isFirstPerson:()=>spectating&&specMode==='first',visibleOverlay,applyHand,setHand,bindLight,toggleFlashlight,
   resetMatch,beforeRound,onDeath,getObserved:()=>observed,getViewmodel:()=>shouldRenderSpecWeapon()?spectatorView:null,updateSpectator,shouldRenderSpecWeapon,setSpecMode,toggleDirector,pickBot,checkRoundEnd,openSettings,closeSettings,
-  openWeaponSelector,closeWeaponSelector,openTeamMenu,queueTeam,dropPlayerWeapon:()=>Phase9.dropPlayerWeapon(),bloodHit,wallHit,updateBlood,clearBlood,
+  openWeaponSelector,closeWeaponSelector,openTeamMenu,queueTeam,dropPlayerWeapon:()=>Phase9.dropPlayerWeapon(),bloodHit,wallHit,updateBlood,trimGraphics,clearBlood,
   getDebugState:()=>({spectating,observed:observed?.botId||null,specMode,autoDirector,queuedTeam,lightEnabled,hand,bulletDecals:bulletDecals.length,bloodDecals:bloodDecals.length,bloodBursts:bloodBursts.length})};
 })();

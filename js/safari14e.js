@@ -14,16 +14,18 @@ const Phase14E=(()=>{
   const button=doc.getElementById('fullscreenToggle'),status=doc.getElementById('fullscreenStatus');
   if(!button||!status)return;
   const root=doc.documentElement;
-  const standalone=()=>win.navigator.standalone===true||win.matchMedia('(display-mode: standalone)').matches||win.matchMedia('(display-mode: fullscreen)').matches&&!active();
+  const native=()=>String(win.navigator.userAgent||'').includes('BlockStrikeAndroid/');
+  const mode=name=>!!win.matchMedia?.('(display-mode: '+name+')').matches;
+  const standalone=()=>native()||win.navigator.standalone===true||mode('standalone')||mode('fullscreen')&&!active();
   const active=()=>!!(doc.fullscreenElement||doc.webkitFullscreenElement);
   const request=root.requestFullscreen||root.webkitRequestFullscreen;
   const exit=doc.exitFullscreen||doc.webkitExitFullscreen;
-  const supported=()=>typeof request==='function'&&doc.fullscreenEnabled!==false&&doc.webkitFullscreenEnabled!==false;
+  const supported=()=>typeof request==='function'&&(root.requestFullscreen?doc.fullscreenEnabled!==false:doc.webkitFullscreenEnabled!==false);
   function sync(){
    const installed=standalone(),on=active();
    button.disabled=installed||(!on&&!supported())||(on&&typeof exit!=='function');
-   button.textContent=on?'Exit fullscreen':'Enter fullscreen';
-   status.textContent=installed?'Installed app: browser tabs are hidden. Rotate your device to landscape.':on?'Fullscreen active.':supported()?'Fullscreen hides browser controls where supported.':'Use Add to Home Screen / Install app if available, then open in landscape.';
+   button.textContent=installed?'Fullscreen app':on?'Exit fullscreen':'Enter fullscreen';
+   status.textContent=native()?'Android APK: immersive fullscreen is managed by the app.':installed?'Installed app: browser tabs are hidden. Rotate your device to landscape.':on?'Fullscreen active.':supported()?'Fullscreen hides browser controls where supported.':'Use Add to Home Screen / Install app if available, then open in landscape.';
   }
   button.addEventListener('click',async()=>{
    if(button.disabled)return;
@@ -34,7 +36,9 @@ const Phase14E=(()=>{
    }catch(_){sync();status.textContent='Fullscreen unavailable or denied. Use Add to Home Screen / Install app if available.';}
   });
   for(const type of ['fullscreenchange','webkitfullscreenchange'])doc.addEventListener(type,sync);
-  win.addEventListener('pageshow',sync);sync();
+  win.addEventListener('pageshow',sync);
+  for(const name of ['standalone','fullscreen']){const media=win.matchMedia?.('(display-mode: '+name+')');if(media?.addEventListener)media.addEventListener('change',sync);else media?.addListener?.(sync);}
+  sync();
  }
  function install(doc){
   installFullscreen(doc,window);

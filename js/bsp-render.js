@@ -95,10 +95,10 @@ window.loadBspWorld = function (dir, scene) {
           opts.lightMapIntensity = intensity;
         }
         // Rigid BSP geometry: precompute local raycast bounds once.
-        geo.computeBoundingBox();geo.computeBoundingSphere();
+        BSPVisuals.compact(geo);geo.computeBoundingBox();geo.computeBoundingSphere();
         BSPVisuals.prepareSight(geo);
         const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial(opts));
-        scene.add(mesh);scene.userData.rayMeshes?.push(mesh);
+        scene.add(BSPVisuals.staticMesh(mesh));scene.userData.rayMeshes?.push(mesh);
       });
       if (man.sky) loadBspSky(dir, man, scene, loadTexture);
       return loadBspProps(dir, scene, loadTexture).then(() => Promise.all(pending)).then(() => {
@@ -111,20 +111,55 @@ window.loadBspWorld = function (dir, scene) {
 /* Shared Three.js presentation for geometry produced by the local importer. */
 const BSPVisuals=(()=>{
  const size=1024;
- // Immutable, non-indexed BSP triangles: compact block bounds for boolean LOS.
- // No render geometry mutation, hit ordering, collision or damage changes.
+ // Immutable BSP triangles: compact block bounds for boolean LOS.
+ // Optional exact indexing retains triangle order, collision and damage.
  const sightBlocks=new WeakMap();
+ // Deduplicate only complete, exactly equal vertex tuples. UV/lightmap seams
+ // are retained. Uint16 indices work even on WebGL1 without OES_element_index_uint.
+ function compact(geo){
+  const attrs=Object.entries(geo.attributes),pos=geo.attributes.position,n=pos?.count||0;
+  if(geo.index||n<192||n>65535||n%3||geo.groups.length||Object.keys(geo.morphAttributes).length||geo.drawRange.start!==0||geo.drawRange.count!==Infinity||attrs.some(([key,a])=>!['position','uv','uv2'].includes(key)||a.isInterleavedBufferAttribute||a.normalized||a.count!==n||!(a.array instanceof Float32Array)))return false;
+  const table=new Map(),first=[],indices=new Uint16Array(n),stride=attrs.reduce((v,[,a])=>v+a.itemSize,0);
+  for(let i=0;i<n;i++){
+   let key='';for(const [,a] of attrs)for(let j=0;j<a.itemSize;j++){const v=a.array[i*a.itemSize+j];if(!Number.isFinite(v))return false;key+=v+'|';}
+   let idx=table.get(key);if(idx===undefined){idx=first.length;table.set(key,idx);first.push(i);}indices[i]=idx;
+  }
+  // Skip poorly shared batches; do not allocate a larger vertex buffer.
+  if(first.length*stride*4+indices.byteLength>n*stride*4*.85)return false;
+  for(const [name,a] of attrs){const data=new Float32Array(first.length*a.itemSize);for(let i=0;i<first.length;i++)for(let j=0;j<a.itemSize;j++)data[i*a.itemSize+j]=a.array[first[i]*a.itemSize+j];geo.setAttribute(name,new THREE.BufferAttribute(data,a.itemSize));}
+  geo.setIndex(new THREE.BufferAttribute(indices,1));return true;
+ }
+ function staticMesh(mesh){mesh.updateMatrix();mesh.matrixAutoUpdate=false;return mesh;}
+ function canInstance(renderer){return !!(renderer?.capabilities?.isWebGL2||renderer?.extensions?.has?.('ANGLE_instanced_arrays'));}
+ // Render-only instances for immutable procedural boxes. Their original meshes
+ // stay in obsM with original materials/geometry, bounds and raycast identity.
+ function batchBoxes(scene,boxes,renderer){
+  if(!canInstance(renderer))return {boxes:0,batches:0};
+  const groups=new Map();for(const mesh of boxes){const m=mesh.material,g=mesh.geometry;
+   if(mesh.parent!==scene||!mesh.visible||!m?.visible||!m.isMeshLambertMaterial||m.transparent||m.alphaTest||g?.type!=='BoxGeometry'||mesh.children.length||mesh.userData?.breakable)continue;
+   const p=g.parameters;if(!p||p.widthSegments!==1||p.heightSegments!==1||p.depthSegments!==1)continue;
+   const key=[m.color.getHex(),m.map?.uuid||'',mesh.castShadow,mesh.receiveShadow].join(':');if(!groups.has(key))groups.set(key,[]);groups.get(key).push(mesh);
+  }
+  let count=0,batches=0;for(const group of groups.values()){
+   if(group.length<3)continue;
+   const first=group[0],material=first.material.clone(),geometry=new THREE.BoxGeometry(1,1,1),instance=new THREE.InstancedMesh(geometry,material,group.length),matrix=new THREE.Matrix4(),scale=new THREE.Vector3();
+   instance.castShadow=first.castShadow;instance.receiveShadow=first.receiveShadow;instance.frustumCulled=false;instance.userData.renderOnly=true;
+   group.forEach((mesh,i)=>{const p=mesh.geometry.parameters;scale.set(p.width,p.height,p.depth).multiply(mesh.scale);matrix.compose(mesh.position,mesh.quaternion,scale);instance.setMatrixAt(i,matrix);});instance.instanceMatrix.needsUpdate=true;scene.add(staticMesh(instance));
+   for(const mesh of group){mesh.material.visible=false;mesh.castShadow=false;staticMesh(mesh);}count+=group.length;batches++;
+  }return {boxes:count,batches};
+ }
+
  function prepareSight(geo){
-  const pos=geo.attributes.position;
-  if(geo.index||!pos||pos.itemSize!==3||pos.count<192||pos.count%3)return;
+  const pos=geo.attributes.position,index=geo.index,count=index?index.count:pos?.count;
+  if(!pos||pos.itemSize!==3||count<192||count%3)return;
   const blocks=[],v=new THREE.Vector3();
-  for(let first=0;first<pos.count;first+=96){
-   const end=Math.min(pos.count,first+96),box=new THREE.Box3();
-   for(let i=first;i<end;i++)box.expandByPoint(v.fromBufferAttribute(pos,i));
+  for(let first=0;first<count;first+=96){
+   const end=Math.min(count,first+96),box=new THREE.Box3();
+   for(let i=first;i<end;i++)box.expandByPoint(v.fromBufferAttribute(pos,index?index.getX(i):i));
    // Tiny padding makes the broadphase conservative at shared triangle edges.
    box.expandByScalar(1e-5);blocks.push({first,end,box});
   }
-  sightBlocks.set(geo,{pos,version:pos.version,blocks});
+  sightBlocks.set(geo,{pos,version:pos.version,index,indexVersion:index?.version,blocks});
  }
  const sightScratch={inverse:new THREE.Matrix4(),ray:new THREE.Ray(),a:new THREE.Vector3(),b:new THREE.Vector3(),c:new THREE.Vector3(),hit:new THREE.Vector3(),sphere:new THREE.Sphere(),hits:[]};
  function occluded(caster,meshes){
@@ -132,7 +167,7 @@ const BSPVisuals=(()=>{
   for(const obj of meshes){
    const geo=obj.geometry,entry=geo&&sightBlocks.get(geo);
    // Native path for procedural boxes, animated or custom meshes and atypical draw ranges.
-   if(!entry||obj.children.length||obj.raycast!==THREE.Mesh.prototype.raycast||obj.material?.side!==THREE.DoubleSide||obj.material===undefined||obj.isSkinnedMesh||geo.index||geo.attributes.position!==entry.pos||entry.version!==entry.pos.version||geo.drawRange.start!==0||geo.drawRange.count!==Infinity||!geo.boundingSphere||!geo.boundingBox){
+   if(!entry||obj.children.length||obj.raycast!==THREE.Mesh.prototype.raycast||obj.material?.side!==THREE.DoubleSide||obj.material===undefined||obj.isSkinnedMesh||geo.index!==entry.index||geo.index?.version!==entry.indexVersion||geo.attributes.position!==entry.pos||entry.version!==entry.pos.version||geo.drawRange.start!==0||geo.drawRange.count!==Infinity||!geo.boundingSphere||!geo.boundingBox){
     q.hits.length=0;caster.intersectObject(obj,true,q.hits);if(q.hits.length){q.hits.length=0;return true;}continue;
    }
    if(!obj.layers.test(caster.layers))continue;
@@ -143,7 +178,7 @@ const BSPVisuals=(()=>{
    for(const block of entry.blocks){
     if(!q.ray.intersectsBox(block.box))continue;
     for(let i=block.first;i<block.end;i+=3){
-     q.a.fromBufferAttribute(entry.pos,i);q.b.fromBufferAttribute(entry.pos,i+1);q.c.fromBufferAttribute(entry.pos,i+2);
+     const ix=entry.index;q.a.fromBufferAttribute(entry.pos,ix?ix.getX(i):i);q.b.fromBufferAttribute(entry.pos,ix?ix.getX(i+1):i+1);q.c.fromBufferAttribute(entry.pos,ix?ix.getX(i+2):i+2);
      if(!q.ray.intersectTriangle(q.a,q.b,q.c,false,q.hit))continue;
      const d=q.hit.applyMatrix4(obj.matrixWorld).distanceTo(caster.ray.origin);
      if(d>=caster.near&&d<=caster.far)return true;
@@ -196,12 +231,12 @@ const BSPVisuals=(()=>{
   geo.setAttribute('uv',new THREE.BufferAttribute(uvs,2));
   if(uv2)geo.setAttribute('uv2',new THREE.BufferAttribute(uv2,2));
   // Bounds remain local, so translated doors and moving brushes retain correct raycasts.
-  geo.computeBoundingBox();geo.computeBoundingSphere();prepareSight(geo);
+  compact(geo);geo.computeBoundingBox();geo.computeBoundingSphere();prepareSight(geo);
   const water=/^[!*]/.test(name),transparent=water||opacity<1;
   const mesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map,lightMap:lightmap||null,
    color:map?0xffffff:water?0x477f86:0x9b9586,side:THREE.DoubleSide,
    transparent,opacity:water?Math.min(opacity,.74):opacity,depthWrite:!transparent,alphaTest:name.startsWith('{')?.5:0}));
-  mesh.userData.textureName=name;mesh.userData.worldSurface=worldSurface;return mesh;
+  mesh.userData.textureName=name;mesh.userData.worldSurface=worldSurface;return staticMesh(mesh);
  }
  function mountSky(face,scene,rotation=0){
   // Camera far = 150. All cube vertices must remain within it even at
@@ -219,5 +254,5 @@ const BSPVisuals=(()=>{
   box.rotation.y=rotation;box.renderOrder=-1;box.frustumCulled=false;
   scene.add(box);window.bspSky=box;return box;
  }
- return {lightmaps,mesh,mountSky,prepareSight,occluded};
+ return {lightmaps,mesh,mountSky,prepareSight,occluded,compact,staticMesh,canInstance,batchBoxes};
 })();

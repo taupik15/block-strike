@@ -116,11 +116,12 @@ const report={};
   material.userData.goldSrcFlags=t.flags;material.userData.chromeApproximation=chrome;
   return material;
  }
- function build(parsed,THREE){
-  const root=new THREE.Group();root.name='GoldSrc_'+parsed.name;root.userData.nativeMdl=true;
+ function build(parsed,THREE,options={}){
+  const character=!!options.character;
+  const root=new THREE.Group();root.name=character?'CS16ClassicArmature':'GoldSrc_'+parsed.name;root.userData.nativeMdl=true;
   const matrix=new THREE.Matrix4().set(0,-1,0,0,0,0,1,0,-1,0,0,0,0,0,0,1);
-  root.quaternion.setFromRotationMatrix(matrix);root.scale.setScalar(PROFILE.globalScale);root.position.set(...PROFILE.globalOffset);
-  const bones=parsed.bones.map((def,i)=>{const b=new THREE.Bone();b.name='mdl_b'+i;b.position.set(...def.position);b.quaternion.copy(angleQuat(def.rotation,THREE));return b});
+  root.quaternion.setFromRotationMatrix(matrix);root.scale.setScalar(character?.028:PROFILE.globalScale);root.position.set(...PROFILE.globalOffset);
+  const bones=parsed.bones.map((def,i)=>{const b=new THREE.Bone();b.name=character?THREE.PropertyBinding.sanitizeNodeName(def.name):'mdl_b'+i;b.position.set(...def.position);b.quaternion.copy(angleQuat(def.rotation,THREE));return b});
   for(let i=0;i<bones.length;i++){const p=parsed.bones[i].parent;if(p<0)root.add(bones[i]);else bones[p].add(bones[i])}
   root.updateMatrixWorld(true);
   const vertexWork=new THREE.Vector3(),normalWork=new THREE.Vector3();
@@ -174,8 +175,8 @@ const report={};
     }
    }
    const tracks=[];for(let b=0;b<bones.length;b++){
-    tracks.push(new THREE.VectorKeyframeTrack('mdl_b'+b+'.position',times,positionTracks[b]));
-    tracks.push(new THREE.QuaternionKeyframeTrack('mdl_b'+b+'.quaternion',times,rotationTracks[b]));
+    tracks.push(new THREE.VectorKeyframeTrack(bones[b].name+'.position',times,positionTracks[b]));
+    tracks.push(new THREE.QuaternionKeyframeTrack(bones[b].name+'.quaternion',times,rotationTracks[b]));
    }
    const duration=Math.max(1/seq.fps,(seq.frames-1)/seq.fps);
    const count=(clipCounts.get(seq.name)||0)+1;clipCounts.set(seq.name,count);

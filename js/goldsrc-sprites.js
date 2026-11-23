@@ -123,7 +123,8 @@ const GoldSrcSprites=(()=>{
  function play(parent,name,pos,{scale=1,fps=30,life,delay=0,opacity=1}={}){
   if(!parent||!Number.isFinite(fps)||fps<=0||!Number.isFinite(scale)||scale<=0||!Number.isFinite(delay)||delay<0||(life!=null&&(!Number.isFinite(life)||life<=0)))return false;
   const source=bank(name);if(!source)return false;
-  if(live.length>=44)recycle(live.shift());
+  const limit=typeof graphicsProfile==='function'?graphicsProfile().sprites:44;
+  while(live.length>=limit)recycle(live.shift());
   const mesh=pool.pop()||new THREE.Sprite(new THREE.SpriteMaterial({depthWrite:false,transparent:true}));
   mesh.material.blending=source.mode===1?THREE.AdditiveBlending:THREE.NormalBlending;
   const alpha=source.mode===3?.25:0;
@@ -151,6 +152,7 @@ const GoldSrcSprites=(()=>{
   }
  }
  function clear(){while(live.length)recycle(live.pop())}
+ function trim(){const limit=typeof graphicsProfile==='function'?graphicsProfile().sprites:44;while(live.length>limit)recycle(live.shift());while(pool.length>limit)pool.pop().material.dispose();}
  async function install(archive){
   if(!archive||!Number.isFinite(archive.size)||archive.size<=0||archive.size>MAX_ZIP)throw Error('Invalid sprite ZIP size (25 MiB limit).');
   const reader=MapImporter.openZip(archive),pending=new Map();
@@ -244,5 +246,5 @@ const GoldSrcSprites=(()=>{
   files.clear();banks.clear();canvases.clear();icons.clear();weaponMaps.clear();mappings.clear();pixels=0;gearState='';scopeMask='';
   if(typeof running!=='undefined'&&typeof P!=='undefined'){hud(cur(),helmet,armor);scope(cur());if(typeof grenades!=='undefined')equipment(grenades)}
  }
- return {ready:()=>restore,file,weatherTexture,play,update,clear,hud,equipment,scope,radar,radioTexture,radarBomb,updateBomb,killIcon,chip,install,debug:()=>({source,files:files.size,pixels,live:live.map(e=>({name:e.name,frames:e.source.frames.length,index:e.index,visible:e.mesh.visible})),pooled:pool.length})};
+ return {ready:()=>restore,file,weatherTexture,play,update,clear,trim,hud,equipment,scope,radar,radioTexture,radarBomb,updateBomb,killIcon,chip,install,debug:()=>({source,files:files.size,pixels,live:live.map(e=>({name:e.name,frames:e.source.frames.length,index:e.index,visible:e.mesh.visible})),pooled:pool.length})};
 })();

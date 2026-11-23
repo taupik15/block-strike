@@ -78,19 +78,19 @@ const GrenadeFX15B=(()=>{
  function burst(kind,pos){
   if(!scene)return false;
   const group=new THREE.Group();group.position.copy(pos);scene.add(group);
-  const flash=kind==='flash';
+  const flash=kind==='flash',extras=typeof graphicsProfile!=='function'||graphicsProfile().secondaryExplosions;
   const factor=kind==='c4'?Math.max(.5,Math.min(3,(Number(window.bspCol?.T?.k)||.02)/.02)):1;
   light.color.setHex(flash?0xf7f9ff:0xffba72);light.distance=flash?4.2:kind==='c4'?16*factor:5.7;
   light.position.copy(pos);light.position.y+=flash?.25:.55;
   lightPower=flash?1.9:kind==='c4'?4.6:2.15;lightTime=kind==='c4'?.32:.13;light.intensity=lightPower;
   if(kind==='he'){
    GoldSrcSprites.play(scene,'fexplo',pos.clone().add(V(0,.4,0)),{scale:.05,fps:30});
-   GoldSrcSprites.play(scene,'eexplo',pos.clone().add(V((rnd()-.5)*2.56,.6+rnd()*.10,(rnd()-.5)*2.56)),{scale:.06,fps:30});
+   if(extras)GoldSrcSprites.play(scene,'eexplo',pos.clone().add(V((rnd()-.5)*2.56,.6+rnd()*.10,(rnd()-.5)*2.56)),{scale:.06,fps:30});
   }else if(kind==='c4'){
    // GoldSrc C4 uses several staggered fireball sprites, not HE's single flash.
    GoldSrcSprites.play(scene,'fexplo',pos.clone().add(V(0,.8*factor,0)),{scale:.105*factor,fps:26});
-   GoldSrcSprites.play(scene,'eexplo',pos.clone().add(V(3.4*factor,1.1*factor,-2.3*factor)),{scale:.10*factor,fps:26,delay:.09});
-   GoldSrcSprites.play(scene,'eexplo',pos.clone().add(V(-3.1*factor,1.5*factor,2.0*factor)),{scale:.088*factor,fps:24,delay:.16});
+   if(extras)GoldSrcSprites.play(scene,'eexplo',pos.clone().add(V(3.4*factor,1.1*factor,-2.3*factor)),{scale:.10*factor,fps:26,delay:.09});
+   if(extras)GoldSrcSprites.play(scene,'eexplo',pos.clone().add(V(-3.1*factor,1.5*factor,2.0*factor)),{scale:.088*factor,fps:24,delay:.16});
   }
   const p=renderPuff(group,'puff',new THREE.Vector3(0,.18,0),flash?.30:kind==='c4'?.52:.43,flash?1.1:kind==='c4'?2.9:1.65,flash?1.5:kind==='c4'?5.8*factor:2.45,0xdedbd6);
   const flame=kind==='c4'?fireball(group,factor):null,mark=kind==='c4'?scorch(group,factor):null;

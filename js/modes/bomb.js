@@ -39,7 +39,7 @@ const BombMode=(()=>{
    if(!source||token!==serial)return;
    const item=source.native?THREE.SkeletonUtils.clone(source.scene):source.scene.clone(true);
    if(!source.native)Phase9.orientGoldSrcWorld(item);
-   box.add(item);
+   item.userData.ownedWorldClone=source.native;box.add(item);
    const floor=box.position.y;box.updateWorldMatrix(true,true);const bounds=new THREE.Box3().setFromObject(item);
    if(Number.isFinite(bounds.min.y)){item.position.y+=floor+.015-bounds.min.y;dot.position.y=Math.max(.06,bounds.max.y-bounds.min.y+.025);}
    dot.visible=planted;box.userData.hasModel=true;
@@ -48,7 +48,7 @@ const BombMode=(()=>{
  function clearMarker(){
   serial++;
   if(!model)return;
-  model.children.find(c=>c.isSprite)?.material.dispose();
+  model.children.find(c=>c.isSprite)?.material.dispose();for(const child of model.children)if(child.userData.ownedWorldClone)AssetMemory.skeletons(child);
   model.parent?.remove(model);model=null;
  }
  function clearScene(){

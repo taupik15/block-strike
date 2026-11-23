@@ -1,4 +1,3 @@
-
 name: Build BLOCK STRIKE Offline APK
 
 on:
@@ -34,25 +33,20 @@ jobs:
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           SDK_MANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-
           if [[ ! -x "$SDK_MANAGER" ]]; then
             SDK_MANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print -quit 2>/dev/null || true)"
           fi
-
           if [[ ! -x "$SDK_MANAGER" ]]; then
             echo "::error::sdkmanager not found under $SDK_ROOT/cmdline-tools"
             exit 1
           fi
-
           echo "Using: $SDK_MANAGER"
           "$SDK_MANAGER" --version
-
           if [[ ! -f "$SDK_ROOT/platforms/android-35/android.jar" || ! -x "$SDK_ROOT/build-tools/35.0.0/aapt2" ]]; then
             for _ in {1..64}; do printf 'y\n'; done > "$RUNNER_TEMP/android-licenses.txt"
             "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --licenses < "$RUNNER_TEMP/android-licenses.txt" > /dev/null
             "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --install 'platforms;android-35' 'build-tools;35.0.0'
           fi
-
           test -f "$SDK_ROOT/platforms/android-35/android.jar"
           test -x "$SDK_ROOT/build-tools/35.0.0/aapt2"
           echo "Android SDK 35 and build-tools 35.0.0 ready"
@@ -72,7 +66,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Block-Strike-WEAPON1.1-Android-APK
+          name: Block-Strike-22I-Android-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           compression-level: 0

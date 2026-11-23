@@ -14,7 +14,7 @@ parser.add_argument("destination", type=pathlib.Path)
 args = parser.parse_args()
 source, target = args.game_root.resolve(), args.destination.resolve()
 if not (source / "index.html").is_file() or not (source / "assets").is_dir():
-    sys.exit("ERROR: root must contain index.html and assets/. Apply WEAPON.1.1-C4 hotfix first.")
+    sys.exit("ERROR: root must contain index.html and assets/. Extract the complete current game first.")
 if target == source or any((source / name) == target or (source / name) in target.parents for name in DIRS):
     sys.exit("ERROR: source and target must differ")
 if target.exists():

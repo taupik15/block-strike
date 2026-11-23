@@ -1,4 +1,5 @@
 // Original playable core (will be gradually moved into modules)\n
+let inputSuspended=false,nativeInputPaused=false;
 const $=id=>document.getElementById(id), rnd=Math.random, isT=('ontouchstart' in window)||navigator.maxTouchPoints>0;
 if(!isT)document.body.classList.add('pc');
 const W={
@@ -37,7 +38,7 @@ const CTN=['gsg9','gign','sas','urban'], TN=['arctic','guerilla','leet','terror'
 let ctState=0, ctWait=null;
 // AR.11.10.3: RAF-aligned FPS ceiling. No extra timer or background loop.
 const FrameLimiter=(()=>{
- const KEY='bs.fpsCap',allowed=[30,45,60];
+ const KEY='bs.fpsCap',allowed=[20,30,45,60];
  const mobile=(()=>{try{return matchMedia('(pointer: coarse)').matches}catch(_){return false}})();
  const recommended=mobile?30:60;
  const normal=value=>allowed.includes(Number(value))?Number(value):recommended;
@@ -61,10 +62,11 @@ window.BlockStrikeFPS=FrameLimiter;
 
 function storedQuality(){
  const fallback=FrameLimiter.mobile?0:1;
- try{const raw=localStorage.getItem('bs.graphicsQuality');if(raw!==null&&['0','1','2'].includes(raw))return Number(raw)}catch(_){}
+ try{const raw=localStorage.getItem('bs.graphicsQuality');if(raw!==null)return GraphicsQuality.normalize(raw,fallback)}catch(_){}
  return fallback;
 }
 let Q=storedQuality(),SENS=.0045,R,S,cam,sun,vm,flash,running=false,over=false,t0=0,reloading=0,cool=0,kick=0,fh=false,fl=false,jmp=false,jx=0,jy=0,swapT=0,hudT=0,dmgA=0,hitT=0,msgT=0,roundWait=0,round=0,kills=0;
+function graphicsProfile(){return GraphicsQuality.profile(Q)}
 const K={w:0,a:0,s:0,d:0},obs=[],obsM=[],bots=[],tr=[],pt=[],A={};
 const ammoPool={};let freezeLeft=0;
 function playerAmmo(id,mag,res){A[id]=Economy45.state(ammoPool,id,mag,res);return A[id]}
@@ -84,7 +86,7 @@ function snd(v,d,f,priority=0,pan=0){
  const stereo=pan?AC.createStereoPanner?.():null;if(stereo){stereo.pan.value=Math.max(-1,Math.min(1,pan));g.connect(stereo);stereo.connect(AC.destination)}else g.connect(AC.destination);
  activeVoices.add(s);voicePriority.set(s,priority);s.onended=()=>{activeVoices.delete(s);s.disconnect();fi.disconnect();g.disconnect();stereo?.disconnect()};s.start();
 }
-const originalAudio={},originalSoundLoading={};let originalSoundsRequested=false,reloadSfxToken=0;
+const originalAudio=AssetMemory.audioCache(8,32),originalSoundLoading={};let originalSoundsRequested=false,reloadSfxToken=0;
 const RELOAD_SOUNDS={
  usp:[['usp_clipout.wav',0],['usp_clipin.wav',520],['usp_sliderelease.wav',1120]],
  glock18:[['clipout1.wav',0],['clipin1.wav',500],['sliderelease1.wav',1080]],
@@ -113,21 +115,21 @@ const RELOAD_SOUNDS={
 };
 const originalSoundQueue=[];let soundLoadsActive=0;
 function pumpOriginalSounds(){
- while(AC&&soundLoadsActive<4&&originalSoundQueue.length){
+ while(AC&&soundLoadsActive<AssetMemory.soundWorkers()&&originalSoundQueue.length){
   const name=originalSoundQueue.shift();soundLoadsActive++;
-  Promise.resolve().then(async()=>{
-   const local=await WeaponImport.soundData(name);if(local)return local;
-   const file=name.startsWith('skin:')?name.split(':').slice(2).join(':'):name;
-   const r=await fetch('assets/sounds/weapons/'+file);return r.ok?r.arrayBuffer():null;
-  }).then(b=>b&&AC.decodeAudioData(b)).then(buf=>{if(buf)originalAudio[name]=buf}).catch(()=>{}).finally(()=>{delete originalSoundLoading[name];soundLoadsActive--;pumpOriginalSounds()});
+  AssetMemory.scheduleAudio(async()=>{
+   const local=await WeaponImport.soundData(name);if(local)return AC.decodeAudioData(local);
+   const file=name.startsWith('skin:')?name.split(':').slice(3).join(':'):name;
+   const r=await fetch('assets/sounds/weapons/'+file);return r.ok?AC.decodeAudioData(await r.arrayBuffer()):null;
+  }).then(buf=>{if(buf&&(!name.startsWith('skin:')||Number(name.split(':')[2])===WeaponImport.revision))originalAudio.set(name,buf)}).catch(()=>{}).finally(()=>{delete originalSoundLoading[name];soundLoadsActive--;pumpOriginalSounds()});
  }
 }
 function requestOriginalSound(name,preload=false){
- if(!AC||originalAudio[name])return;
+ if(!AC||originalAudio.get(name))return;
  if(originalSoundLoading[name]){if(!preload){const i=originalSoundQueue.indexOf(name);if(i>0){originalSoundQueue.splice(i,1);originalSoundQueue.unshift(name);}}return;}
  originalSoundLoading[name]=true;if(preload)originalSoundQueue.push(name);else originalSoundQueue.unshift(name);pumpOriginalSounds();
 }
-function loadOriginalSounds(){if(!AC||originalSoundsRequested)return;originalSoundsRequested=true;const reloadFiles=Object.values(RELOAD_SOUNDS).flat().map(x=>x[0]);const extras=['grenade_hit2.wav','grenade_hit3.wav','glock18-2.wav','famas-2.wav','famas-burst.wav','generic_reload.wav','knife_slash1.wav','knife_stab.wav','knife_hit1.wav','knife_hit2.wav','knife_hit3.wav','knife_hit4.wav','knife_hitwall1.wav','knife_slash2.wav','knife_deploy1.wav','headshot2.wav','pinpull.wav','sg_explode.wav','hegrenade-1.wav','hegrenade-2.wav','flashbang-1.wav','flashbang-2.wav','grenade_hit1.wav','dryfire_pistol.wav','dryfire_rifle.wav','usp_unsil-1.wav','m4a1_unsil-1.wav','usp_silencer_on.wav','usp_silencer_off.wav','m4a1_silencer_on.wav','m4a1_silencer_off.wav','ric_metal-1.wav','ric_conc-1.wav','c4_beep1.wav','c4_beep2.wav','c4_beep3.wav','c4_beep4.wav','c4_beep5.wav','c4_click.wav','c4_disarm.wav','c4_disarmed.wav','c4_plant.wav','c4_explode1.wav'];const cueFiles=Object.values(WeaponPresentation).flatMap(asset=>Object.values(asset.sound).flat().map(cue=>cue[1]));const files=[...new Set([...cueFiles,...Object.values(W).map(w=>w.sound).filter(Boolean),...reloadFiles,...extras])];files.forEach(name=>requestOriginalSound(name,true));
+function loadOriginalSounds(){if(!AC||originalSoundsRequested)return;originalSoundsRequested=true;const reloadFiles=Object.values(RELOAD_SOUNDS).flat().map(x=>x[0]);const extras=['grenade_hit2.wav','grenade_hit3.wav','glock18-2.wav','famas-2.wav','famas-burst.wav','generic_reload.wav','knife_slash1.wav','knife_stab.wav','knife_hit1.wav','knife_hit2.wav','knife_hit3.wav','knife_hit4.wav','knife_hitwall1.wav','knife_slash2.wav','knife_deploy1.wav','headshot2.wav','pinpull.wav','sg_explode.wav','hegrenade-1.wav','hegrenade-2.wav','flashbang-1.wav','flashbang-2.wav','grenade_hit1.wav','dryfire_pistol.wav','dryfire_rifle.wav','usp_unsil-1.wav','m4a1_unsil-1.wav','usp_silencer_on.wav','usp_silencer_off.wav','m4a1_silencer_on.wav','m4a1_silencer_off.wav','ric_metal-1.wav','ric_conc-1.wav','c4_beep1.wav','c4_beep2.wav','c4_beep3.wav','c4_beep4.wav','c4_beep5.wav','c4_click.wav','c4_disarm.wav','c4_disarmed.wav','c4_plant.wav','c4_explode1.wav'];const cueFiles=Object.values(WeaponPresentation).flatMap(asset=>Object.values(asset.sound).flat().map(cue=>cue[1]));const files=[...new Set([...cueFiles,...Object.values(W).map(w=>w.sound).filter(Boolean),...reloadFiles,...extras])];(AssetMemory.constrained()?[...new Set([...Object.values(W).map(w=>w.sound).filter(Boolean),...RELOAD_SOUNDS.usp.map(x=>x[0]),...RELOAD_SOUNDS.glock18.map(x=>x[0]),...extras])]:files).forEach(name=>requestOriginalSound(name,true));
   for(const original of ['m3-1.wav','m3_insertshell.wav','m3_pump.wav','m3_draw.wav'])requestOriginalSound(WeaponImport.audioRoute('m3',original),true)}
 const activeVoices=new Set(),voicePriority=new WeakMap();
 function reserveSoundVoice(priority){
@@ -139,7 +141,7 @@ function resetWeaponVoices(){for(const voice of activeVoices){try{voice.stop()}c
 function playOriginalSound(name,v=.4,d=.16,f=1800,priority=0,pan=0){
  name=WeaponImport.routeGlobalSound(name,typeof vm!=='undefined'?vm?.userData?.viewAsset:'');
  if(!AC||masterVolume<=0||v<=0||document.hidden)return;
- const b=originalAudio[name];if(!b){requestOriginalSound(name);snd(v,d,f,priority,pan);return}
+ const b=originalAudio.get(name);if(!b){requestOriginalSound(name);snd(v,d,f,priority,pan);return}
  if(!reserveSoundVoice(priority))return;
  const source=AC.createBufferSource(),gain=AC.createGain();source.buffer=b;gain.gain.value=Math.min(1,v*1.4)*masterVolume;source.connect(gain);const stereo=pan?AC.createStereoPanner?.():null;if(stereo){stereo.pan.value=Math.max(-1,Math.min(1,pan));gain.connect(stereo);stereo.connect(AC.destination)}else gain.connect(AC.destination);activeVoices.add(source);voicePriority.set(source,priority);
  source.onended=()=>{activeVoices.delete(source);source.disconnect();gain.disconnect();stereo?.disconnect()};source.start();
@@ -153,7 +155,7 @@ function tex(c1,c2,rep){const c=document.createElement('canvas');c.width=c.heigh
 /* WORLD */
 function B(x,z,w,h,d,col,y=0,crate){
  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshLambertMaterial(crate?{color:col,map:CT}:{color:col}));
- m.position.set(x,y+h/2,z);m.castShadow=m.receiveShadow=true;S.add(m);obsM.push(m);
+ m.position.set(x,y+h/2,z);m.castShadow=m.receiveShadow=true;S.add(BSPVisuals.staticMesh(m));obsM.push(m);
  obs.push({x1:x-w/2,x2:x+w/2,z1:z-d/2,z2:z+d/2,y1:y,y2:y+h});return m;
 }
 // Do not release matchLoading while a sibling loader can still mutate the scene.
@@ -166,24 +168,24 @@ async function waitForLoadTasks(tasks){
 const matchModelQueue=[];let matchModelActive=0;
 function loadMatchModel(url){return new Promise((resolve,reject)=>{matchModelQueue.push({url,resolve,reject});pumpMatchModels()})}
 function pumpMatchModels(){
- while(matchModelActive<4&&matchModelQueue.length){
+ while(matchModelActive<AssetMemory.modelWorkers()&&matchModelQueue.length){
   const job=matchModelQueue.shift();matchModelActive++;
-  Promise.resolve().then(()=>new Promise((ok,no)=>new THREE.GLTFLoader().load(job.url,ok,undefined,no))).then(job.resolve,job.reject).finally(()=>{matchModelActive--;pumpMatchModels()});
+  Promise.resolve().then(()=>new Promise((ok,no)=>new THREE.GLTFLoader().load(job.url,ok,undefined,no))).then(AssetMemory.compact).then(job.resolve,job.reject).finally(()=>{matchModelActive--;pumpMatchModels()});
  }
 }
 let CT,builtMapId=null,worldReady=Promise.resolve();
-function rebuildWorld(){
+function releaseWorld(){
  // Detach transient objects with shared GLTF/sprite resources BEFORE the
  // generic world sweep, which owns only world geometry and textures.
  CS16SFX.reset?.();resetWeaponVoices();Phase10.resetVoices();Phase10.clearFX();Phase13.clearBlood();Phase9.resetRound();clearCombatFX();
  GoldSrcSprites.clear();const releasedTextures=LocalMapMedia.clear();
  if(playerAvatar){S.remove(playerAvatar);playerAvatar.traverse(o=>{if(o.isSkinnedMesh)o.skeleton.dispose()});playerAvatar=null}
  bots.forEach(disposeBot);bots.length=0;const geos=new Set(),mats=new Set(),textures=new Set();
- for(const o of S.children.slice()){if(o===cam)continue;o.shadow?.dispose();o.traverse(m=>{if(m.geometry)geos.add(m.geometry);for(const mat of [].concat(m.material||[])){mats.add(mat);for(const v of Object.values(mat))if(v?.isTexture)textures.add(v)}});S.remove(o)}
- geos.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());if(CT)textures.add(CT);textures.forEach(t=>{if(!releasedTextures?.has(t))t.dispose()});obs.length=0;obsM.length=0;R.renderLists?.dispose();build();
+ for(const o of S.children.slice()){if(o===cam)continue;o.shadow?.dispose();o.traverse(m=>{if(m.isInstancedMesh)m.dispose();if(m.geometry)geos.add(m.geometry);for(const mat of [].concat(m.material||[])){mats.add(mat);for(const v of Object.values(mat))if(v?.isTexture)textures.add(v)}});S.remove(o)}
+ geos.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());if(CT)textures.add(CT);textures.forEach(t=>{if(!releasedTextures?.has(t))t.dispose()});obs.length=0;obsM.length=0;R.renderLists?.dispose();CT=null;window.bspCol=null;window.bspSky=null;window.NavGraph?.clear();window.BSPDoors?.clear();window.BSPBreakables?.clear();LayoutNav.reset();activeMapData=null;worldReady=Promise.resolve();
 }
 function build(){
- window.bspCol=null;window.bspSky=null;window.NavGraph?.clear();window.BSPDoors?.clear();window.BSPBreakables?.clear();LayoutNav.reset();worldReady=Promise.resolve();S.userData.rayMeshes=obsM;
+ window.bspCol=null;window.bspSky=null;window.NavGraph?.clear();window.BSPDoors?.clear();window.BSPBreakables?.clear();LayoutNav.reset();worldReady=Promise.resolve();S.userData.rayMeshes=obsM;S.userData.staticBatch={boxes:0,batches:0};
  CT=tex('#ffffff','#b0b0b0');
  S.background=new THREE.Color(0x9fd0ff);S.fog=new THREE.Fog(0x9fd0ff,35,95);
  S.add(new THREE.HemisphereLight(0xffffff,0x998866,.65));
@@ -210,6 +212,7 @@ function build(){
     if(activeMapData.id==='cs_kvartal')await NavGraph.load(dir+'/nav/nav_graph.json',{c:c.T.c,s:c.T.s,scale:c.T.k});
    })]);
   }
+  if(!bspMap)S.userData.staticBatch=BSPVisuals.batchBoxes(S,obsM,R);
   builtMapId=activeMapData.id;
   return;
  }
@@ -227,6 +230,7 @@ function build(){
  const cr=[[8,-12],[12,-8],[-8,12],[-12,8],[0,-14],[0,14],[-18,2],[18,-2],[-6,-24],[6,24],[24,-10],[-24,10]];
  cr.forEach((p,i)=>{B(p[0],p[1],1.8,1.2,1.8,i%2?wd:bl,0,1);if(i%3==0)B(p[0],p[1],1.6,1,1.6,i%2?bl:wd,1.2,1)});
  [[-14,2],[14,-2],[0,-20],[0,20]].forEach(p=>B(p[0],p[1],1.2,4,1.2,wl));
+ S.userData.staticBatch=BSPVisuals.batchBoxes(S,obsM,R);
 }
 function collide(p,r,crouch=p===P.pos&&Phase9.crouching){
  for(const o of obs){
@@ -261,13 +265,13 @@ function ensureWeaponAsset(asset){
   // Emergency visual rollback for a device that cannot render native MDL:
   // append ?mdlLegacy=1 to the game URL. No setting/save data is changed.
   const legacyMDL=typeof location!=='undefined'&&new URLSearchParams(location.search).get('mdlLegacy')==='1';
-  result=await WeaponImport.modelFor(asset,THREE);
+  result=await AssetMemory.build(()=>WeaponImport.modelFor(asset,THREE));
   if(!result&&!legacyMDL&&typeof GoldSrcMDL10!=='undefined'&&GoldSrcMDL10.sourceName(asset)){
-   try{result=await GoldSrcMDL10.load(asset,THREE)}
+   try{result=await AssetMemory.build(()=>GoldSrcMDL10.load(asset,THREE))}
    catch(error){console.warn('Native GoldSrc viewmodel fallback:',asset,error)}
   }else if(!result&&typeof GoldSrcMDL10!=='undefined')GoldSrcMDL10.fallback(asset,legacyMDL?'User selected legacy GLB via mdlLegacy=1':'No matching combined native MDL');
   if(!result)result=await loadMatchModel('assets/models/weapons/'+asset+'.glb');
-  weaponModels[asset]=result;return result;
+  weaponModels[asset]=AssetMemory.compact(result);return weaponModels[asset];
  })().catch(err=>{console.warn('Weapon model failed to load:',asset,err);throw err}).finally(()=>{delete weaponModelLoads[asset]});
  return weaponModelLoads[asset];
 }
@@ -276,10 +280,8 @@ async function preloadViewmodels(updateProgress=true){
  // Purchased weapons, bots viewed in spectator and shield variants are lazy.
  const assets=['usp','glock18','knife','c4','hegrenade'];
  let done=0;
- await waitForLoadTasks(assets.map(async id=>{
-  await ensureWeaponAsset(id);
-  if(updateProgress)$('loadStatus').textContent='Memuat model senjata '+(++done)+' / '+assets.length+'…';
- }));
+ const load=async id=>{await ensureWeaponAsset(id);if(updateProgress)$('loadStatus').textContent='Memuat model senjata '+(++done)+' / '+assets.length+'…';};
+ if(AssetMemory.constrained()){for(const id of assets)await load(id);}else await waitForLoadTasks(assets.map(load));
 }
 function weaponSequenceNames(state,predicate){return state.clipNames.filter(n=>predicate(n.replace(/__\d+$/,'').toLowerCase()));}
 function weaponSequence(state,candidates){
@@ -422,73 +424,71 @@ function setW(i){
 // Cosmetic imports are isolated from W/Combat12; only rendered models and sound cache are invalidated.
 document.addEventListener('blockstrike:weapon-skin-change',event=>{
  const asset=event.detail?.id;if(!asset)return;
- delete weaponModels[asset];delete weaponModelLoads[asset];
+ AssetMemory.releaseSources([weaponModels[asset]]);delete weaponModels[asset];delete weaponModelLoads[asset];
  const instance=weaponInstances[asset];if(instance){if(instance!==vm)instance.userData.weaponAnimation?.mixer.stopAllAction();delete weaponInstances[asset]}
- for(const key of Object.keys(originalAudio))if(key.startsWith('skin:'+asset+':'))delete originalAudio[key];
+ for(const key of [...originalAudio.keys()])if(key.startsWith('skin:')&&Number(key.split(':')[2])!==WeaponImport.revision)originalAudio.delete(key);
  const selection=cur(),active=weaponAssetName(selection);
  if(running&&viewScene&&vm&&active===asset){
   const old=vm;old.userData.weaponAnimation?.mixer.stopAllAction();viewScene.remove(old);vm=null;
   ensureWeaponAsset(asset).then(()=>{if(running&&cur()===selection)setW(wi)}).catch(err=>{console.warn('Cannot apply imported viewmodel:',err);if(running&&cur()===selection){vm=old;viewScene.add(old)}});
  }
- refreshWeaponChips();hudAmmoMarkup=null;if(running)hud();
+ hudAmmoMarkup=null;if(running){refreshWeaponChips();hud()}
 });
 /* MODEL LOADING (CT) */
-let loadedClassicCharacterMode=null;
-function classicCharacterMode(){try{return localStorage.getItem('block-strike-classic-characters')!=='off'}catch(e){return true}}
-function preloadCT(done){
- const original=classicCharacterMode();
- if(ctState===2&&loadedClassicCharacterMode===original){done();return}
- if(!THREE.GLTFLoader||!THREE.SkeletonUtils){ctState=2;done();return}
- if(ctState===2){ctState=0;Object.keys(CTC).forEach(k=>delete CTC[k]);Object.keys(TC).forEach(k=>delete TC[k])}
- (ctWait=ctWait||[]).push(done);
- if(ctState===1)return;
- ctState=1;loadedClassicCharacterMode=original;
- const jobs=[...CTN.map(n=>['ct',n]),...TN.map(n=>['t',n])];let left=jobs.length;
- const fin=()=>{if(--left===0){ctState=2;const w=ctWait;ctWait=null;w.forEach(f=>f())}};
- jobs.forEach(([d,n])=>{
-  const fallback='assets/models/'+d+'/'+n+'.glb?v=3';
-  const target=(d==='ct'?CTC:TC);
-  const load=(url,retry)=>loadMatchModel(url).then(g=>{target[n]=g;fin()},()=>retry?load(fallback,false):fin());
-  load(original?'assets/models/cs16-classic/'+d+'/'+n+'.glb?v=16.4.7-anim1':fallback,original);
- });
+let loadedClassicCharacterMode=null,loadedCharacterRevision=-1,loadedCharacterShadows=false,loadedCharacterCompatibility=null;
+function classicCharacterMode(){return CharacterImport.matchMode!=='legacy'}
+async function preloadCT(){
+ await CharacterImport.ready;
+ const original=classicCharacterMode(),compat=typeof GraphicsQuality!=='undefined'&&GraphicsQuality.preference('gpuCompatibilityMode')==='compatible';
+ const jobs=[...CTN.map(n=>['ct',n]),...TN.map(n=>['t',n])];
+ if(ctState===2&&loadedClassicCharacterMode===original&&loadedCharacterRevision===CharacterImport.revision&&loadedCharacterShadows===(Q===2)&&loadedCharacterCompatibility===compat&&jobs.every(([d,n])=>(d==='ct'?CTC:TC)[n]))return;
+ ctState=1;loadedClassicCharacterMode=original;loadedCharacterRevision=CharacterImport.revision;loadedCharacterShadows=Q===2;loadedCharacterCompatibility=compat;
+ for(const table of [CTC,TC])for(const n of Object.keys(table)){CharacterCompat.releaseRejected(table[n]);delete table[n];}
+ if(!THREE.GLTFLoader||!THREE.SkeletonUtils){for(const [,n] of jobs)CharacterCompat.record(n,'Character loader unavailable');ctState=2;return;}
+ let next=0;const workers=AssetMemory.constrained()?1:2;
+ function accept(g){const reason=CharacterCompat.probe(g,R,THREE,Q===2);if(reason){CharacterCompat.releaseRejected(g);throw Error(reason);}return g;}
+ await Promise.all(Array.from({length:workers},async()=>{
+  while(next<jobs.length){const [d,n]=jobs[next++],target=d==='ct'?CTC:TC;let failure='';
+   try{const g=await CharacterImport.modelFor(n,THREE,true);if(g){target[n]=accept(g);continue;}}catch(e){failure='Imported model: '+String(e?.message||e);CharacterCompat.record(n,failure);}
+   const legacy='assets/models/'+d+'/'+n+'.glb?v=3';
+   const classic='assets/models/cs16-classic/'+d+'/'+n+'.glb?v=16.4.7-anim1';const urls=original?(compat?[legacy,classic]:[classic,legacy]):[legacy];
+   for(const url of urls){try{target[n]=accept(await loadMatchModel(url));break;}catch(e){failure=String(e?.message||e);CharacterCompat.record(n,failure);}}
+   if(!target[n])CharacterCompat.record(n,'Rigid fallback: '+(failure||'Model unavailable'));
+  }
+ }));ctState=2;
 }
 /* BOTS */
+function syncFallbackPose(b){
+ if(!b.fallbackRig)return;
+ const crouch=!!b.crouching;if(b.fallbackCrouch!==crouch){b.fallbackCrouch=crouch;b.fallbackRig.shape=humanHitShape(crouch);}
+ CharacterCompat.pose(b);
+}
+function mkFallbackBot(team,x,z,classId,reason){
+ CharacterCompat.record(classId,(CharacterCompat.reasonFor(classId)||'Rigid fallback: '+reason));
+ const g=new THREE.Group(),b={g,parts:[],team,classId,hp:100,cd:1+rnd(),t:rnd()*9,los:false,losT:rnd()*.25,strafe:rnd()<.5?-1:1,st:1,stuck:0,dead:0,mixer:null,acts:{},cur:''};
+ attachCharacterGear(b,classId);CharacterCompat.make(b,THREE,humanHitShape(false));b.fallbackCrouch=false;g.position.set(x,0,z);S.add(g);bots.push(b);return b;
+}
 function mkBot(x,z,i=0,team='T'){
- const names=team==='T'?TN:CTN,models=team==='T'?TC:CTC,tn=names[(round+i)%names.length];
- if(models[tn])return mkModel(team,x,z,models[tn],tn);
- const g=new THREE.Group(),parts=[],b={g,parts,team,hp:100,cd:1+rnd(),t:rnd()*9,los:false,losT:rnd()*.25,strafe:rnd()<.5?-1:1,st:1,stuck:0,dead:0};
- const add=(w,h,d,px,py,pz,c,part,pivot)=>{const ge=new THREE.BoxGeometry(w,h,d);if(pivot)ge.translate(0,-h/2,0);const m=new THREE.Mesh(ge,new THREE.MeshLambertMaterial({color:c}));m.position.set(px,py,pz);m.castShadow=true;m.userData={part,bot:b};g.add(m);parts.push(m);return m};
- b.l=add(.3,.7,.3,-.17,.7,0,0x333b55,'leg',1);b.r=add(.3,.7,.3,.17,.7,0,0x333b55,'leg',1);
- add(.72,.8,.38,0,1.1,0,0xb8402e,'body');add(.46,.46,.46,0,1.78,0,0xf1c27d,'head');
- add(.2,.2,.55,.3,1.3,-.25,0xb8402e,'body');add(.2,.2,.3,-.3,1.3,-.1,0xb8402e,'body');add(.12,.16,.55,.3,1.3,-.6,0x222222,'body');
- g.position.set(x,0,z);b.name=tn||(team+' BOT');S.add(g);bots.push(b);return b;
+ const names=team==='T'?TN:CTN,tn=names[(round+i)%names.length];return mkCT(x,z,tn,team);
 }
 function mkCT(x,z,n,team='CT'){
- const models=team==='CT'?CTC:TC;if(models[n])return mkModel(team,x,z,models[n],n);
- const root=new THREE.Group(),gl=models[n];
- const b={g:root,parts:[],team,hp:100,cd:1+rnd(),t:0,los:false,losT:rnd()*.25,strafe:rnd()<.5?-1:1,st:1,stuck:0,dead:0,mixer:null,acts:{},cur:''};
- if(gl){
-  const body=THREE.SkeletonUtils.clone(gl.scene);root.add(body);
-  b.mixer=new THREE.AnimationMixer(body);
-  bindCharacterActions(b,gl.animations);
-  setAnim(b,'idle1');
- }else{
-  const m=new THREE.Mesh(new THREE.BoxGeometry(.6,1.8,.4),new THREE.MeshLambertMaterial({color:0x2a5fbf}));
-  m.position.y=.9;m.castShadow=true;root.add(m);
- }
- root.position.set(x,0,z);S.add(root);bots.push(b);return b;
+ const gl=(team==='CT'?CTC:TC)[n];return gl?mkModel(team,x,z,gl,n):mkFallbackBot(team,x,z,n,'No compatible model');
 }
 function attachCharacterGear(b,classId){
  b.gearMeshes=[];b.gearGroup=null;b.gearWanted=null;b.plantMeshes=[];b.plantVisual=false;
 }
 function mkModel(team,x,z,gl,classId=''){
+ const reason=CharacterCompat.check(gl,R?.capabilities);if(reason)return mkFallbackBot(team,x,z,classId,reason);
+ try{return cloneBotModel(team,x,z,gl,classId);}catch(e){CharacterCompat.record(classId,'Clone failure: '+String(e?.message||e));return mkFallbackBot(team,x,z,classId,String(e?.message||e));}
+}
+function cloneBotModel(team,x,z,gl,classId){
  const root=new THREE.Group();
  const b={g:root,parts:[],team,hp:100,cd:1+rnd(),t:0,los:false,losT:rnd()*.25,strafe:rnd()<.5?-1:1,st:1,stuck:0,dead:0,mixer:null,acts:{},cur:''};
  const body=THREE.SkeletonUtils.clone(gl.scene);
  // The logical collision origin advances at a throttled AI rate. Keep rendered
  // soldier and hitboxes in a visual mount that interpolates between AI ticks.
  const visualMount=new THREE.Group();root.add(visualMount);visualMount.add(body);
- b.visualMount=visualMount;b.body=body;attachCharacterGear(b,classId);
+ b.visualMount=visualMount;b.body=body;b.classId=classId;attachCharacterGear(b,classId);
  b.mixer=new THREE.AnimationMixer(body);
  bindCharacterActions(b,gl.animations);
  setAnim(b,'idle1');
@@ -500,8 +500,9 @@ function mkModel(team,x,z,gl,classId=''){
   ['leg',.21,.62,.3,-.16,.30,0],['leg',.21,.62,.3,.16,.30,0],
   ['arm',.19,.59,.35,-.385,1.14,0],['arm',.19,.59,.35,.385,1.14,0]
  ];
- if(typeof NativeHitboxes==='undefined'||!NativeHitboxes.attach(b,classId,THREE,pm))for(const [part,w,h,d,x,y,z] of proxies){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),pm);
+ if(!CharacterImport.attach(b,THREE,pm)&&(typeof NativeHitboxes==='undefined'||!NativeHitboxes.attach(b,classId,THREE,pm)))for(const [part,w,h,d,x,y,z] of proxies){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),pm);
   m.position.set(x,y,z);m.visible=false;m.userData={part,bot:b};visualMount.add(m);b.parts.push(m)}
+ if(!['head','chest','stomach','leg'].every(part=>b.parts.some(p=>p.userData.part===part))){b.mixer.stopAllAction();b.mixer.uncacheRoot(body);for(const p of [...b.parts,...(b.shieldPart?[b.shieldPart]:[])])p.geometry.dispose();pm.dispose();const skeletons=new Set();body.traverse(o=>{if(o.isSkinnedMesh)skeletons.add(o.skeleton)});skeletons.forEach(sk=>sk.dispose());throw Error('Incomplete character hitboxes');}
  root.position.set(x,0,z);S.add(root);bots.push(b);return b;
 }
 // Separate the native gait's pelvis/legs from weapon-specific upper body.
@@ -527,6 +528,7 @@ function retireCharacterAction(b,action,seconds){
 function activateCharacterAction(b,action){b.retiredActions?.delete(action);}
 function setCharacterGait(b,name){
  const clip=b.characterClips?.get(name),previous=b.gaitAction;
+ if(b.poseDebt&&((!clip&&previous)||(clip&&previous?.getClip()!==characterMask(clip,false))))flushCharacterPose(b);
  if(!clip){retireCharacterAction(b,previous,.12);b.gaitAction=null;return;}
  const masked=characterMask(clip,false),action=previous?.getClip()===masked?previous:b.mixer.clipAction(masked);
  if(action!==previous){const phase=previous?previous.time/previous.getClip().duration:0;
@@ -540,6 +542,7 @@ function setAnim(b,name,once,preserve=false){
  if(!b.mixer||!b.acts[name])return;
  const layer=!!(b.nativeLayers&&b.characterGait&&/^(ref|crouch)_(aim|shoot|reload)/.test(name));
  if(b.cur===name&&!once&&b.poseLayered===layer){setCharacterGait(b,layer?b.characterGait:null);return b.poseAction;}
+ flushCharacterPose(b);
  const previous=b.poseAction||b.acts[b.cur],oldTime=previous?.time||0,oldScale=previous?.getEffectiveTimeScale?.()||1;
  const n=layer?b.mixer.clipAction(characterMask(b.characterClips.get(name),true)):b.acts[name];
  if(once){n.setLoop(THREE.LoopOnce,1);n.clampWhenFinished=true}else{n.setLoop(THREE.LoopRepeat,Infinity);n.clampWhenFinished=false;}
@@ -581,6 +584,60 @@ function tickCharacterPose(b,dt){
  axis.applyQuaternion(bone.parent.getWorldQuaternion(scratch.q).invert()).normalize();
  bone.quaternion.premultiply(scratch.q.setFromAxisAngle(axis,b.visualPitch));
 }
+// 22D: only defer idle poses outside a generously expanded view volume.
+// All visible, scoped, combat, crouched, moving and mod rigs keep full updates.
+const characterLOD={frustum:null,matrix:null,sphere:null,ready:false,quality:2,deferred:0,evaluated:0,culled:0};
+function prepareCharacterLOD(camera,quality,scoped,spectating){
+ characterLOD.ready=false;characterLOD.deferred=characterLOD.evaluated=characterLOD.culled=0;
+ if(typeof GraphicsQuality!=='undefined')quality=GraphicsQuality.lodQuality(quality,typeof RuntimeHealth!=='undefined'&&RuntimeHealth.performanceState().pressure);
+ characterLOD.quality=quality;
+ if(quality>=1||scoped||spectating||!camera?.isPerspectiveCamera)return;
+ if(!characterLOD.frustum){characterLOD.frustum=new THREE.Frustum();characterLOD.matrix=new THREE.Matrix4();characterLOD.sphere=new THREE.Sphere();}
+ camera.updateMatrixWorld(true);
+ characterLOD.matrix.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);characterLOD.frustum.setFromProjectionMatrix(characterLOD.matrix);
+ characterLOD.ready=true;
+}
+function characterOutsideView(b,camera,quality){
+ if(!characterLOD.ready||!camera||!b.g||b.body?.userData?.characterVoice||b.dead||!b.g.visible)return false;
+ const distance=characterLOD.quality===-1?22:36;
+ if(camera.position.distanceToSquared(b.g.position)<distance*distance)return false;
+ // Oversized sphere covers native soldier, weapon, shield, interpolation and camera shake.
+ // Unknown imported rigs never use this shortcut.
+ characterLOD.sphere.center.copy(b.g.position);characterLOD.sphere.center.y+=.8;characterLOD.sphere.radius=5;
+ return !characterLOD.frustum.intersectsSphere(characterLOD.sphere);
+}
+function canDeferCharacterPose(b){
+ return !!(b.nativeLayers&&b.nativeHitboxes&&!b.fallbackRig&&!b.dead&&!b.poseOnce&&!b.gaitAction&&!b.characterGait&&!b.crouching&&!b.crouchTarget&&!(b.crouchPose>.001)&&!b.visibleEnemy&&!b.shieldRaised&&!b.shieldReady&&!b.hasBotShield&&!b.reloadLeft&&!b.objectivePose&&!b.pendingBotThrow&&!b.grenadeVisual&&!b.heldOverride&&!b.blinded&&b.onGround!==false&&b.medium!=='ladder'&&b.medium!=='water'&&(b.lastMoveSpeed||0)<.05&&Math.abs(b.aimPitch||0)<.001&&Math.abs(b.visualPitch||0)<.001&&!b.retiredActions?.size&&/^(idle[0-9]*|ref_aim_)/.test(b.cur||'')&&b.poseAction?.getEffectiveTimeScale()===1);
+}
+function flushCharacterPose(b){
+ const pending=b.poseDebt||0;if(!pending)return false;b.poseDebt=0;
+ if(b.mixer&&!b.disposed){tickCharacterPose(b,pending);characterLOD.evaluated++;return true;}return false;
+}
+function updateCharacterLOD(b,dt,camera,quality){
+ if(!b.mixer)return;
+ const interval=characterLOD.quality===-1?.15:.10;
+ if(canDeferCharacterPose(b)&&characterOutsideView(b,camera,quality)){
+  b.poseDebt=(b.poseDebt||0)+dt;
+  if(b.poseDebt+1e-8<interval){characterLOD.deferred++;return;}
+  flushCharacterPose(b);return;
+ }
+ const elapsed=(b.poseDebt||0)+dt;b.poseDebt=0;tickCharacterPose(b,elapsed);characterLOD.evaluated++;
+}
+// Whole-actor culling removes the off-screen skinned draw and carried-model
+// traversal without changing actor visibility for simulation, picking or spectator.
+function renderCharacterLOD(camera,quality,scoped,spectating,draw){
+ const deferred=characterLOD.deferred,evaluated=characterLOD.evaluated;
+ prepareCharacterLOD(camera,quality,scoped,spectating);characterLOD.deferred=deferred;characterLOD.evaluated=evaluated;
+ const hidden=[];
+ try{
+  for(const b of bots){if(!b.g.visible)continue;
+   const outside=(b.nativeLayers&&b.nativeHitboxes||b.fallbackRig)&&characterOutsideView(b,camera,quality);
+   if(outside){hidden.push(b.g);b.g.visible=false;characterLOD.culled++;}
+   else flushCharacterPose(b);
+  }
+  return draw();
+ }finally{for(const group of hidden)group.visible=true;}
+}
 const SP=[[-10,-26],[0,-26],[10,-26],[-24,-5],[24,-5],[-18,-10],[18,-14],[8,-20],[-8,-20],[26,0],[-26,2],[12,-2]];
 function startRound(){
  window.BSPBreakables?.reset();
@@ -599,15 +656,15 @@ function startRound(){
  for(let i=0;i<match.allies;i++){
   const slot=i<2?i:i+1;
   const x=(ownSpawn?.[0]||0)+((slot%5)-2)*1.85,z=ownZ+Math.floor(slot/5)*(allyTeam==='CT'?-1.8:1.8);
-  const b=allyTeam==='T'?(i===0&&TC[playerClass]?mkModel('T',x,z,TC[playerClass],playerClass):mkBot(x,z,i,'T'))
+  const b=allyTeam==='T'?(i===0?mkCT(x,z,playerClass,'T'):mkBot(x,z,i,'T'))
    :mkCT(x,z,i===0?playerClass:CTN[(round+i)%CTN.length],'CT');
   b.name=(i===0?playerClass:(allyTeam==='T'?TN[(round+i)%TN.length]:CTN[(round+i)%CTN.length])).toUpperCase();Phase10.registerBot(b,i);Phase10.prepareBotRound(b);
  }
- bots.forEach(b=>{if(window.bspCol){b.g.position.y=BSP.snapSpawn(bspCol,b.g.position.x,b.g.position.z);if(b.body)b.body.position.y=-.72;if(!b.nativeHitboxes)b.parts.forEach(p=>p.position.y-=.72)}});
+ bots.forEach(b=>{if(window.bspCol){b.g.position.y=BSP.snapSpawn(bspCol,b.g.position.x,b.g.position.z);if(b.body&&!b.fallbackRig)b.body.position.y=-.72;if(!b.nativeHitboxes)b.parts.forEach(p=>p.position.y-=.72)}});
  bots.forEach(b=>{
   b.g.rotation.y=b.team==='CT'?0:Math.PI;
   b.baseBodyY=b.body?.position.y??0;Phase11.initBotPose(b);
-  b.mixer?.update(0);
+  b.mixer?.update(0);syncFallbackPose(b);
  });
  const spawn=activeMapData?.spawn?.[playerTeam==='CT'?'ct':'t'];P.pos.set(spawn?.[0]??0,spawn?.[1]??0,spawn?.[2]??(playerTeam==='CT'?26:-26));
  if(window.bspCol)P.pos.y=BSP.snapSpawn(bspCol,P.pos.x,P.pos.z);P.yaw=playerTeam==='CT'?0:Math.PI;
@@ -640,9 +697,10 @@ function groundSoundSurface(position){
  const hit=ray.intersectObjects(obsM).find(h=>h.object.visible!==false);
  return CS16SFX.surfaceForTag(Combat12.materialType(hit?.object.userData?.textureName));
 }
-function los(b,tp){
+function los(b,tp,knownCrouch){
  const col=window.bspCol,eye=col?28*col.T.k:1.5,duck=col?(Number.isInteger(col.crouchHead)?16*col.T.k:.18):.55;
- const targetCrouch=tp===P.pos?!!Phase9.crouching:!!bots.find(x=>x.g.position===tp)?.crouching;
+ // The vision scanner already knows the exact actor and its current stance.
+ const targetCrouch=knownCrouch===undefined?(tp===P.pos?!!Phase9.crouching:!!bots.find(x=>x.g.position===tp)?.crouching):!!knownCrouch;
  const o=V(b.g.position.x,b.g.position.y+eye-(b.crouching?duck:0),b.g.position.z),t=V(tp.x,tp.y+eye-(targetCrouch?duck:0),tp.z),d=t.clone().sub(o),L=d.length();
  ray.set(o,d.normalize());ray.far=L;return typeof BSPVisuals==='undefined'?ray.intersectObjects(obsM).length===0:!BSPVisuals.occluded(ray,obsM);
 }
@@ -654,22 +712,24 @@ function tgtFor(b){
 }
 // Nearby living actors only; dead players and the moving actor are excluded.
 function movementActors(self,p){
- const k=window.bspCol?.T.k||.02,near=q=>Math.abs(q.y-p.y)<(window.bspCol?110*k:4)&&Math.hypot(q.x-p.x,q.z-p.z)<(window.bspCol?160*k:5);
- const list=bots.filter(b=>b!==self&&!b.dead&&near(b.g.position)).map(b=>({pos:b.g.position.toArray(),crouch:!!b.crouching}));
+ const col=window.bspCol,k=col?.T.k||.02,height=col?110*k:4,radius=col?160*k:5;
+ const near=q=>{const dx=q.x-p.x,dz=q.z-p.z;return Math.abs(q.y-p.y)<height&&Math.abs(dx)<radius&&Math.abs(dz)<radius&&Math.hypot(dx,dz)<radius;};
+ // Preserve live positions and roster ordering. Never reuse a stale collision snapshot.
+ const list=[];for(const b of bots)if(b!==self&&!b.dead&&near(b.g.position))list.push({pos:b.g.position.toArray(),crouch:!!b.crouching});
  if(self!==P&&P.hp>0&&near(P.pos))list.push({pos:P.pos.toArray(),crouch:!!Phase9.crouching});
  return list;
 }
 function botUpdate(b,dt){
  const p=b.g.position;
  if(typeof syncBotGear==='function')syncBotGear(b);
- if(b.mixer)tickCharacterPose(b,dt);
+ if(b.mixer)updateCharacterLOD(b,dt,cam,Q);
  if(b.visualMount){
   const f=Math.min(1,Math.max(0,dt)*15);
   b.visualMount.position.x+=(0-b.visualMount.position.x)*f;
   b.visualMount.position.z+=(0-b.visualMount.position.z)*f;
   b.visualMount.rotation.y+=(0-b.visualMount.rotation.y)*f;
  }
- if(!b.dead)Phase11.updateBotPose(b,dt);
+ if(b.fallbackRig)syncFallbackPose(b);else if(!b.dead)Phase11.updateBotPose(b,dt);
  if(b.dead){b.boostPlan=null;LayoutNav.cancelTraffic(b,performance.now()/1000);BotTactics15D.clearYield(b,performance.now()/1000);b.dead+=dt;const dying=b.deathClip||'death1';if(b.mixer){if(b.cur!==dying)setAnim(b,dying,true)}else b.g.rotation.x=Math.min(1.5,b.dead*5)*-1;
   if(b.dead>Math.max(2.5,b.acts?.[dying]?.getClip().duration||0)){disposeBot(b);bots.splice(bots.indexOf(b),1)}return}
  if(b.blinded>0){b.boostPlan=null;LayoutNav.cancelTraffic(b,performance.now()/1000);BotTactics15D.clearYield(b,performance.now()/1000);b.trafficIntent=null;b.aimPitch=0;b.characterGait=null;if(b.mixer)updateCharacterAnimation(b,false,false);b.vel=[0,0];b.blinded=Math.max(0,b.blinded-dt);b.visibleEnemy=null;b.seenId=null;b.noticeElapsed=0;b.los=false;b.cd=Math.max(b.cd,.3);return}
@@ -870,7 +930,7 @@ function botUpdate(b,dt){
   b.visualMount.rotation.y=Math.max(-.5,Math.min(.5,b.visualMount.rotation.y+turn));
  }
  b.t+=moved*5;if(b.l){b.l.rotation.x=Math.sin(b.t)*.7;b.r.rotation.x=-Math.sin(b.t)*.7}
- if(b.mixer)updateCharacterAnimation(b,progress>Math.max(.001,sp*step*.18),hasEnemy);
+ if(b.mixer)updateCharacterAnimation(b,progress>Math.max(.001,sp*step*.18),hasEnemy);else syncFallbackPose(b);
 
 }
 
@@ -920,23 +980,23 @@ function humanHitShape(crouch,col=window.bspCol){
 function botTraceBullet(shooter,origin,dir,range,layers=0,travelled=0,ignored=new Set(),bodyBudget=Combat12.penetrationLayers(shooter.weaponId)){
  ray.set(origin,dir);ray.far=range;
  const wall=ray.intersectObjects(obsM)[0];let limit=wall?.distance??range,hit=null;
- const trace=new THREE.Ray(),box=new THREE.Box3(),point=V();
+ const trace=new THREE.Ray(),box=new THREE.Box3(),point=V(),center=V(),local=V();
  const test=(pos,yaw,crouch,team,bot,isP)=>{
   if(ignored.has(isP?P:bot))return;
   const dx=pos.x-origin.x,dz=pos.z-origin.z;
   if(dx*dx+dz*dz>(limit+2)**2)return;
-  const center=pos.clone().add(V(0,1+botBoxOffset('chest',crouch),0));
+  center.copy(pos);center.y+=1+botBoxOffset('chest',crouch);
   trace.set(origin,dir);if(trace.distanceSqToPoint(center)>(bot?.nativeHitboxes?2.5:1.55)**2)return;
   if(bot?.nativeHitboxes){
    // Use the rendered skeleton pose, including visual interpolation, just as
    // player shots do. A miss must not fall through to the obsolete boxes.
-   bot.g.updateMatrixWorld(true);ray.set(origin,dir);ray.far=limit;
+   flushCharacterPose(bot);syncFallbackPose(bot);bot.g.updateMatrixWorld(true);ray.set(origin,dir);ray.far=limit;
    const nativeHit=ray.intersectObjects(bot.shieldRaised&&bot.shieldPart?[...bot.parts,bot.shieldPart]:bot.parts)[0];
    if(nativeHit&&nativeHit.distance<limit){limit=nativeHit.distance;hit={team,bot,isP:false,part:nativeHit.object.userData.part,distance:limit,point:nativeHit.point};}
    return;
   }
   const a=Math.cos(yaw||0),b=Math.sin(yaw||0);
-  const local=origin.clone().sub(pos);trace.origin.set(a*local.x-b*local.z,local.y,b*local.x+a*local.z);
+  local.copy(origin).sub(pos);trace.origin.set(a*local.x-b*local.z,local.y,b*local.x+a*local.z);
   trace.direction.set(a*dir.x-b*dir.z,dir.y,b*dir.x+a*dir.z);
   const human=isP?humanHitShape(crouch):null;
   const shield=human&&Phase9.shieldRaised&&typeof cur==='function'&&(cur()==='shield'||Phase9.shieldActiveWeapon?.())&&trace.direction.z>0&&trace.origin.z<human.shield[6];
@@ -1213,7 +1273,7 @@ function botShot(b,tg){
  let target=tg.memoryAim?.clone()||tg.pos.clone().add(V(0,tg.isP?humanHitShape(crouched).chestY:1.18+botBoxOffset('chest',crouched),0));
  if(!tg.memoryAim&&!tg.isP&&tg.bot?.nativeHitboxes){
   const chest=tg.bot.parts.find(p=>p.userData.studioHitgroup===2&&/Spine2$/i.test(p.parent?.name||''))||tg.bot.parts.find(p=>p.userData.part==='chest');
-  if(chest){tg.bot.g.updateMatrixWorld(true);target=chest.getWorldPosition(V());}
+  if(chest){flushCharacterPose(tg.bot);syncFallbackPose(tg.bot);tg.bot.g.updateMatrixWorld(true);target=chest.getWorldPosition(V());}
  }
  const forward=target.sub(o).normalize(),right=V(-forward.z,0,forward.x).normalize(),up=right.clone().cross(forward).normalize();
  const skill=Math.max(.08,Math.min(.95,b.accuracy??.45)),aimError=(1-skill)*.105*(moving?1.35:1);
@@ -1270,9 +1330,9 @@ function hurt(d,source=null,kind='bullet',killer=null,hitgroup='chest',weaponId=
 function removeTracer(t){t.l.parent?.remove(t.l);t.l.geometry.dispose();t.l.material.dispose()}
 function removeParticle(p){p.m.parent?.remove(p.m);p.m.material.dispose()}
 function clearCombatFX(){for(const t of tr)removeTracer(t);for(const p of pt)removeParticle(p);tr.length=pt.length=0}
-function tracer(a,b,col){if(tr.length>=96)removeTracer(tr.shift());const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.9}));S.add(l);tr.push({l,t:.07})}
+function tracer(a,b,col){while(tr.length>=graphicsProfile().tracers)removeTracer(tr.shift());const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.9}));S.add(l);tr.push({l,t:.07})}
 const PG=new THREE.BoxGeometry(.12,.12,.12);
-function burst(p,col,n){for(let i=0;i<n;i++){if(pt.length>=128)removeParticle(pt.shift());const m=new THREE.Mesh(PG,new THREE.MeshBasicMaterial({color:col}));m.position.copy(p);S.add(m);pt.push({m,v:V((rnd()-.5)*4,rnd()*3,(rnd()-.5)*4),t:.5})}}
+function burst(p,col,n){const limit=graphicsProfile().particles;for(let i=0;i<GraphicsQuality.effectCount(n,Q);i++){while(pt.length>=limit)removeParticle(pt.shift());const m=new THREE.Mesh(PG,new THREE.MeshBasicMaterial({color:col}));m.position.copy(p);S.add(m);pt.push({m,v:V((rnd()-.5)*4,rnd()*3,(rnd()-.5)*4),t:.5})}}
 // Consume cosmetic break events once, using the existing bounded particle pool
 // and audio voice budget. No gameplay RNG, collision or raycast registration.
 function updateBreakableFX(){
@@ -1281,8 +1341,8 @@ function updateBreakableFX(){
   const audio=botShotAudio(pos);snd(audio.volume*.85,profile.duration,profile.frequency,0,audio.pan);
   if(distance>700*scale)continue;
   const k=scale/.02;
-  for(let i=0;i<profile.count;i++){
-   if(pt.length>=128)break;
+  for(let i=0;i<GraphicsQuality.effectCount(profile.count,Q);i++){
+   if(pt.length>=graphicsProfile().particles)break;
    const a=i*2.39996323,m=new THREE.Mesh(PG,new THREE.MeshBasicMaterial({color:profile.color}));
    m.position.copy(pos);m.scale.set(...profile.size.map(v=>v*k));m.rotation.set(a*.7,a,a*.3);S.add(m);
    pt.push({m,v:V(Math.cos(a)*2.2*k,(1.2+(i%3)*.65)*k,Math.sin(a)*2.2*k),t:.48+(i%3)*.08,gravity:12*k,spin:3+i%4});
@@ -1466,7 +1526,7 @@ function shoot(knifeAction='slash',burstContinuation=false){
  if(st.mag<=0&&!WeaponModes15C.active())scheduleAutoReload(k);
  hud();return true;
 }
-const targets=(includeShield=true)=>{const a=obsM.slice();bots.forEach(b=>{if(!b.dead){if(b.nativeHitboxes)b.g.updateMatrixWorld(true);a.push(...b.parts);if(includeShield&&b.shieldRaised&&b.shieldPart)a.push(b.shieldPart)}});return a};
+const targets=(includeShield=true)=>{const a=obsM.slice();bots.forEach(b=>{if(!b.dead){if(b.nativeHitboxes){flushCharacterPose(b);syncFallbackPose(b);b.g.updateMatrixWorld(true);}a.push(...b.parts);if(includeShield&&b.shieldRaised&&b.shieldPart)a.push(b.shieldPart)}});return a};
 function damageBot(b,d,part,pt,byPlayer=true,attacker=null,weaponId='',distance=0,kind='bullet',pelletHits=null,shotOrigin=null){
  if(!b||b.dead)return;
  const team=byPlayer?playerTeam:attacker?.team, friendly=team===b.team&&attacker!==b;
@@ -1487,6 +1547,7 @@ function damageBot(b,d,part,pt,byPlayer=true,attacker=null,weaponId='',distance=
  if(pt){const sprite=GoldSrcSprites.play(S,'dead_blood',pt,{scale:head?.023:.017,fps:24});if(!sprite)burst(pt,0x8d1215,Math.min(4,head?4:3));Phase13.bloodHit(b,pt,head,sprite,kind==='explosion'?null:shotOrigin||(byPlayer?cam.position:null))}
  if(byPlayer&&head)playOriginalSound('headshot2.wav',.42,.1,1600);else if(kind!=='melee')snd(.2,.08,600);
  if(b.hp>0&&result.appliedHpDamage>0&&b.mixer&&!b.reloadLeft&&!b.plantVisual&&(b.animHoldUntil||0)<performance.now()/1000){const flinch=head?'head_flinch':'gut_flinch';if(b.acts?.[flinch]){setAnim(b,flinch,true);b.animHoldUntil=performance.now()/1000+.10;}}
+ if(result.appliedHpDamage>0&&b.classId){const now=performance.now()/1000;if(b.hp<=0||now>(b.characterVoiceAt||0)){const a=botShotAudio(b.g.position);CS16SFX.characterVoice(b.body?.userData?.characterVoice,b.hp<=0?'death':'pain',a.volume*.35,a.pan);b.characterVoiceAt=now+1.2;}}
  if(b.hp<=0&&!b.dead){
   const death=b.crouching?'crouch_die':head?'head':part==='stomach'?'gutshot':'death'+(1+(Math.floor((b.t||0)*10)%3));b.deathClip=b.acts?.[death]?death:'death1';
   b.dead=.001;Phase9.dropBotWeapon(b);if(typeof clearHeldVisual==='function')clearHeldVisual(b);Phase10.onBotDeath(b,attacker);
@@ -1665,7 +1726,7 @@ function update(dt){
  vm.rotation.set(0,0,0);
  }
  RuntimeHealth.stage('effects');GoldSrcSprites.update(dt);Phase9.update(dt);Phase10.updateFX(dt);
- if(!frozen){RuntimeHealth.stage('bots');for(const b of bots.slice()){RuntimeHealth.stage('bot '+(b.botId||b.team));botUpdate(b,dt);}}
+ if(!frozen){prepareCharacterLOD(cam,Q,aiming,Phase13.isSpectating());RuntimeHealth.stage('bots');for(const b of bots.slice()){RuntimeHealth.stage('bot '+(b.botId||b.team));botUpdate(b,dt);}}
  RuntimeHealth.stage('objective');if(!frozen)BombMode.update(dt);Phase13.updateSpectator(dt);BombMode.updateProgressHud?.();
  for(let i=tr.length-1;i>=0;i--){const t=tr[i];t.t-=dt;if(t.t<=0){removeTracer(t);tr.splice(i,1)}}
  for(let i=pt.length-1;i>=0;i--){const p=pt[i];p.t-=dt;p.v.y-=(p.gravity??12)*dt;p.m.position.addScaledVector(p.v,dt);if(p.spin){p.m.rotation.x+=p.spin*dt;p.m.rotation.z+=p.spin*.6*dt;}if(p.t<=0){removeParticle(p);pt.splice(i,1)}}
@@ -1712,10 +1773,10 @@ function loop(t){
  RuntimeHealth.lifecycleWait?.(null);
  // Foreground jank is not a page suspension. Drop excess elapsed time instead
  // of invalidating active touch/keyboard ownership or running huge catch-up steps.
- const dt=Math.min(.05,elapsed/1000);
+ const {dt,count,step}=GraphicsQuality.frameSteps(elapsed,FrameLimiter.fps);
  RuntimeHealth.begin(t,elapsed);
  let updateOK=true;
- try{RuntimeHealth.stage('update');update(dt)}catch(error){updateOK=false;RuntimeHealth.fail('simulation',error)}
+ try{RuntimeHealth.stage('update');for(let i=0;i<count;i++)update(step)}catch(error){updateOK=false;RuntimeHealth.fail('simulation',error)}
  if(updateOK&&!RuntimeHealth.contextLost()){try{RuntimeHealth.stage('map media');LocalMapMedia.update(activeMapData?.local,dt)}catch(error){updateOK=false;RuntimeHealth.fail('media',error)}}
  RuntimeHealth.updated();
  // A simulation exception must not suppress the world render. Keep the last
@@ -1724,7 +1785,7 @@ function loop(t){
   try{
    RuntimeHealth.stage('world render');if(window.bspSky)window.bspSky.position.copy(cam.position);
    const restoreBombShake=GrenadeFX15B.cameraShake(cam);
-   try{R.autoClear=true;R.render(S,cam)}finally{restoreBombShake()}
+   try{R.autoClear=true;renderCharacterLOD(cam,Q,aiming,Phase13.isSpectating(),()=>R.render(S,cam))}finally{restoreBombShake()}
    RuntimeHealth.countDraws();
    RuntimeHealth.stage('viewmodel render');if(renderActiveViewmodel())RuntimeHealth.countDraws();
    RuntimeHealth.rendered();
@@ -1736,8 +1797,16 @@ function loop(t){
 /* SETUP */
 function applyQ(){
  const mobile=matchMedia('(pointer: coarse)').matches;
- const ratio=Math.min(devicePixelRatio||1,[1,1.5,2][Q],mobile?1.5:2);RuntimeHealth.configureResolution(ratio,mobile);resizeGameViewport();
- const shadows=Q===2,changed=R.shadowMap.enabled!==shadows;R.shadowMap.enabled=shadows;sun.castShadow=shadows;if(changed)S.traverse(o=>{for(const mat of [].concat(o.material||[]))mat.needsUpdate=true});
+ const profile=graphicsProfile(),res=GraphicsQuality.resolution(Q,devicePixelRatio,mobile);
+ RuntimeHealth.configureResolution(res.base,GraphicsQuality.adaptiveEnabled(res.adaptive),res.min);resizeGameViewport();
+ const shadows=profile.shadows,changed=R.shadowMap.enabled!==shadows;R.shadowMap.enabled=shadows;sun.castShadow=shadows;if(changed)S.traverse(o=>{for(const mat of [].concat(o.material||[]))mat.needsUpdate=true});
+ while(tr.length>profile.tracers)removeTracer(tr.shift());while(pt.length>profile.particles)removeParticle(pt.shift());
+ GoldSrcSprites.trim?.();Phase13.trimGraphics?.();
+}
+let viewportResizePending=false;
+function queueGameViewportResize(){
+ if(viewportResizePending)return;viewportResizePending=true;
+ requestAnimationFrame(()=>{viewportResizePending=false;if(!document.hidden)resizeGameViewport()});
 }
 function resizeGameViewport(){
  const canvas=$('c'),w=Math.max(1,canvas.clientWidth||innerWidth),h=Math.max(1,canvas.clientHeight||innerHeight);
@@ -1745,17 +1814,17 @@ function resizeGameViewport(){
  if(cam.aspect!==w/h||viewCamera.aspect!==w/h){cam.aspect=viewCamera.aspect=w/h;cam.updateProjectionMatrix();viewCamera.updateProjectionMatrix();}
  const size=R.getSize(new THREE.Vector2());if(size.x!==w||size.y!==h)R.setSize(w,h,false);
 }
+function ensureRenderer(){if(R)return;R=new THREE.WebGLRenderer({canvas:$('c'),antialias:graphicsProfile().antialias,powerPreference:'high-performance'});R.outputEncoding=THREE.sRGBEncoding;RuntimeHealth.bindCanvas($('c'));}
 function init(){
- R=new THREE.WebGLRenderer({canvas:$('c'),antialias:Q>0,powerPreference:'high-performance'});R.outputEncoding=THREE.sRGBEncoding;
- RuntimeHealth.bindCanvas($('c'));
+ ensureRenderer();
  S=new THREE.Scene();cam=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,150);S.add(cam);Phase13.bindLight(cam);
  viewScene=new THREE.Scene();viewCamera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.01,10);
  viewScene.add(new THREE.HemisphereLight(0xffffff,0x887766,1.3));const vl=new THREE.DirectionalLight(0xffffff,.7);vl.position.set(-1,2,3);viewScene.add(vl);
  build();applyQ();
- addEventListener('resize',resizeGameViewport);
- window.visualViewport?.addEventListener('resize',resizeGameViewport);
- document.addEventListener('fullscreenchange',resizeGameViewport);
- document.addEventListener('webkitfullscreenchange',resizeGameViewport);
+ addEventListener('resize',queueGameViewportResize);
+ window.visualViewport?.addEventListener('resize',queueGameViewportResize);
+ document.addEventListener('fullscreenchange',queueGameViewportResize);
+ document.addEventListener('webkitfullscreenchange',queueGameViewportResize);
  refreshWeaponChips();
 }
 function newGame(){
@@ -1764,7 +1833,7 @@ function newGame(){
  inventory=[playerTeam==='CT'?'usp':'glock18','knife'];wi=0;setW(0);startRound();
 }
 $('q').value=String(Q);
-$('q').onchange=e=>{Q=+e.target.value;try{localStorage.setItem('bs.graphicsQuality',String(Q))}catch(_){}if(R)applyQ()};
+$('q').onchange=e=>{Q=GraphicsQuality.normalize(e.target.value,Q);e.target.value=String(Q);try{localStorage.setItem('bs.graphicsQuality',String(Q))}catch(_){}if(R&&S)applyQ()};
 $('sn').onchange=e=>SENS=+e.target.value;
 // Imported BSPs must preserve the GoldSrc X/Y/Z axes and the camera's screen-right.
 // Check the actual loaded API rather than trusting a release label or a zSign field.
@@ -1791,7 +1860,21 @@ async function beginMatch(){
   RuntimeHealth.reset();RuntimeHealth.stage?.('startup controls');
   $('loadBack').classList.add('hidden');$('loadingScreen').classList.remove('hidden');$('loadStatus').textContent='Memuat peta, model dan suara…';
   resetInputs();LocalMapMedia.pauseAmbient?.();
-  Q=+$('q').value;SENS=+$('sn').value;
+  Q=GraphicsQuality.normalize($('q').value,Q);SENS=+$('sn').value;
+  // New match is a destructive boundary, unlike Pause/Resume. Detach every
+  // consumer before releasing a source and before reading the next BSP/WAD.
+  over=true;$('resumeBtn').classList.add('hidden');pendingWeaponSelection++;
+  await Promise.allSettled([...Object.values(weaponModelLoads),...Object.values(heldLoads),worldReady,Phase9.settleWorldModels()]);
+  if(S){Phase13.resetMatch();BombMode.prepare(null);activeMapData=null;BombMode.roundStart();Phase10.resetMatch();releaseWorld();}else activeMapData=null;
+  for(const instance of new Set(Object.values(weaponInstances))){const mixer=instance.userData.weaponAnimation?.mixer;mixer?.stopAllAction();if(mixer)mixer.uncacheRoot(mixer.getRoot());instance.parent?.remove(instance);AssetMemory.skeletons(instance);}
+  for(const key of Object.keys(weaponInstances))delete weaponInstances[key];vm=flash=null;
+  await Phase9.releaseWorldModels();
+  if(AssetMemory.constrained()){
+   AssetMemory.releaseSources([...Object.values(weaponModels),...Object.values(heldModels),...Object.values(CTC),...Object.values(TC)]);
+   for(const table of [weaponModels,heldModels,CTC,TC])for(const key of Object.keys(table))delete table[key];
+   ctState=0;originalAudio.trim();
+  }
+  await CharacterImport.beginMatch();await WeaponImport.beginMatch();
   RuntimeHealth.stage?.('startup audio');
   if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)();NB=AC.createBuffer(1,AC.sampleRate*.3,AC.sampleRate);const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=rnd()*2-1}catch(e){}}
   // Safari may reject audio resume; audio permission must not strand map loading.
@@ -1800,8 +1883,9 @@ async function beginMatch(){
   RuntimeHealth.stage?.('startup sprites');await GoldSrcSprites.ready();
   // Prefetch only the five equipped/throw props while BSP and GRAPH are read.
   // Handle rejection immediately in case map compilation fails first.
-  const viewmodelWarmup=preloadViewmodels(false);
-  viewmodelWarmup.catch(()=>{});
+  // On constrained hardware do not overlap model parsing with large BSP/WAD reads.
+  const viewmodelWarmup=AssetMemory.constrained()?null:preloadViewmodels(false);
+  viewmodelWarmup?.catch(()=>{});
   RuntimeHealth.stage?.('startup map');if(selectedMapId.startsWith('builtin:')||selectedMapId.startsWith('saved:')){
    $('loadStatus').textContent='Memeriksa navigasi peta…';
    const isBundled=selectedMapId.startsWith('builtin:');
@@ -1814,14 +1898,18 @@ async function beginMatch(){
   }else{
    const r=await fetch('assets/maps/'+selectedMapId+'.json');if(!r.ok)throw new Error('Map tidak ditemukan');activeMapData=await r.json();
   }
-  RuntimeHealth.stage?.('startup models');await waitForLoadTasks([new Promise(ok=>preloadCT(ok)),viewmodelWarmup,GrenadeFX15B.preload(),...BOT_POOLS.CT.concat(BOT_POOLS.T).map(loadHeld),loadHeld('shield').catch(()=>null)]);
+  RuntimeHealth.stage?.('startup models');ensureRenderer();CharacterCompat.reset(R);
+  const heldIds=[...new Set([...BOT_POOLS.CT,...BOT_POOLS.T,'shield'])];
+  const warmHeld=id=>loadHeld(id).catch(e=>{console.warn('Bot held model unavailable',id,e);return null;});
+  if(AssetMemory.constrained()){await preloadCT();await preloadViewmodels(false);await GrenadeFX15B.preload();for(const id of heldIds)await warmHeld(id);}
+  else await waitForLoadTasks([preloadCT(),viewmodelWarmup,GrenadeFX15B.preload(),...heldIds.map(warmHeld)]);
   if(activeMapData.local?.mode==='bomb'){
    await ensureWeaponModel('c4');
    await waitForLoadTasks([Phase9.loadWorldModel('c4'),Phase9.loadWorldModel('backpack'),Phase9.loadWorldModel('thighpack'),loadCharacterEquipment('bomb-carrier'),loadCharacterEquipment('defuse-kit'),loadHeld('c4').catch(()=>null)]);
    ['c4_click','c4_plant','c4_beep1','c4_beep2','c4_beep3','c4_beep4','c4_beep5','c4_disarm','c4_disarmed','c4_explode1'].forEach(name=>requestOriginalSound(name+'.wav'));
   }
   RuntimeHealth.stage?.('startup world');BombMode.prepare(activeMapData.local);
-  if(!R)init();else{rebuildWorld();applyQ()}await worldReady;
+  if(!S)init();else{build();applyQ()}await worldReady;
   if(!window.bspCol)LayoutNav.prepare();
   RuntimeHealth.stage?.('startup round');newGame();createPlayerClass();$('loadStatus').textContent='Menyiapkan render pertama…';
   // Give loading UI a paint opportunity; draw the world before exposing the gameplay HUD.
@@ -1960,16 +2048,16 @@ function suspendGameplayInput(){
  resetInputs();P.jumpHeld=false;Phase10.closeRadio();setScoreboard(false);
  resetWeaponVoices();CS16SFX.reset?.();LocalMapMedia.pauseAmbient?.();Phase10.resetVoices?.();
 }
-let inputSuspended=false;
+
 function resumeGameplayInput(time=performance.now(),force=false){
- if(document.hidden)return false;
+ if(document.hidden||nativeInputPaused)return false;
  // Focus/pageshow/visibilitychange can arrive in any order on iOS. A second
  // resume must not cancel pointers acquired after the first resume.
  const wasSuspended=inputSuspended;
  if(!wasSuspended&&!force)return false;
  if(wasSuspended){resetInputs();P.jumpHeld=false;inputSuspended=false;}
  t0=time;if(typeof FrameLimiter!=='undefined')FrameLimiter.reset();
- if(R&&cam&&viewCamera)resizeGameViewport();
+ if(R&&cam&&viewCamera){resizeGameViewport();queueGameViewportResize()}
  return true;
 }
 for(const type of ['blur','pagehide'])addEventListener(type,suspendGameplayInput);
@@ -1978,15 +2066,23 @@ addEventListener('pageshow',e=>resumeGameplayInput(performance.now(),!!e.persist
 addEventListener('orientationchange',()=>{
  // Rotation only changes viewport geometry. Do not cancel a new touch when
  // WebKit sends this event after focus and after the player's first gesture.
- if(!document.hidden&&R&&cam&&viewCamera)resizeGameViewport();
+ if(!document.hidden&&R&&cam&&viewCamera)queueGameViewportResize();
 });
+// APK sends activity lifecycle events; browser focus alone must not resume a paused Activity.
+if(navigator.userAgent.includes('BlockStrikeAndroid/')){
+ document.addEventListener('blockstrike:native-lifecycle',e=>{
+  nativeInputPaused=e.detail?.paused===true;
+  if(nativeInputPaused)suspendGameplayInput();else resumeGameplayInput();
+ });
+}
+document.addEventListener('pointerlockchange',()=>{if(!document.pointerLockElement){fl=false;mouseSecondaryHeld=false;if(adsPointer===null)secondaryHeld=false;if(!fh)firedLatch=false;}});
 document.addEventListener('freeze',suspendGameplayInput);
 document.addEventListener('resume',()=>resumeGameplayInput());
 document.addEventListener('visibilitychange',()=>{if(document.hidden)suspendGameplayInput();else resumeGameplayInput()});
 // Capture before any control claims the new pointer. No preventDefault or delayed reset:
 // the first fresh tap must work, including a tap on fire or a scrollable menu.
 function recoverBeforeInput(e){
- if(document.hidden)return;
+ if(document.hidden||nativeInputPaused||e.isTrusted===false)return;
  const time=performance.now();
  if(inputSuspended)resumeGameplayInput(time,true);
  if(e.isTrusted!==false&&AC&&(AC.state==='suspended'||AC.state==='interrupted'))AC.resume().catch(()=>{});

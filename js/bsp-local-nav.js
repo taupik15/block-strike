@@ -507,19 +507,18 @@ const LocalBSPNav=(()=>{
   const p=origin||BSP.toHammer(graph.col.T,pos.toArray());
   const candidates=[],size=256,cell=(x,y)=>Math.floor(x/size)+','+Math.floor(y/size);
   if(!graph.nearCells){graph.nearCells=new Map();for(const n of graph.nodes){const key=cell(n.h[0],n.h[1]);if(!graph.nearCells.has(key))graph.nearCells.set(key,[]);graph.nearCells.get(key).push(n);}}
-  const nearby=[];
-  for(let x=Math.floor((p[0]-450)/size);x<=Math.floor((p[0]+450)/size);x++)for(let y=Math.floor((p[1]-450)/size);y<=Math.floor((p[1]+450)/size);y++)for(const n of graph.nearCells.get(x+','+y)||[])nearby.push(n);
-  for(const n of nearby){
+  for(let x=Math.floor((p[0]-450)/size);x<=Math.floor((p[0]+450)/size);x++)for(let y=Math.floor((p[1]-450)/size);y<=Math.floor((p[1]+450)/size);y++)for(const n of graph.nearCells.get(x+','+y)||[]){
    if(!n.edges.length||n.valid===false||allowed&&!allowed.has(n.id))continue;
    const dx=n.h[0]-p[0],dy=n.h[1]-p[1],dz=2*(n.h[2]-p[2]),d=dx*dx+dy*dy+dz*dz;
    if(d<=450*450)candidates.push({n,d});
   }
   candidates.sort((a,b)=>a.d-b.d||a.n.id-b.n.id);
-  return candidates.find(({n})=>{
-   const col=graph.col,ch=crouchHull(col),usingCrouch=!!ch&&hull.head===col.crouchHead&&hull!==col;
-   const a={h:p,crouch:usingCrouch,ladder:!!ladderPoint(col,p),water:waterPoint(col,p)};
-   return edgeWalk(col,a,n,450)||ladderLink(col,a,n)||waterLink(col,a,n)||waterExitLink(col,a,n);
-  })?.n||null;
+  if(!candidates.length)return null;
+  // The source hull/medium is constant throughout this synchronous search.
+  // Recompute on the next call, including after any dynamic door change.
+  const col=graph.col,ch=crouchHull(col),usingCrouch=!!ch&&hull.head===col.crouchHead&&hull!==col;
+  const a={h:p,crouch:usingCrouch,ladder:!!ladderPoint(col,p),water:waterPoint(col,p)};
+  return candidates.find(({n})=>edgeWalk(col,a,n,450)||ladderLink(col,a,n)||waterLink(col,a,n)||waterExitLink(col,a,n))?.n||null;
  }
  function teamAllows(node,team){
   if(!node||node.valid===false)return false;

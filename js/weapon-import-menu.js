@@ -6,13 +6,13 @@
  for(const id of WeaponImport.IDS){const option=document.createElement('option');option.value=id;
   option.textContent=(labels[id]||W[id]?.n||id.toUpperCase())+(id==='m3'?' (shotgun pertama)':'');slot.appendChild(option)}
  function render(){const id=slot.value;status.textContent=WeaponImport.status(id)+' · Import only replaces visuals/sounds. Combat stays unchanged.';
-  const src=WeaponImport.imageUrl(id);preview.hidden=!src;
+  const src=WeaponImport.imageUrl(id,true);preview.hidden=!src;
   if(src)preview.src=src;else preview.removeAttribute('src');
-  $('weaponImportStock').hidden=id!=='m3';
-  $('weaponImportRemove').textContent=id==='m3'?'Restore included M1887 Silver':'Remove custom skin';
+  $('weaponImportStock').hidden=id!=='m3'||WeaponImport.library.selected!==ModPacks.DEFAULT;
+  $('weaponImportRemove').textContent=id==='m3'&&WeaponImport.library.selected===ModPacks.DEFAULT?'Restore included skin':'Remove slot override';
  }
- const open=()=>{dlg.classList.remove('hidden');slot.value='m3';pick.value='';name.value='';render();slot.focus()};
- const close=()=>{dlg.classList.add('hidden');pick.value=''};
+ const open=async()=>{await WeaponImport.ready;dlg.classList.remove('hidden');slot.value='m3';pick.value='';name.value='';render();slot.focus()};
+ const close=()=>{if(WeaponImport.library.busy)return;dlg.classList.add('hidden');pick.value=''};
  $('openWeaponImport')?.addEventListener('click',open);
  $('openWeaponImportStorage')?.addEventListener('click',open);
  $('weaponImportClose').addEventListener('click',close);
@@ -21,20 +21,20 @@
  pick.addEventListener('change',()=>{if(!name.value&&pick.files.length)name.value=pick.files[0].name.replace(/\.(zip|mdl|rar|glb)$/i,'').slice(0,70)});
  $('weaponImportApply').addEventListener('click',async()=>{
   const files=[...pick.files];if(!files.length){status.textContent='Choose a ZIP or loose model/sound files first.';return}
-  const button=$('weaponImportApply');button.disabled=true;status.textContent='Validating models and saving locally…';
-  try{const result=await WeaponImport.install(slot.value,files,name.value.trim());render();status.textContent='Installed '+result.name+' in '+slot.value+' only. Price, ammo and damage unchanged. You can close this menu.';pick.value=''}
+  const id=slot.value;if(WeaponImport.installed(id)&&WeaponImport.installed(id)!==WeaponImport.BUILTIN&&!confirm('Replace this weapon in the selected pack? Other packs will be kept.'))return;const button=$('weaponImportApply');button.disabled=slot.disabled=pick.disabled=$('weaponImportRemove').disabled=$('weaponImportStock').disabled=true;status.textContent='Validating models and saving locally…';
+  try{const result=await WeaponImport.install(id,files,name.value.trim());render();status.textContent='Installed '+result.name+' in '+id+' in the selected pack only. Price, ammo and damage unchanged. Select Imported Weapons / Mods in Options; applies next new match.';pick.value=''}
   catch(e){status.textContent='Import failed: '+String(e.message||e)}
-  finally{button.disabled=false}
+  finally{button.disabled=slot.disabled=pick.disabled=$('weaponImportRemove').disabled=$('weaponImportStock').disabled=false}
  });
  $('weaponImportRemove').addEventListener('click',async()=>{
-  try{await WeaponImport.reset(slot.value);render();status.textContent='Local override cleared. '+WeaponImport.status(slot.value)}
+  try{await WeaponImport.reset(slot.value);render();status.textContent='Local override cleared for the next new match. '+WeaponImport.status(slot.value)}
   catch(e){status.textContent=String(e.message||e)}
  });
  $('weaponImportStock').addEventListener('click',async()=>{
   try{await WeaponImport.reset('m3',true);render();status.textContent='M3 restored to the original CS 1.6 visuals and sounds.'}
   catch(e){status.textContent=String(e.message||e)}
  });
- document.addEventListener('blockstrike:weapon-skin-change',()=>{if(!dlg.classList.contains('hidden'))render()});
+ document.addEventListener('blockstrike:weapon-library-change',()=>{if(!dlg.classList.contains('hidden'))render()});
  window.addEventListener('keydown',e=>{if(e.key==='Escape'&&!dlg.classList.contains('hidden')){e.preventDefault();e.stopImmediatePropagation();close()}},true);
  WeaponImport.ready.then(()=>{if(!dlg.classList.contains('hidden'))render()});
 })();
