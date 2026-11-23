@@ -106,10 +106,11 @@ function requestLock(){try{const p=$('pad').requestPointerLock?.();p?.catch?.(()
 function inputBlocked(){return document.hidden||!running||RuntimeHealth.blocked()||!$('buyMenu').classList.contains('hidden')||!$('menu').classList.contains('hidden')||!$('weaponImportScreen').classList.contains('hidden')||(typeof Phase13!=='undefined'&&(Phase13.isSpectating()||Phase13.visibleOverlay()))}
 function syncAim(){
  GoldSrcSprites.scope(cur());
- const sniper=aiming&&['awp','scout','g3sg1','sg550'].includes(cur());
+ const sniperWeapon=['awp','scout','g3sg1','sg550'].includes(cur());
+ const sniper=aiming&&sniperWeapon;
  $('scopeOverlay').classList.toggle('hidden',!sniper);$('scopeOverlay').classList.toggle('active',sniper);
  const overlay=$('scopeOverlay');if(overlay.getAttribute('aria-hidden')!==String(!sniper))overlay.setAttribute('aria-hidden',String(!sniper));
- $('cross').classList.toggle('hidden',sniper);
+ $('cross').classList.toggle('hidden',sniperWeapon);
  document.body.classList.toggle('has-scope',!!scopeLevels(cur()));if(vm)vm.visible=!sniper;
  if(!aiming&&cam&&cam.fov!==baseFov){cam.fov=baseFov;cam.updateProjectionMatrix()}
 }

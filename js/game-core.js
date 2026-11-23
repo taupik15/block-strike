@@ -1386,7 +1386,9 @@ function shoot(knifeAction='slash',burstContinuation=false){
   let point=cam.position.clone(),remaining=maxRange,power=1,budget=Combat12.penetrationLayers(k);
   const damage=Combat12.baseDamage(k,{silenced,burst:k==='famas'&&burstMode});
   for(let iteration=0;iteration<9&&remaining>.01&&power>.06;iteration++){
-   const available=allTargets.filter(o=>o.visible!==false&&!o.userData?.breakable?.entry?.destroyed&&!alreadyHit.has(o.userData?.bot));
+   // Hit proxies are intentionally invisible in the scene, but Three.js r128
+   // can still raycast them. Only reject invisible *world* props, not bots.
+   const available=allTargets.filter(o=>(o.userData?.bot||o.visible!==false)&&!o.userData?.breakable?.entry?.destroyed&&!alreadyHit.has(o.userData?.bot));
    ray.set(point,shotDir);ray.far=remaining;
    const impact=ray.intersectObjects(available)[0];if(!impact)break;
    const travelled=cam.position.distanceTo(impact.point);
