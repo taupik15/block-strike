@@ -135,6 +135,8 @@ const Phase9=(()=>{
   })().catch(e=>{if(worldLoads[k]===task)delete worldLoads[k];console.warn('Dropped model',k,e);return null});worldLoads[k]=task;}
   return worldLoads[k];
  }
+ // Wait for in-flight loads without detaching or disposing their consumers.
+ function settleWorldModels(){return Promise.allSettled(Object.values(worldLoads));}
  async function releaseWorldModels(){const pending=Object.values(worldLoads);for(const key of Object.keys(worldLoads))delete worldLoads[key];const models=await Promise.allSettled(pending);AssetMemory.releaseSources(models.filter(r=>r.status==='fulfilled').map(r=>r.value));}
  // Anchor to the local floor, not the nearest spawn's elevation (wrong on
  // Aztec bridges and other multi-level BSP maps). The player position in BSP
@@ -804,7 +806,7 @@ const Phase9=(()=>{
  }
  setup();
  return {get famasBurst(){return famasBurst},get glockBurst(){return glockBurst},burstOn:k=>k==='famas'?famasBurst:k==='glock18'?glockBurst:false,get crouching(){return crouching},get crouchBlend(){return crouchBlend},get shieldRaised(){return shieldRaised},
-  loadWorldModel,releaseWorldModels,orientGoldSrcWorld,unsilenced,firingSound,shieldPistol,lowerShield,secondaryAction,toggleNightVision,updateHud,
+  loadWorldModel,settleWorldModels,releaseWorldModels,orientGoldSrcWorld,unsilenced,firingSound,shieldPistol,lowerShield,secondaryAction,toggleNightVision,updateHud,
   setCrouchInput,updateCrouch,releaseControls,blockShieldHit,shieldImpact,
   shieldActiveWeapon,tossItem,advanceDropFlight,dropBotWeapon,dropForPurchase,dropPlayerOnDeath,dropPlayerWeapon,dropDefuseKit,canSeeItem,itemFloor,clearItemDrops,pickupNearest,useNearby,blocksSight,throwGrenade,commitGrenade,cancelGrenade,cycleGrenade,handlingGrenade:()=>!!pendingThrow,getViewmodel:()=>grenadeView?.group||null,throwBotGrenade,grenadeThreat,resetRound,resetMatch,update,
   getDebugState:()=>({projectiles:projectiles.length,smoke:smokeClouds.length,pendingThrow:pendingThrow?.stage||null,
