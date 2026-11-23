@@ -1,0 +1,44 @@
+name: Build BLOCK STRIKE Offline APK
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'android/**'
+      - '.github/workflows/build-block-strike-apk.yml'
+
+jobs:
+  apk:
+    name: Compile Android debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Install Android platform
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Stage game assets into APK
+        run: python3 android/scripts/stage_game.py . android/app/src/main/assets/www
+      - name: Build installable APK
+        run: gradle -p android :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK created
+        run: |
+          test -s android/app/build/outputs/apk/debug/app-debug.apk
+          sha256sum android/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Block-Strike-WEAPON1.1-Android-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
