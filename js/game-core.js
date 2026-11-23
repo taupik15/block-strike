@@ -1721,7 +1721,9 @@ function loop(t){
  if(!RuntimeHealth.contextLost()){
   try{
    RuntimeHealth.stage('world render');if(window.bspSky)window.bspSky.position.copy(cam.position);
-   R.autoClear=true;R.render(S,cam);RuntimeHealth.countDraws();
+   const restoreBombShake=GrenadeFX15B.cameraShake(cam);
+   try{R.autoClear=true;R.render(S,cam)}finally{restoreBombShake()}
+   RuntimeHealth.countDraws();
    RuntimeHealth.stage('viewmodel render');if(renderActiveViewmodel())RuntimeHealth.countDraws();
    RuntimeHealth.rendered();
   }catch(error){RuntimeHealth.fail('render',error)}

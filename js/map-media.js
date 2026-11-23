@@ -374,7 +374,8 @@ const LocalMapMedia=(()=>{
     if(model.reuse){
      Phase9.loadWorldModel(model.reuse.slice(6)).then(source=>{
       if(!source||!group.parent||activeMapData?.local!==data)return;
-      const item=source.clone(true);Phase9.orientGoldSrcWorld(item);
+      const item=source.native?THREE.SkeletonUtils.clone(source.scene):source.scene.clone(true);
+      if(!source.native)Phase9.orientGoldSrcWorld(item);
       item.traverse(mesh=>{if(mesh.isMesh){mesh.geometry=mesh.geometry.clone();mesh.material=mesh.material.clone();if(mesh.material.map)mesh.material.map=mesh.material.map.clone()}});
       group.add(item);
      });

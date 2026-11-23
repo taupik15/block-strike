@@ -1,6 +1,6 @@
 /* Runtime watchdog: local diagnostics, bounded recovery, no telemetry uploads. */
 const RuntimeHealth=(()=>{
- const VERSION='pre26AR.11.10.3',label=document.getElementById('runtimeHealth'),toggle=document.getElementById('runtimeHealthToggle');
+ const VERSION='AR11.10.20-WEAPON.1.1-C4',label=document.getElementById('runtimeHealth'),toggle=document.getElementById('runtimeHealthToggle');
  let enabled=false,lost=false,halted=false,stageName='startup',fault=null,warningUntil=0,frameAt=0,updateAt=0,updateMs=0,renderMs=0,renderOK=false,frameGap=0,frameAverage=0,updateAverage=0,renderAverage=0,failUpdate=0,failRender=0,lastPaint=-Infinity,frames=0,bound=null;
  const clock=()=>performance.now();
  let lifecycleReason=null,lifecycleAt=0;
@@ -39,7 +39,9 @@ const RuntimeHealth=(()=>{
  function refreshToggle(){if(toggle){toggle.setAttribute('aria-pressed',String(enabled));toggle.textContent=enabled?'Hide performance diagnostics':'Show performance diagnostics';}}
  function paint(force=false){
   if(!label)return;
-  const now=clock(),active=typeof running!=='undefined'&&running,show=lost||halted||active&&(enabled||now<warningUntil||lifecycleReason==='input suspended'&&now-lifecycleAt>=1000);
+  const now=clock(),active=typeof running!=='undefined'&&running,show=enabled&&(lost||halted||active);
+  // Diagnostics OFF must never open the giant telemetry overlay, including
+  // async model faults. Faults remain in console and local fault history.
   if(label.hidden===show)label.hidden=!show;if(!show||!force&&now-lastPaint<500)return;lastPaint=now;
   const p=typeof P!=='undefined'?P?.pos:null,r=typeof R!=='undefined'?R:null;
   const map=typeof activeMapData!=='undefined'?(activeMapData?.name||activeMapData?.id||'unknown'):'startup';
