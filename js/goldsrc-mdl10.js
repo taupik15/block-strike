@@ -4,14 +4,17 @@
  * p_/w_ models are outside this viewmodel-only integration.
  */
 (function(global){'use strict';
- const VERSION='AR.11.10.9-MDL.1';
- // Camera-local depth clearance: original GoldSrc viewmodels place the back of
- // the forearms/stock on or behind the Three.js near plane (0.01). The old
- // transform produced giant near-plane skin triangles and vanished weapons.
- // Move the whole MDL rig forward, preserving every native bone, animation,
- // mesh, per-model shape and world-camera parameter. No individual offsets.
- const PROFILE=Object.freeze({viewmodelFov:73.74,globalScale:.02,globalOffset:[0,0,-.30]});
- const report={};
+ const VERSION='AR.11.10.9-MDL.2';
+ // ROOT CAUSE (AR.11.10.9-MDL.2): the game ships three.js r128, where a SkinnedMesh is only
+// skinned on the GPU when material.skinning===true (the flag was removed in r129). The MDL.1
+// loader never set it, so every mesh was drawn at its raw bind-pose position (CPU skinning via
+// SkinnedMesh.boneTransform was correct, the GPU path was not). That produced the giant
+// forearms, detached hands and mis-placed weapons seen on the iPhone. The old
+// globalOffset [0,0,-0.30] only hid the symptom (and shrank the weapon); it is removed.
+// Studio data stays in native GoldSrc units; one root transform maps it to camera space.
+const PROFILE=Object.freeze({viewmodelFov:73.74,globalScale:.02,globalOffset:[0,0,0]});
+const SKINNING_FLAG=parseInt(global.THREE&&global.THREE.REVISION||'0',10)<129;
+const report={};
  const i32=(v,o)=>v.getInt32(o,true),u16=(v,o)=>v.getUint16(o,true),i16=(v,o)=>v.getInt16(o,true),f32=(v,o)=>v.getFloat32(o,true);
  function checked(view,at,count=1){if(!Number.isSafeInteger(at)||at<0||at+count>view.byteLength)throw Error('MDL offset out of range '+at+'+'+count);return at;}
  function text(v,off,n){checked(v,off,n);let s='';for(let k=0;k<n;k++){const b=v.getUint8(off+k);if(!b)break;s+=String.fromCharCode(b)}return s;}
@@ -105,7 +108,10 @@
   else if(THREE.sRGBEncoding)tex.encoding=THREE.sRGBEncoding;
   tex.needsUpdate=true;
   const additive=!!(t.flags&0x20),flat=!!(t.flags&0x1),chrome=!!(t.flags&0x2),fullbright=!!(t.flags&0x4);
-  const material=new (fullbright||additive?THREE.MeshBasicMaterial:THREE.MeshLambertMaterial)({map:tex,side:THREE.DoubleSide,alphaTest:mask?.5:0,transparent:mask||additive,depthWrite:!additive,blending:additive?THREE.AdditiveBlending:THREE.NormalBlending});
+  const params={map:tex,side:THREE.DoubleSide,alphaTest:mask?.5:0,transparent:mask||additive,depthWrite:!additive,blending:additive?THREE.AdditiveBlending:THREE.NormalBlending};
+  // three r128 requires skinning:true for GPU skinning of SkinnedMesh (ignored/removed from r129).
+  if(((THREE.REVISION|0)<129)||SKINNING_FLAG)params.skinning=true;
+  const material=new (fullbright||additive?THREE.MeshBasicMaterial:THREE.MeshLambertMaterial)(params);
   if(flat&&THREE.FlatShading)material.shading=THREE.FlatShading;
   material.userData.goldSrcFlags=t.flags;material.userData.chromeApproximation=chrome;
   return material;
@@ -179,13 +185,22 @@
  }
  const nativeNames=new Set(['ak47','aug','awp','c4','deagle','elite','famas','fiveseven','flashbang','g3sg1','galil','glock18','hegrenade','knife','knife_r','m249','m3','m4a1','mac10','mp5','p228','p90','scout','sg550','sg552','shield_r','smokegrenade','tmp','ump45','usp','xm1014']);
  function sourceName(asset){if(asset==='shield_knife')return 'knife_r';if(/^shield_(usp|glock18|p228|deagle|fiveseven)$/.test(asset))return 'shield_r';if(asset.startsWith('shield_'))return null;return nativeNames.has(asset)?asset:null;}
+
+ // Handedness the original GoldSrc files were authored for (verified by rendering the raw, unmirrored
+ // models in a real WebGL harness against the CS 1.6 PC reference): ordinary weapons/grenades/C4 are
+ // authored for the LEFT hand and the engine mirrors them for right-handed players; v_knife(_r) and
+ // v_shield_r are authored for the RIGHT hand and are not mirrored for right-handed players.
+ const knifeFlip=!!(global.location&&new URLSearchParams(global.location.search).has('mdlKnifeFlip'));
+ function authoredHand(asset){const id=sourceName(asset);if(id==='knife_r'||id==='shield_r')return 'right';if(id==='knife')return knifeFlip?'left':'right';return 'left';}
+ // true when the viewmodel group must be mirrored (scale.x=-1) for the player's hand setting.
+ function mirrorFor(asset,hand){if(asset&&asset.startsWith('shield_'))return false;return authoredHand(asset)!==(hand==='left'?'left':'right');}
  async function load(asset,THREE){const id=sourceName(asset);if(!id)throw Error('No matching v_*.mdl for '+asset);
   const url='assets/models/goldsrc-v/v_'+id+'.mdl';let response;
   try{response=await fetch(url);if(!response.ok)throw Error('HTTP '+response.status);const parsed=parse(await response.arrayBuffer(),id),gltf=build(parsed,THREE);report[asset]={status:'native',asset:url,source:id,...gltf.report,drawCalls:gltf.report.meshes,animationMap:{idle:parsed.sequences.find(s=>s.name.startsWith('idle'))?.name||null,shoot:parsed.sequences.find(s=>s.name.startsWith('shoot'))?.name||null,reload:parsed.sequences.find(s=>s.name.startsWith('reload'))?.name||null,draw:parsed.sequences.find(s=>s.name==='draw')?.name||null}};return gltf;
   }catch(e){report[asset]={status:'fallback',asset:url,reason:String(e.message||e)};throw e;}}
  function fallback(asset,reason){report[asset]={status:'fallback',reason:String(reason||'No matching MDL'),source:sourceName(asset)};}
  function summary(){return JSON.parse(JSON.stringify(report))}
- global.GoldSrcMDL10=Object.freeze({parse,build,load,sourceName,profile:PROFILE,summary,fallback,VERSION});
+ global.GoldSrcMDL10=Object.freeze({parse,build,load,sourceName,authoredHand,mirrorFor,profile:PROFILE,summary,fallback,VERSION});
  if(global.location&&new URLSearchParams(global.location.search).has('mdlDebug')){
   global.BlockStrikeMDLReport=()=>summary();
   console.info('[MDL] Live loader report: BlockStrikeMDLReport()');

@@ -15,8 +15,12 @@ const Phase13=(()=>{
  function blocked(){return !running||spectating||visibleOverlay()||over}
  // The converted shield rigs are authored opposite to the ordinary firearms.
  // CS 1.6 keeps shield equipment right-handed even with cl_righthand 0.
- function applyHand(model){if(model){const shield=model.userData?.viewAsset?.startsWith('shield_');model.scale.x=(shield||hand==='left'?-1:1)*Math.abs(model.scale.x||1);
-  if(model.userData?.nativeMdl||model.children?.[0]?.userData?.nativeMdl)model.scale.x=(hand==='left'?1:-1)*Math.abs(model.scale.x||1);}}
+ function applyHand(model){if(!model)return;const asset=model.userData?.viewAsset||'';
+  const native=model.userData?.nativeMdl||model.children?.[0]?.userData?.nativeMdl;
+  // Native GoldSrc MDL: mirror only when the file's authored hand differs from the player's hand
+  // (GoldSrcMDL10.mirrorFor). Legacy GLB rigs keep the old rule.
+  const flip=native&&typeof GoldSrcMDL10!=='undefined'?GoldSrcMDL10.mirrorFor(asset,hand):(asset.startsWith('shield_')||hand==='left');
+  model.scale.x=(flip?-1:1)*Math.abs(model.scale.x||1);}
  function setHand(next){hand=next==='left'?'left':'right';$('weaponHand').value=hand;applyHand(vm);applyHand(spectatorView);try{localStorage.setItem('bs13-weapon-hand',hand)}catch(e){}}
  function bindLight(camera){if(!camera)return;
   const light=new THREE.SpotLight(0xfff1cb,2.4,58,Math.PI/7,.45,1.15);
