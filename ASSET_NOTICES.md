@@ -117,3 +117,7 @@ Source: https://github.com/yapb/graph via user-provided graph-master 2.zip. All 
 
 ## Universal WAD Manager (pre26AR.2)
 The 23 WAD3 archives from the owner's supplied `CS16-WAD-Collection.zip` (extracted from `cs16_files-01.zip` and `cs16_files-02.zip`) and the separately supplied `halflife.wad` are stored unchanged in lossless raw chunks under `assets/wad/`. `index.json` records each original archive's size, SHA-256, chunk sequence and supported miptexture records. No rights to publicly redistribute these third-party archives have been established. This WAD-inclusive build is for local/private or otherwise authorized use only. Do not publish these assets to GitHub Pages without the appropriate rights.
+
+
+## M1887 Silver (imported as M3 visual replacement)
+User supplied `m1887_silver.rar` includes v_m3.mdl, p_m3.mdl, w_m3.mdl, WAV and preview. Attribution in image: **mb.michael**; animation sequence labels credit **KeenHide**. Redistribution permission was not verified. Do not claim these assets are open source. Local weapon ZIP imports remain on the player device.

@@ -1,3 +1,6 @@
+/* AR11.10.20-WEAPON.1: optional local skin importer and included M1887. */
+/* AR11.10.19-AUTH.1: economy parity, YaPB shard reuse, cold-start prefetch, offline settings, release QA. */
+/* AR11.10.15-COMBAT.1: mobile resume, bounded bullet chains, C4 water separation. */
 /* SHIELD.1: original knife+shield and pistol+shield presentation / PWA cache rollover. */
 /* MDL.2-MAPS.1: 4 bundled GoldSrc maps, lazy BSP/WAD loading and map selector integration. */
 /* AR.11.10.9-MDL.2 fixes GPU skinning (three r128 material.skinning=true), per-model hand mirroring; removes the -0.30 depth hack. */

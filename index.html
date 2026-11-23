@@ -25,6 +25,7 @@
 <link rel="stylesheet" href="css/spectator15e.css?v=16.4.7-pre26E">
 <link rel="stylesheet" href="css/bomb.css?v=16.4.7-pre26AR.11.10.6">
 <link rel="stylesheet" href="css/mobile-cs16.css?v=16.4.7-pre26AR.11.10.7">
+<link rel="stylesheet" href="css/weapon-import.css?v=AR11.10.20-WEAPON1">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/ui/pwa-180.png">
 <link rel="icon" href="assets/ui/cross.svg" type="image/svg+xml">
@@ -99,7 +100,7 @@
    <button id="quitBtn" type="button">Quit</button>
   </div>
   <p id="offlineNotice" role="status">Single-player · offline-ready · Dust Block + 4 classic maps</p>
-  <p id="refreshGameStatus" role="status" aria-live="polite">Update via GitHub Pages · SHIELD.1</p>
+  <p id="refreshGameStatus" role="status" aria-live="polite">Update via GitHub Pages · AR11.10.15-COMBAT.1</p>
  </div>
  <div class="cs-main-foot">BLOCK STRIKE <span>HTML5 / THREE.JS · CLASSIC UI</span> <small>WASD · MOUSE · B BUY · ESC MENU</small></div>
 </div>
@@ -115,6 +116,7 @@
    <button type="button" data-options-tab="video" role="tab" aria-selected="false">Video</button>
    <button type="button" data-options-tab="voice" role="tab" aria-selected="false">Voice</button>
    <button type="button" data-options-tab="touch" role="tab" aria-selected="false">Touch</button>
+   <button type="button" data-options-tab="storage" role="tab" aria-selected="false">Storage</button>
   </nav>
   <div class="cs-window-content cs-options-content">
    <section class="cs-options-panel" data-options-panel="multiplayer">
@@ -150,7 +152,6 @@
     <button type="button" id="runtimeHealthToggle" aria-pressed="false">Show performance diagnostics</button><p class="cs-help">Shows FPS, frame time, position, input and last engine error. Errors also appear automatically during a match. No data is transmitted.</p>
     <button type="button" id="runtimeHealthLastFault" disabled>Show / hide last saved engine fault</button><pre id="runtimeHealthHistory" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px"></pre>
     <button type="button" id="fullscreenToggle">Enter fullscreen</button><p id="fullscreenStatus" class="cs-help" role="status">Fullscreen support depends on your browser.</p>
-    <button type="button" id="offlinePrepare" disabled>Prepare Offline (±245 MB)</button><p id="offlineCacheStatus" class="cs-help" role="status">Menyiapkan cache aplikasi…</p>
     <label class="cs-field"><span>GoldSrc sprites — optional local override</span><input id="goldsrcSpriteFile" type="file" accept=".zip,application/zip"></label>
     <button type="button" id="goldsrcSpriteRemove">Use built-in sprites / forget local override</button><p id="goldsrcSpriteStatus" class="cs-help" role="status">GoldSrc sprites load automatically from the bundled pack when available. An optional ZIP you have permission to use overrides it and is saved on this device.</p>
     <label class="cs-field"><span>Graphics quality</span><select id="q"><option value="0">Low · better battery</option><option value="1" selected>Medium</option><option value="2">High</option></select></label>
@@ -158,6 +159,13 @@
     <p class="cs-help" id="fpsCapHint">30 FPS recommended for iPhone 13 and busy 32-player matches. 45/60 FPS are maximum targets, not guaranteed; higher rates may increase heat and battery use. The game lowers resolution if sustained frames are slow.</p>
     <label class="cs-field"><span>HUD size</span><input id="hudScale" type="range" min="80" max="125" step="5" value="100"><output id="hudScaleValue" for="hudScale">100%</output></label>
     <p class="cs-help">Graphics changes adjust render resolution and shadows. Screen resolution is managed by Safari and your device.</p>
+   </section>
+   <section class="cs-options-panel hidden" data-options-panel="storage">
+    <h3>Storage / Offline</h3>
+    <p class="cs-help">Online play streams bundled maps, model, WAD, and YaPB GRAPH as needed. This optional button downloads every packaged asset, including unused GRAPH shards, for offline use. It is not required to start a match.</p>
+    <button type="button" id="openWeaponImportStorage">Import Weapon / Shield / Grenade / C4</button>
+    <p class="cs-help">Ganti model, animasi, gambar, dan suara pada slot senjata yang sudah ada. Disimpan di perangkat, tidak diunggah. M1887 Silver sudah tersedia sebagai pengganti visual M3.</p>
+    <button type="button" id="offlinePrepare" disabled>Prepare all offline assets (large download)</button><p id="offlineCacheStatus" class="cs-help" role="status">Menyiapkan cache aplikasi…</p>
    </section>
    <section class="cs-options-panel hidden" data-options-panel="voice"><h3>Voice Communication</h3><p class="cs-help">Voice chat is unavailable in offline bot matches. Radio commands and their sound effects remain available during gameplay. No microphone permission is requested.</p></section>
    <section class="cs-options-panel hidden" data-options-panel="touch">
@@ -171,6 +179,23 @@
  </div>
 </div>
 <div id="creditsScreen" class="screen hidden"><section class="dialog"><h2>Credits &amp; asset notices</h2><p>BLOCK STRIKE · Three.js / WebGL. Model dan suara GoldSrc berasal dari paket yang disediakan pengguna, dengan atribusi <a href="https://cs16planet.ru/modeli-oruzhiya-cs-16/26189-standartnye-modeli-oruzhija-dlja-cs-16.html">CS16planet.ru</a>.</p><p>HUD: Armory Xtreme / CS16Forge. GUI: CSGO GUI 1.6 Fixed. Map, tekstur dan karakter dipertahankan dari Tahap 7. Hak aset pihak ketiga tetap milik pemiliknya; izin redistribusi publik belum terverifikasi.</p><p><a href="ASSET_NOTICES.md" target="_blank" rel="noopener">Baca catatan aset lengkap</a></p><button data-close="creditsScreen">0 &nbsp; BACK</button></section></div>
+<div id="weaponImportScreen" class="screen hidden" role="dialog" aria-modal="true" aria-label="Import weapon skin">
+ <div class="cs-window weapon-import-window">
+  <header class="cs-window-head"><strong>Import Weapon / Replace Skin</strong><button type="button" id="weaponImportClose" aria-label="Close import">×</button></header>
+  <div class="cs-window-content weapon-import-body">
+   <h3>Same slot, new appearance</h3>
+   <p class="cs-help">Pilih slot lama yang ingin ditimpa. Harga, damage, ammo, firing rate, dan aturan membeli tidak berubah. File disimpan hanya di perangkat ini.</p>
+   <label class="cs-field"><span>Replace weapon / shield / grenade / C4</span><select id="weaponImportSlot"></select></label>
+   <div class="weapon-import-preview"><img id="weaponImportPreview" alt="Current skin preview" hidden></div>
+   <label class="cs-field"><span>Skin name (optional)</span><input type="text" id="weaponImportName" maxlength="70" placeholder="e.g. M1887 Silver"></label>
+   <label class="cs-field"><span>ZIP pack or loose MDL / GLB / WAV / JPG / PNG</span><input id="weaponImportFiles" type="file" accept=".zip,.mdl,.glb,.wav,.jpg,.jpeg,.png,.rar" multiple></label>
+   <p class="cs-help">ZIP dapat berisi v_*.mdl (first-person), p_*.mdl, w_*.mdl, WAV dan gambar. RAR/7z perlu dikonversi ke ZIP; file M1887 Silver yang lu kirim sudah terpasang sebagai pilihan bawaan. File ZIP impor lain bebas nama modelnya karena target slot dipilih di sini.</p>
+   <div class="weapon-import-buttons"><button type="button" id="weaponImportRemove">Remove custom skin</button><button type="button" id="weaponImportStock" hidden>Use original CS M3</button></div>
+   <p id="weaponImportStatus" class="cs-help" role="status" aria-live="polite"></p>
+  </div>
+  <footer class="cs-actions"><button type="button" id="weaponImportCancel">Cancel</button><button type="button" id="weaponImportApply" class="cs-primary">Import / Replace selected slot</button></footer>
+ </div>
+</div>
 <div id="mapScreen" class="screen hidden">
  <div class="team-title"><small>NEW GAME / 01</small><h2>Select battlefield</h2></div>
  <div id="mapOptions" class="map-options">
@@ -194,7 +219,7 @@
     <label class="cs-field"><span>Map</span><select id="createMap"><option value="dust_block">Dust Block · Elimination</option></select></label>
     <label class="cs-field"><span>Maximum players</span><input id="matchPlayers" type="number" min="2" max="32" step="1" value="16" inputmode="numeric" aria-describedby="matchPerformanceHint"></label>
     <div id="dustMapPreview" class="cs-map-row"><div class="cs-map-thumb" role="img" aria-label="Dust Block arena preview"></div><div><strong>DUST BLOCK</strong><p>Team elimination · 1 human + bots.</p></div></div>
-    <div class="map-library-actions"><button type="button" id="openMapImport">Import Map</button><button type="button" id="removeSavedMap" class="hidden">Delete map</button><button type="button" id="repairMapWads" class="hidden">Add missing WAD</button><input type="file" id="repairWadFiles" accept=".wad,application/octet-stream" multiple hidden></div>
+    <div class="map-library-actions"><button type="button" id="openMapImport">Import Map</button><button type="button" id="openWeaponImport">Import Weapon</button><button type="button" id="removeSavedMap" class="hidden">Delete map</button><button type="button" id="repairMapWads" class="hidden">Add missing WAD</button><input type="file" id="repairWadFiles" accept=".wad,application/octet-stream" multiple hidden></div>
     <p id="savedMapReport" class="hidden" role="status"></p>
     <canvas id="savedMapOverview" class="hidden" width="144" height="108" aria-label="Map overview"></canvas>
     <div id="bspImport" class="hidden">
@@ -262,19 +287,19 @@
 <script src="js/bsp-local.js?v=16.4.7-pre26AR.11.10.2"></script>
 <script src="js/local-cache.js?v=16.4.7-pre25B"></script>
 <script src="js/vendor/pako-inflate.min.js"></script>
-<script src="js/yapb-waypoints.js?v=16.4.7-pre26AR.11.10.2"></script>
+<script src="js/yapb-waypoints.js?v=16.4.7-pre26AR.11.10.19-AUTH.1"></script>
 <script src="js/bsp-local-nav.js?v=16.4.7-pre26AR.11.10.9-MDL.1"></script>
 <script src="js/map-media.js?v=16.4.7-pre26AR.11.10.2"></script>
 <script src="js/map-library.js?v=16.4.7-pre25B"></script>
 <script src="js/global-wads.js?v=16.4.7-pre26AR.2"></script>
 <script src="js/map-importer.js?v=16.4.7-pre26AR.11.10.2"></script>
 <script src="js/bundled-maps.js?v=16.4.7-pre26AR.11.10.9-MDL.2-MAPS.1"></script>
-<script src="js/goldsrc-sprites.js?v=16.4.7-pre26AR.7"></script>
-<script src="js/modes/bomb.js?v=16.4.7-pre26AR.11.10.8"></script>
+<script src="js/goldsrc-sprites.js?v=AR11.10.20-WEAPON1"></script>
+<script src="js/modes/bomb.js?v=16.4.7-pre26AR.11.10.15-COMBAT.1"></script>
 <script src="js/bsp-doors.js?v=16.4.7-pre26AR.11.10.7"></script>
 <script>window.NAV_BOTS=true; /* Tahap 7B: aktifkan A* nav untuk bot (T→CT sudah jalan, CT→T masih fallback) */</script>
 <script src="js/nav-graph.js?v=16.4.7-pre22"></script>
-<script src="js/combat12.js?v=16.4.7-pre23H"></script>
+<script src="js/combat12.js?v=16.4.7-pre26AR.11.10.15-COMBAT.1"></script>
 <script src="js/attack14f.js?v=16.4.2"></script>
 <script src="js/safari14e.js?v=16.4.7-pre25A"></script>
 <script src="js/cs16-vgui.js"></script>
@@ -284,18 +309,19 @@
 <script src="js/bot-tactics15d.js?v=16.4.7-pre26AM"></script>
 <script src="js/weapon-presentation.js?v=16.4.7-pre26AR.11.10.2"></script>
 <script src="js/weapon-calibration.js?v=16.4.7-pre26AR.11.10.2"></script>
-<script src="js/economy-rules.js?v=16.4.7-pre5"></script>
+<script src="js/economy-rules.js?v=16.4.7-pre26AR.11.10.19-AUTH.1"></script>
 <script src="js/native-hitboxes.js?v=16.4.7-pre12"></script>
 <script src="js/runtime-health.js?v=16.4.7-pre26AR.11.10.9-MDL.1"></script>
 <script src="js/goldsrc-mdl10.js?v=16.4.7-pre26AR.11.10.9-MDL.2-MAPS.1-SHIELD.1"></script>
-<script src="js/game-core.js?v=16.4.7-pre26AR.11.10.9-MDL.2-MAPS.1-SHIELD.1"></script>
-<script src="js/game-systems8.js?v=16.4.7-pre26AR.11.10.2"></script>
+<script src="js/weapon-import.js?v=AR11.10.20-WEAPON1"></script>
+<script src="js/game-core.js?v=AR11.10.20-WEAPON1"></script>
+<script src="js/game-systems8.js?v=AR11.10.20-WEAPON1"></script>
 <script src="js/grenade14d.js?v=16.4.7-pre23H"></script>
 <script src="js/grenade-fx15b.js?v=16.4.7-pre23H"></script>
-<script src="js/game-systems9.js?v=16.4.7-pre26AR.11.10.9-MDL"></script>
-<script src="js/game-systems10.js?v=16.4.7-pre26AR.11.10.7"></script>
+<script src="js/game-systems9.js?v=AR11.10.20-WEAPON1"></script>
+<script src="js/game-systems10.js?v=16.4.7-pre26AR.11.10.19-AUTH.1"></script>
 <script src="js/game-systems11.js?v=16.4.7-pre12"></script>
-<script src="js/classic-ui.js?v=16.4.7-pre26AR.7"></script>
+<script src="js/classic-ui.js?v=AR11.10.20-WEAPON1"></script>
 <script src="js/layout-nav.js?v=16.4.7-pre26AR.7"></script>
 <script src="js/spectator15e.js"></script>
 <script src="js/game-systems13.js?v=16.4.7-pre26AR.11.10.9-MDL.2"></script>
@@ -303,6 +329,7 @@
 <script src="js/game-systems14c.js?v=16.4.7-pre15"></script>
 <script src="js/quickbuy15.js?v=16.4.7-pre15"></script>
 <script src="js/cs16-menu15.js?v=16.4.7-pre26AR.11.10.9-MDL.2-MAPS.1"></script>
+<script src="js/weapon-import-menu.js?v=AR11.10.20-WEAPON1"></script>
 <script src="js/offline.js?v=16.4.7-pre26AR.11.10.5"></script>
 </body>
 </html>
