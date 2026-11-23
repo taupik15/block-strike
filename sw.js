@@ -1,3 +1,4 @@
+/* AR.11.10.9-MDL.2 fixes GPU skinning (three r128 material.skinning=true), per-model hand mirroring; removes the -0.30 depth hack. */
 /* AR.11.10.9-MDL.1 viewmodel near-plane clearance, emergency legacy mode; no gameplay changes. */
 /* AR.11.10.9-MDL native GoldSrc v10 viewmodels and offline cache refresh. */
 /* AR.11.10.8: team-parity audit and connected bombsite search patrol; no combat or graph balance cheats. */
