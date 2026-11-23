@@ -397,7 +397,7 @@ function setW(i){
  BombMode.deselect?.();Phase9.cancelGrenade();WeaponModes15C.cancel();pendingKnife=pendingAutoReload=null;reloadSfxToken++;
  fh=fl=secondaryHeld=mouseSecondaryHeld=false;fireAimPointer=fireAimLast=adsPointer=adsAimLast=null;
  firedLatch=false;aiming=false;zoomIdx=0;
- if(k!=='shield')Phase9.lowerShield();
+ if(k!=='shield'&&!(k==='knife'&&Phase14C.hasShield(inventory)))Phase9.lowerShield();
  const prior=vm;
  if(prior)prior.userData.weaponAnimation.mixer.stopAllAction();
  wi=selected;reloading=0;shotgunReload=null;cool=0;swapT=.25;P.recoil=null;P.lastKnifeAt=null;P.resumeZoom=null;
@@ -406,7 +406,7 @@ function setW(i){
  Phase13.applyHand(vm);vm.position.set(0,0,0);vm.rotation.set(0,0,0);
  // Gameplay readiness is independent from authored draw clip length.
  swapT=Combat12.deployTime(k==='shield'?Phase9.shieldPistol():k);
- playWeaponAnimation(k==='shield'&&Phase9.shieldRaised?'idle':'draw',swapT);
+ playWeaponAnimation(vm.userData.viewAsset.startsWith('shield_')&&Phase9.shieldRaised?'idle':'draw',swapT);
  state.mixer.update(0);vm.updateMatrixWorld(true);
  if(prior)viewScene.remove(prior);
  viewScene.add(vm);syncAim();refreshWeaponChips();hud();
@@ -1605,6 +1605,7 @@ function renderActiveViewmodel(){
   const fov=(subject.userData.nativeMdl||subject.children[0]?.userData.nativeMdl)?GoldSrcMDL10.profile.viewmodelFov:(ViewmodelCalibration[subject.userData.viewAsset]?.[0]||65);
   if(viewCamera.fov!==fov){viewCamera.fov=fov;viewCamera.updateProjectionMatrix()}
   viewCamera.position.y=shieldViewCameraY(subject);
+  if(typeof Phase14B!=='undefined')Phase14B.present(subject,subject===vm?Phase9.shieldRaised:!!subject.userData.shieldRaised,viewCamera.aspect);
   R.autoClear=false;R.clearDepth();R.render(viewScene,viewCamera);return true;
  }finally{for(const child of hidden)child.visible=true;R.autoClear=true}
 }

@@ -96,10 +96,44 @@ const Phase14B=(()=>{
   state.raised=!!raised;if(state.rig)state.rig.visible=!state.raised;
  }
  function update(group,dt){const state=parts.get(group);state?.mixer?.update(dt)}
+ // Keep shield presentation separate from gameplay hitboxes/camera aiming.
+ // These GLBs include the shield *and* matching pistol/knife. When raised,
+ // only the actual shield plate is visible, just like the CS 1.6 sight slot.
+ // Grow its horizontal framing with viewport aspect so 19.5:9 phones do not
+ // expose empty strips at the sides; restore the authored pose when lowered.
+ const viewParts=new WeakMap();
+ function present(group,raised,aspect){
+  if(!group||!/^shield_(knife|usp|glock18|p228|deagle|fiveseven)$/.test(group.userData?.viewAsset||''))return false;
+  const model=group.children[0];if(!model)return false;
+  let entry=viewParts.get(model);
+  if(!entry){
+   const meshes=[];let shield=null;
+   model.traverse(o=>{
+    if(!o.isSkinnedMesh)return;
+    meshes.push(o);
+    if(o.userData.mdlTexture==='shield.bmp'||o.geometry?.attributes?.position?.count===306)shield=o;
+   });
+   if(!shield)return false;
+   entry={meshes,shield,native:!!model.userData.nativeMdl};viewParts.set(model,entry);
+  }
+  const state=group.userData.weaponAnimation||group.userData.animation;
+  const name=state?.activeName,action=state?.activeAction;
+  const duration=action?.getClip()?.duration||0;
+  const t=duration>0?Math.max(0,Math.min(1,action.time/duration)):1;
+  const width=name==='shield_up'?t:name==='shield_down'?1-t:raised?1:0;
+  const eased=width*width*(3-2*width);
+  const maxWidth=Math.max(1,Math.min(1.82,(Number(aspect)||844/390)/(entry.native?1.49:1.24)));
+  group.scale.x=(group.scale.x<0?-1:1)*(1+(maxWidth-1)*eased);
+  // During transitions let the hand finish moving behind the plate; don't
+  // make the gun/knife disappear before the animation has raised the shield.
+  const cover=name==='shield_up'?t>=.65:name==='shield_down'?t<.35:!!raised;
+  for(const mesh of entry.meshes)mesh.visible=!cover||mesh===entry.shield;
+  return true;
+ }
  function inspect(group){const s=parts.get(group);return s?{
   pistol:s.pistol,hasRig:!!s.rig,raised:s.raised,nativePistolHidden:s.nativePistol.every(o=>!o.visible),
   visibleGunMeshes:s.rig?(function(){let count=0;s.rig.traverse(o=>{if(o.isMesh&&o.visible)count++});return count})():0,
   extraHands:s.rig?(function(){let count=0;s.rig.traverse(o=>{if(o.isMesh&&pistolMeshNumber(o)>=0&&pistolMeshNumber(o)<6&&o.visible)count++});return count})():0
  }:null}
- return {prepare,sync,play,setRaised,update,inspect};
+ return {prepare,sync,play,setRaised,update,present,inspect};
 })();

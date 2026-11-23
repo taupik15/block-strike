@@ -184,7 +184,15 @@ const report={};
   return {scene:root,animations:clips,nativeMdl:true,report:{name:parsed.name,bones:bones.length,meshes:parsed.meshes.length,vertices:parsed.vertexTotal,triangles:parsed.triangleTotal,textures:parsed.textures.length,attachments:parsed.attachments.length,sequences:parsed.sequences.map(s=>({label:s.name,fps:s.fps,frames:s.frames,events:s.events.length}))}};
  }
  const nativeNames=new Set(['ak47','aug','awp','c4','deagle','elite','famas','fiveseven','flashbang','g3sg1','galil','glock18','hegrenade','knife','knife_r','m249','m3','m4a1','mac10','mp5','p228','p90','scout','sg550','sg552','shield_r','smokegrenade','tmp','ump45','usp','xm1014']);
- function sourceName(asset){if(asset==='shield_knife')return 'knife_r';if(/^shield_(usp|glock18|p228|deagle|fiveseven)$/.test(asset))return 'shield_r';if(asset.startsWith('shield_'))return null;return nativeNames.has(asset)?asset:null;}
+ function sourceName(asset){
+  // v_knife_r.mdl has no shield mesh. v_shield_r.mdl bakes in a Five-SeveN,
+  // so it cannot depict a selected USP/Glock/P228/Deagle correctly. The shipped
+  // pistol-specific/knife shield GLBs already contain both items and all three
+  // authored shield poses. Keep native MDL.2 for every other supported weapon.
+  if(/^shield_(knife|usp|glock18|p228|deagle|fiveseven)$/.test(asset))return null;
+  if(asset.startsWith('shield_'))return null;
+  return nativeNames.has(asset)?asset:null;
+ }
 
  // Handedness the original GoldSrc files were authored for (verified by rendering the raw, unmirrored
  // models in a real WebGL harness against the CS 1.6 PC reference): ordinary weapons/grenades/C4 are
