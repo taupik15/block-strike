@@ -1,3 +1,4 @@
+/* WEAPON.1.2-SNIPER: hidden bot hit proxies restored for bullet traces; sniper crosshair policy; PWA cache rollover. */
 /* PWA-FULLSCREEN.1: Android installed PWA landscape fullscreen; refresh manifest cache. */
 /* AR11.10.20-WEAPON.1.1-C4: BSP C4 blast scaling, world prop clone, C4 VFX, debug OFF. */
 /* AR11.10.20-WEAPON.1: optional local skin importer and included M1887. */
