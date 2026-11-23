@@ -1,0 +1,15 @@
+/* AR11.10.20 WEAPON.1: small overlay consistent with existing CS windows. */
+#weaponImportScreen{z-index:1100;align-items:center;justify-content:center;background:rgba(0,0,0,.76)}
+#weaponImportScreen:not(.hidden){display:flex}
+#weaponImportScreen .weapon-import-window{width:min(700px,calc(100vw - 34px));max-height:min(90dvh,650px);overflow:auto}
+#weaponImportScreen .weapon-import-body{padding:14px 18px;display:flex;flex-direction:column;gap:12px}
+#weaponImportScreen .weapon-import-body h3{margin:0;color:#d6c195}
+#weaponImportScreen .weapon-import-body .cs-help{margin:0;line-height:1.45}
+#weaponImportScreen .weapon-import-body input[type=file]{max-width:100%;font-size:12px}
+#weaponImportScreen .weapon-import-preview{height:110px;background:#1b211d;display:flex;align-items:center;justify-content:center;border:1px solid #6c6b58}
+#weaponImportScreen .weapon-import-preview img{max-width:100%;max-height:100%;object-fit:contain}
+#weaponImportScreen .weapon-import-buttons{display:flex;gap:8px;flex-wrap:wrap}
+#weaponImportScreen .weapon-import-buttons button{flex:1 0 180px}
+#weaponImportScreen .cs-actions{display:flex;gap:8px;flex-wrap:wrap}
+#weaponImportScreen #weaponImportStatus{min-height:2.4em;overflow-wrap:anywhere}
+@media(max-height:450px){#weaponImportScreen .weapon-import-body{gap:5px;padding:8px 12px}#weaponImportScreen .weapon-import-preview{height:65px}#weaponImportScreen .cs-field{margin:0}}
