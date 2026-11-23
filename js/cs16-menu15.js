@@ -153,8 +153,8 @@
   const record=saved.find(m=>m.id===mapSelect.value);
   id('dustMapPreview').classList.toggle('hidden',!!record||showImport);
   id('bspImport').classList.toggle('hidden',!showImport);
-  id('removeSavedMap').classList.toggle('hidden',!record||showImport);
-  id('repairMapWads').classList.toggle('hidden',!record?.report?.missing?.length||showImport);id('repairMapWads').disabled=importing;
+  id('removeSavedMap').classList.toggle('hidden',!record||record.builtin||showImport);
+  id('repairMapWads').classList.toggle('hidden',!record?.report?.missing?.length||record.builtin||showImport);id('repairMapWads').disabled=importing;
   id('savedMapReport').classList.toggle('hidden',!record||showImport);
   id('createMode').value=modeLabel(record?.mode);
   id('matchC4Time').disabled=record?.mode!=='bomb';
@@ -169,7 +169,7 @@
   const canvas=id('savedMapOverview'),token=++overviewToken;
   canvas.classList.add('hidden');
   if(record?.report?.overview&&!showImport){
-   MapLibrary.preview(record.id).then(image=>{
+   (record.builtin?BundledMaps.preview(record.id):MapLibrary.preview(record.id)).then(image=>{
     if(!image||token!==overviewToken)return;
     const context=canvas.getContext('2d');
     context.clearRect(0,0,canvas.width,canvas.height);
@@ -179,20 +179,22 @@
   }
  }
  async function refreshMaps(selected=mapSelect.value){
+  const bundled=BundledMaps.list();
+  let owned=[];
   try{
-   saved=await MapLibrary.list();
-   saved.sort((a,b)=>a.name.localeCompare(b.name)||a.path.localeCompare(b.path));
-   for(const option of [...mapSelect.options])if(option.value!=='dust_block')option.remove();
-   for(const record of saved){
-    const option=new Option(record.name+' · '+modeLabel(record.mode),record.id);
-    option.title=record.path;
-    mapSelect.add(option);
-   }
-   mapSelect.value=saved.some(m=>m.id===selected)?selected:'dust_block';
+   owned=await MapLibrary.list();
+   owned.sort((a,b)=>a.name.localeCompare(b.name)||a.path.localeCompare(b.path));
   }catch(err){
-   showImport=true;
-   id('bspStatus').textContent='Map storage unavailable: '+err.message;
+   id('bspStatus').textContent='Local import storage unavailable: '+err.message;
   }
+  saved=[...bundled,...owned];
+  for(const option of [...mapSelect.options])if(option.value!=='dust_block')option.remove();
+  for(const record of saved){
+   const option=new Option(record.name+' · '+modeLabel(record.mode)+(record.builtin?' · Built-in':''),record.id);
+   option.title=record.builtin?'Bundled with Block Strike':record.path;
+   mapSelect.add(option);
+  }
+  mapSelect.value=saved.some(m=>m.id===selected)?selected:'dust_block';
   syncMap();
  }
  function syncImportButtons(){

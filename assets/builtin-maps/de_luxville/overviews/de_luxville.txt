@@ -1,0 +1,14 @@
+// overview description file for de_luxville.bsp
+
+global 
+{
+	ZOOM	1.8
+	ORIGIN	200 	32	0
+	ROTATED	90
+}
+
+layer 
+{
+	IMAGE	"overviews/de_luxville.bmp"
+	HEIGHT	0
+}

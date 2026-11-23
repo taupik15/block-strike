@@ -1702,13 +1702,14 @@ async function beginMatch(){
   if(AC?.state==='suspended'||AC?.state==='interrupted')try{AC.resume()?.catch?.(()=>{})}catch(_){}
   loadOriginalSounds();
   RuntimeHealth.stage?.('startup sprites');await GoldSrcSprites.ready();
-  RuntimeHealth.stage?.('startup map');if(selectedMapId.startsWith('saved:')){
+  RuntimeHealth.stage?.('startup map');if(selectedMapId.startsWith('builtin:')||selectedMapId.startsWith('saved:')){
    $('loadStatus').textContent='Memeriksa navigasi peta…';
-   const localMapData=await MapImporter.compile(await MapLibrary.load(selectedMapId));
+   const isBundled=selectedMapId.startsWith('builtin:');
+   const localMapData=await MapImporter.compile(isBundled?await BundledMaps.load(selectedMapId):await MapLibrary.load(selectedMapId));
    verifyLocalOrientation(localMapData);
    activeMapData={id:'local_bsp',name:localMapData.name,local:localMapData,spawn:localMapData.spawn};
    // Refresh stale warnings from maps imported before automatic GRAPH support.
-   MapLibrary.updateReport(selectedMapId,{missing:localMapData.missing,warnings:localMapData.warnings,nav:localMapData.navSource,overview:localMapData.overviewPath||null,globalWads:localMapData.globalWads,navRevision:16}).catch(()=>{});
+   if(!isBundled)MapLibrary.updateReport(selectedMapId,{missing:localMapData.missing,warnings:localMapData.warnings,nav:localMapData.navSource,overview:localMapData.overviewPath||null,globalWads:localMapData.globalWads,navRevision:16}).catch(()=>{});
 
   }else{
    const r=await fetch('assets/maps/'+selectedMapId+'.json');if(!r.ok)throw new Error('Map tidak ditemukan');activeMapData=await r.json();
