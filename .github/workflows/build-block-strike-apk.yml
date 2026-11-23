@@ -28,19 +28,34 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      # Android SDK is already available on GitHub runners.
       - name: Install Android platform
         shell: bash
         run: |
           set -euo pipefail
-          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-<unset>}"
-          command -v sdkmanager
-          sdkmanager --version
-          printf 'y\n%.0s' {1..32} > "$RUNNER_TEMP/android-sdk-licenses.txt"
-          sdkmanager --licenses < "$RUNNER_TEMP/android-sdk-licenses.txt"
-          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
-          sdkmanager --list_installed
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDK_MANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+          if [[ ! -x "$SDK_MANAGER" ]]; then
+            SDK_MANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print -quit 2>/dev/null || true)"
+          fi
+
+          if [[ ! -x "$SDK_MANAGER" ]]; then
+            echo "::error::sdkmanager not found under $SDK_ROOT/cmdline-tools"
+            exit 1
+          fi
+
+          echo "Using: $SDK_MANAGER"
+          "$SDK_MANAGER" --version
+
+          if [[ ! -f "$SDK_ROOT/platforms/android-35/android.jar" || ! -x "$SDK_ROOT/build-tools/35.0.0/aapt2" ]]; then
+            for _ in {1..64}; do printf 'y\n'; done > "$RUNNER_TEMP/android-licenses.txt"
+            "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --licenses < "$RUNNER_TEMP/android-licenses.txt" > /dev/null
+            "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --install 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+
+          test -f "$SDK_ROOT/platforms/android-35/android.jar"
+          test -x "$SDK_ROOT/build-tools/35.0.0/aapt2"
+          echo "Android SDK 35 and build-tools 35.0.0 ready"
 
       - name: Stage game assets into APK
         run: python3 android/scripts/stage_game.py . android/app/src/main/assets/www
