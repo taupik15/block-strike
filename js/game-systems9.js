@@ -127,7 +127,12 @@ const Phase9=(()=>{
   model.quaternion.copy(forward.multiply(zup));model.scale.setScalar(.025);
  }
  function loadWorldModel(k){
-  if(!worldLoads[k])worldLoads[k]=new Promise((resolve,reject)=>new THREE.GLTFLoader().load('assets/models/world/'+k+'.glb',g=>resolve(g.scene),undefined,reject)).catch(e=>{console.warn('Dropped model',k,e);return null});
+  if(!worldLoads[k])worldLoads[k]=(async()=>{
+   const custom=await WeaponImport.modelFor(k,THREE,'world');
+   if(custom)return {scene:custom.scene,native:true};
+   const source=await new Promise((resolve,reject)=>new THREE.GLTFLoader().load('assets/models/world/'+k+'.glb',g=>resolve(g.scene),undefined,reject));
+   return {scene:source,native:false};
+  })().catch(e=>{console.warn('Dropped model',k,e);return null});
   return worldLoads[k];
  }
  // Anchor to the local floor, not the nearest spawn's elevation (wrong on
@@ -152,14 +157,16 @@ const Phase9=(()=>{
   return ground(pos,.1);
  }
  function mountWorldItem(holder,id,floor,alive,fallback){
-  loadWorldModel(id).then(scene=>{
-   if(!scene||!alive())return;
-   const gl=scene.clone(true);orientGoldSrcWorld(gl);holder.add(gl);holder.updateWorldMatrix(true,true);
+  loadWorldModel(id).then(source=>{
+   if(!source||!alive())return;
+   const gl=source.native?THREE.SkeletonUtils.clone(source.scene):source.scene.clone(true);
+   if(!source.native)orientGoldSrcWorld(gl);holder.add(gl);holder.updateWorldMatrix(true,true);
    const bounds=new THREE.Box3().setFromObject(gl);
    if(Number.isFinite(bounds.min.y))gl.position.y+=holder.position.y-bounds.min.y;
    fallback.visible=false;
   });
  }
+ document.addEventListener('blockstrike:weapon-skin-change',event=>{delete worldLoads[event.detail?.id]});
  function makeDrop(k,pos,ammo,reserve,crouch=false,replacing=null){
   if(!W[k]||k==='knife'||(dropped.length>=40&&!(replacing?.alive&&dropped.includes(replacing))))return null;
   const holder=new THREE.Group();holder.position.copy(pos);
@@ -336,8 +343,9 @@ const Phase9=(()=>{
  function sightClear(a,b){const test=worldSegment(a,b);return !test.hit||test.frac>.95}
  function thrownModel(type,container){
   const names={he:'hegrenade',flash:'flashbang',smoke:'smokegrenade'};
-  loadWorldModel(names[type]).then(scene=>{if(!scene||!container.userData.active)return;
-   const clone=THREE.SkeletonUtils?.clone?THREE.SkeletonUtils.clone(scene):scene.clone(true);orientGoldSrcWorld(clone);container.add(clone);
+  loadWorldModel(names[type]).then(source=>{if(!source||!container.userData.active)return;
+   const clone=THREE.SkeletonUtils?.clone?THREE.SkeletonUtils.clone(source.scene):source.scene.clone(true);
+   if(!source.native)orientGoldSrcWorld(clone);container.add(clone);
    const fallback=container.userData.fallback;if(fallback)fallback.visible=false;
   });
  }
@@ -548,13 +556,13 @@ const Phase9=(()=>{
   GrenadeFX15B.init(S);GrenadeFX15B.burst('he',pos);
   const col=window.bspCol,scale=col?.T.k||.02,wet=!!(col&&typeof BSP!=='undefined'&&BSP.pointWater?.(col,pos));
   const source=pos.clone();source.y+=col?scale:.02;
+  // ReGameDLL CS 1.6 default mp_hegrenade_penetration=0: HE radius
+  // damage is distance-based and reaches through walls. The visibility-
+  // weighted blast used for Condition Zero is not the vanilla CS default.
   const contact=(origin,crouch,waterLevel)=>{
-   const small=!!col&&crouch&&Number.isInteger(col.crouchHead),unit=col?scale:1.7/72;
    const center=origin.clone();if(!col)center.y+=crouch?.55:.8;
    const distance=center.distanceTo(pos);
-   if(Grenade14D.waterSeparates(wet,waterLevel)||Grenade14D.heDamage(distance,false,scale)<=1)return {damage:0,center};
-   const exposure=Grenade14D.blastExposure(source,center,{head:(crouch?(small?14:13):25)*unit,feet:(crouch?(small?14:col?34:20):34)*unit,side:13*unit},q=>sightClear(source,V(q.x,q.y,q.z)));
-   return {damage:Grenade14D.heDamage(distance,false,scale,exposure),center};
+   return {damage:Grenade14D.waterSeparates(wet,waterLevel)?0:Grenade14D.heDamage(distance,false,scale),center};
   };
   for(const b of bots){if(b.dead)continue;
    const {damage,center}=contact(b.g.position,!!b.crouching,b.waterLevel||0);
@@ -571,14 +579,14 @@ const Phase9=(()=>{
  function effectFlash(pos,team){
   sound(rnd()<.5?'flashbang-1.wav':'flashbang-2.wav',.85,pos);GrenadeFX15B.init(S);GrenadeFX15B.burst('flash',pos);
   const col=window.bspCol,scale=col?.T.k||.02,wet=!!(col&&typeof BSP!=='undefined'&&BSP.pointWater?.(col,pos));
-  const waterBlocked=level=>wet?level===0:level===3;
+  const waterBlocked=level=>Grenade14D.waterSeparates(wet,level);
   for(const b of bots){if(b.dead||waterBlocked(b.waterLevel||0))continue;
    const eye=b.g.position.clone().add(new THREE.Vector3(0,col?(28-(b.crouching?(Number.isInteger(col.crouchHead)?16:9):0))*scale:(b.crouching?1.05:1.56),0));
    const facing=new THREE.Vector3(-Math.sin(b.g.rotation.y),0,-Math.cos(b.g.rotation.y));
    const to=pos.clone().sub(eye).normalize();
    const data=Grenade14D.flashExposure(eye.distanceTo(pos),facing.dot(to),!sightClear(pos,eye),scale);
-   b.blinded=Math.max(b.blinded||0,data.hold+data.fade*.35);
-   if(data.duration>.25){if(data.duration>1)Phase10.friendlyFlash?.(b,team);b.visibleEnemy=null;b.los=false;b.memory=null;b.cd=Math.max(b.cd,.4)}
+   if(data.duration>.25){
+    b.blinded=Math.max(b.blinded||0,data.hold+data.fade*.35);if(data.duration>1)Phase10.friendlyFlash?.(b,team);b.visibleEnemy=null;b.los=false;b.memory=null;b.cd=Math.max(b.cd,.4)}
   }
   if(waterBlocked(P.waterLevel||0))return;
   const eye=cam.position,dist=eye.distanceTo(pos);

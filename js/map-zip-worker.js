@@ -1,7 +1,7 @@
 /* Central-directory ZIP reader. Extracts only requested entries in this worker. */
 importScripts('vendor/pako-inflate.min.js');
 const MiB=1024*1024, decoder=new TextDecoder();
-const allowed=/\.(bsp|wad|pwf|graph|nav|png|tga|bmp|jpg|jpeg|mdl|spr|wav|mp3|ogg|txt)$/i;
+const allowed=/\.(bsp|wad|pwf|graph|nav|png|tga|bmp|jpg|jpeg|mdl|glb|spr|wav|mp3|ogg|txt)$/i;
 let archive, entries=[];
 const error=message=>{throw Error(message)};
 const crcTable=Uint32Array.from({length:256},(_,n)=>{

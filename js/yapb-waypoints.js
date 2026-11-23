@@ -40,6 +40,21 @@ const YaPBWaypoints=(()=>{
  // per lookup; no bulk graph expansion or writes to the imported map library.
  const DB='assets/yapb-graph/',SHARD_MAX=4*1024*1024;
  let indexPromise;
+ const shardCache=new Map(),MAX_RESIDENT_SHARDS=2;
+ function shardOnce(shard,size){
+  if(shardCache.has(shard)){
+   const p=shardCache.get(shard);shardCache.delete(shard);shardCache.set(shard,p);return p;
+  }
+  const path='pack-'+String(shard).padStart(3,'0')+'.bin';
+  const pending=localFetch(path,SHARD_MAX).then(pack=>{
+   if(pack.byteLength!==size)throw Error('Truncated bundled GRAPH shard');
+   return pack;
+  }).catch(error=>{if(shardCache.get(shard)===pending)shardCache.delete(shard);throw error});
+  shardCache.set(shard,pending);
+  while(shardCache.size>MAX_RESIDENT_SHARDS)shardCache.delete(shardCache.keys().next().value);
+  return pending;
+ }
+
  async function localFetchOnce(path,limit,json,timeout){
   const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),timeout);
   try{const r=await fetch(DB+path,{signal:ctrl.signal,credentials:'same-origin'});
@@ -64,8 +79,7 @@ const YaPBWaypoints=(()=>{
   const entry=index.maps[key];if(!Array.isArray(entry)||entry.length!==4||!entry.every(Number.isSafeInteger))throw Error('Invalid bundled GRAPH entry');
   const [shard,offset,length,raw]=entry,size=index.sizes[shard];
   if(shard<0||shard>=index.sizes.length||!Number.isSafeInteger(size)||size<1||size>SHARD_MAX||offset<0||length<1||offset+length>size||raw<24||raw>MAX)throw Error('Invalid bundled GRAPH range');
-  const pack=await localFetch('pack-'+String(shard).padStart(3,'0')+'.bin',SHARD_MAX);
-  if(pack.byteLength!==size)throw Error('Truncated bundled GRAPH shard');
+  const pack=await shardOnce(shard,size);
   const out=new Uint8Array(raw);let written=0;const inflater=new pako.Inflate({raw:true,chunkSize:32768});
   inflater.onData=chunk=>{if(written+chunk.length>raw)throw Error('Bundled GRAPH inflate exceeds limit');out.set(chunk,written);written+=chunk.length};
   inflater.push(new Uint8Array(pack,offset,length),true);

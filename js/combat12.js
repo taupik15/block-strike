@@ -195,6 +195,11 @@ const Combat12=(()=>{
  function penetration(id,material,entryDistance,scale=.02){const spec=penetrationSpecs[id],factor=surfaceFactors[material];if(!spec||!factor||entryDistance/scale>spec[1])return null;return {depth:Math.floor(spec[0]*factor[0])*scale,damageFactor:factor[1]};}
  // FireBullets3 trace budgets: 3 traces allow at most two world layers.
  function penetrationLayers(id){return ['awp','scout','g3sg1'].includes(id)?2:penetrationSpecs[id]?1:0;}
+ // A penetrating bullet can hit another character on the same ray; never a
+ // shotgun pellet or knife. This is a bounded browser approximation.
+ function bodyPass(id,budget){
+  return penetrationSpecs[id]&&budget>0?{damageFactor:.65,remainingFactor:.8}:null;
+ }
  function verifiedWallPass({col,collision,hit,origin,dir,range,weaponId,entryDistance,obstacles,THREE}){
   if(!col?.pointClip||!hit?.object?.userData?.worldSurface||!collision?.wallExit)return null;
   const scale=col.T.k,entry=hit.point;
@@ -211,6 +216,6 @@ const Combat12=(()=>{
   return {exit,remaining,travel,damageFactor:pen.damageFactor};
  }
  const scoped=new Set(['awp','scout','aug','sg552','sg550','g3sg1']);
- return Object.freeze({TABLE,baseDamage,rangeDamage,reduceArmor,resolve,resolveVolley,deployTime,armorPrice,scoped,timing,beginBotReload,advanceBotReload,interruptBotReload,fireInterval,shotSpread,shotRange,spreadOffset,knifeBackstab,fireRecoil,recoverRecoil,tag,recoverTag,materialType,penetration,penetrationLayers,verifiedWallPass});
+ return Object.freeze({TABLE,baseDamage,rangeDamage,reduceArmor,resolve,resolveVolley,deployTime,armorPrice,scoped,timing,beginBotReload,advanceBotReload,interruptBotReload,fireInterval,shotSpread,shotRange,spreadOffset,knifeBackstab,fireRecoil,recoverRecoil,tag,recoverTag,materialType,penetration,penetrationLayers,bodyPass,verifiedWallPass});
 })();
 if(typeof module!=='undefined'&&module.exports)module.exports=Combat12;

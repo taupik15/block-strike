@@ -115,7 +115,11 @@ const originalSoundQueue=[];let soundLoadsActive=0;
 function pumpOriginalSounds(){
  while(AC&&soundLoadsActive<4&&originalSoundQueue.length){
   const name=originalSoundQueue.shift();soundLoadsActive++;
-  fetch('assets/sounds/weapons/'+name).then(r=>r.ok?r.arrayBuffer():null).then(b=>b&&AC.decodeAudioData(b)).then(buf=>{if(buf)originalAudio[name]=buf}).catch(()=>{}).finally(()=>{delete originalSoundLoading[name];soundLoadsActive--;pumpOriginalSounds()});
+  Promise.resolve().then(async()=>{
+   const local=await WeaponImport.soundData(name);if(local)return local;
+   const file=name.startsWith('skin:')?name.split(':').slice(2).join(':'):name;
+   const r=await fetch('assets/sounds/weapons/'+file);return r.ok?r.arrayBuffer():null;
+  }).then(b=>b&&AC.decodeAudioData(b)).then(buf=>{if(buf)originalAudio[name]=buf}).catch(()=>{}).finally(()=>{delete originalSoundLoading[name];soundLoadsActive--;pumpOriginalSounds()});
  }
 }
 function requestOriginalSound(name,preload=false){
@@ -123,7 +127,8 @@ function requestOriginalSound(name,preload=false){
  if(originalSoundLoading[name]){if(!preload){const i=originalSoundQueue.indexOf(name);if(i>0){originalSoundQueue.splice(i,1);originalSoundQueue.unshift(name);}}return;}
  originalSoundLoading[name]=true;if(preload)originalSoundQueue.push(name);else originalSoundQueue.unshift(name);pumpOriginalSounds();
 }
-function loadOriginalSounds(){if(!AC||originalSoundsRequested)return;originalSoundsRequested=true;const reloadFiles=Object.values(RELOAD_SOUNDS).flat().map(x=>x[0]);const extras=['grenade_hit2.wav','grenade_hit3.wav','glock18-2.wav','famas-2.wav','famas-burst.wav','generic_reload.wav','knife_slash1.wav','knife_stab.wav','knife_hit1.wav','knife_hit2.wav','knife_hit3.wav','knife_hit4.wav','knife_hitwall1.wav','knife_slash2.wav','knife_deploy1.wav','headshot2.wav','pinpull.wav','sg_explode.wav','hegrenade-1.wav','hegrenade-2.wav','flashbang-1.wav','flashbang-2.wav','grenade_hit1.wav','dryfire_pistol.wav','dryfire_rifle.wav','usp_unsil-1.wav','m4a1_unsil-1.wav','usp_silencer_on.wav','usp_silencer_off.wav','m4a1_silencer_on.wav','m4a1_silencer_off.wav','ric_metal-1.wav','ric_conc-1.wav','c4_beep1.wav','c4_beep2.wav','c4_beep3.wav','c4_beep4.wav','c4_beep5.wav','c4_click.wav','c4_disarm.wav','c4_disarmed.wav','c4_plant.wav','c4_explode1.wav'];const cueFiles=Object.values(WeaponPresentation).flatMap(asset=>Object.values(asset.sound).flat().map(cue=>cue[1]));const files=[...new Set([...cueFiles,...Object.values(W).map(w=>w.sound).filter(Boolean),...reloadFiles,...extras])];files.forEach(name=>requestOriginalSound(name,true))}
+function loadOriginalSounds(){if(!AC||originalSoundsRequested)return;originalSoundsRequested=true;const reloadFiles=Object.values(RELOAD_SOUNDS).flat().map(x=>x[0]);const extras=['grenade_hit2.wav','grenade_hit3.wav','glock18-2.wav','famas-2.wav','famas-burst.wav','generic_reload.wav','knife_slash1.wav','knife_stab.wav','knife_hit1.wav','knife_hit2.wav','knife_hit3.wav','knife_hit4.wav','knife_hitwall1.wav','knife_slash2.wav','knife_deploy1.wav','headshot2.wav','pinpull.wav','sg_explode.wav','hegrenade-1.wav','hegrenade-2.wav','flashbang-1.wav','flashbang-2.wav','grenade_hit1.wav','dryfire_pistol.wav','dryfire_rifle.wav','usp_unsil-1.wav','m4a1_unsil-1.wav','usp_silencer_on.wav','usp_silencer_off.wav','m4a1_silencer_on.wav','m4a1_silencer_off.wav','ric_metal-1.wav','ric_conc-1.wav','c4_beep1.wav','c4_beep2.wav','c4_beep3.wav','c4_beep4.wav','c4_beep5.wav','c4_click.wav','c4_disarm.wav','c4_disarmed.wav','c4_plant.wav','c4_explode1.wav'];const cueFiles=Object.values(WeaponPresentation).flatMap(asset=>Object.values(asset.sound).flat().map(cue=>cue[1]));const files=[...new Set([...cueFiles,...Object.values(W).map(w=>w.sound).filter(Boolean),...reloadFiles,...extras])];files.forEach(name=>requestOriginalSound(name,true));
+  for(const original of ['m3-1.wav','m3_insertshell.wav','m3_pump.wav','m3_draw.wav'])requestOriginalSound(WeaponImport.audioRoute('m3',original),true)}
 const activeVoices=new Set(),voicePriority=new WeakMap();
 function reserveSoundVoice(priority){
  while(activeVoices.size>=16){let old=null;for(const voice of activeVoices)if((voicePriority.get(voice)||0)<=priority&&(!old||(voicePriority.get(voice)||0)<(voicePriority.get(old)||0)))old=voice;
@@ -132,6 +137,7 @@ function reserveSoundVoice(priority){
 }
 function resetWeaponVoices(){for(const voice of activeVoices){try{voice.stop()}catch(e){}}activeVoices.clear()}
 function playOriginalSound(name,v=.4,d=.16,f=1800,priority=0,pan=0){
+ name=WeaponImport.routeGlobalSound(name,typeof vm!=='undefined'?vm?.userData?.viewAsset:'');
  if(!AC||masterVolume<=0||v<=0||document.hidden)return;
  const b=originalAudio[name];if(!b){requestOriginalSound(name);snd(v,d,f,priority,pan);return}
  if(!reserveSoundVoice(priority))return;
@@ -140,7 +146,7 @@ function playOriginalSound(name,v=.4,d=.16,f=1800,priority=0,pan=0){
 }
 // Fallback cues use the same gameplay clock as reload, never wall-clock timers.
 let reloadCueState=null;
-function playReloadSequence(k){const seq=RELOAD_SOUNDS[k]||[['generic_reload.wav',0]],token=++reloadSfxToken,scale=W[k].rl*.85/(seq[seq.length-1][1]||1000);reloadCueState={token,elapsed:0,index:0,cues:seq.map(([f,t])=>[t*scale,f])};updateReloadCues(0)}
+function playReloadSequence(k){const seq=RELOAD_SOUNDS[k]||[['generic_reload.wav',0]],token=++reloadSfxToken,scale=W[k].rl*.85/(seq[seq.length-1][1]||1000);reloadCueState={token,elapsed:0,index:0,cues:seq.map(([f,t])=>[t*scale,WeaponImport.audioRoute(k,f)])};updateReloadCues(0)}
 function updateReloadCues(dt){const c=reloadCueState;if(!c)return;if(c.token!==reloadSfxToken||!reloading){reloadCueState=null;return}c.elapsed+=dt;while(c.index<c.cues.length&&c.cues[c.index][0]<=c.elapsed+1e-8){playOriginalSound(c.cues[c.index++][1],.26,.12,1000,1)}if(c.index===c.cues.length)reloadCueState=null}
 /* TEXTURES */
 function tex(c1,c2,rep){const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');x.fillStyle=c1;x.fillRect(0,0,64,64);x.fillStyle=c2;x.fillRect(0,0,64,3);x.fillRect(0,0,3,64);x.fillRect(61,0,3,64);x.fillRect(0,61,64,3);const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;t.magFilter=THREE.NearestFilter;if(rep){t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep)}return t}
@@ -255,23 +261,24 @@ function ensureWeaponAsset(asset){
   // Emergency visual rollback for a device that cannot render native MDL:
   // append ?mdlLegacy=1 to the game URL. No setting/save data is changed.
   const legacyMDL=typeof location!=='undefined'&&new URLSearchParams(location.search).get('mdlLegacy')==='1';
-  if(!legacyMDL&&typeof GoldSrcMDL10!=='undefined'&&GoldSrcMDL10.sourceName(asset)){
+  result=await WeaponImport.modelFor(asset,THREE);
+  if(!result&&!legacyMDL&&typeof GoldSrcMDL10!=='undefined'&&GoldSrcMDL10.sourceName(asset)){
    try{result=await GoldSrcMDL10.load(asset,THREE)}
    catch(error){console.warn('Native GoldSrc viewmodel fallback:',asset,error)}
-  }else if(typeof GoldSrcMDL10!=='undefined')GoldSrcMDL10.fallback(asset,legacyMDL?'User selected legacy GLB via mdlLegacy=1':'No matching combined native MDL');
+  }else if(!result&&typeof GoldSrcMDL10!=='undefined')GoldSrcMDL10.fallback(asset,legacyMDL?'User selected legacy GLB via mdlLegacy=1':'No matching combined native MDL');
   if(!result)result=await loadMatchModel('assets/models/weapons/'+asset+'.glb');
   weaponModels[asset]=result;return result;
  })().catch(err=>{console.warn('Weapon model failed to load:',asset,err);throw err}).finally(()=>{delete weaponModelLoads[asset]});
  return weaponModelLoads[asset];
 }
-async function preloadViewmodels(){
+async function preloadViewmodels(updateProgress=true){
  // Startup needs only the equipped loadout, knife and plant/throw props.
  // Purchased weapons, bots viewed in spectator and shield variants are lazy.
  const assets=['usp','glock18','knife','c4','hegrenade'];
  let done=0;
  await waitForLoadTasks(assets.map(async id=>{
   await ensureWeaponAsset(id);
-  $('loadStatus').textContent='Memuat model senjata '+(++done)+' / '+assets.length+'…';
+  if(updateProgress)$('loadStatus').textContent='Memuat model senjata '+(++done)+' / '+assets.length+'…';
  }));
 }
 function weaponSequenceNames(state,predicate){return state.clipNames.filter(n=>predicate(n.replace(/__\d+$/,'').toLowerCase()));}
@@ -296,7 +303,7 @@ function updateWeaponCues(state,dt){
  const progress=Math.min(1,(action.time+dt*action.getEffectiveTimeScale())/Math.max(.001,action.getClip().duration));
  while(state.nextSoundCue<state.soundCues.length&&state.soundCues[state.nextSoundCue][0]<=progress){
   const [,file]=state.soundCues[state.nextSoundCue++];
-  playOriginalSound(file,.26,.08,1250,1);
+  playOriginalSound(WeaponImport.audioRoute(vm?.userData.viewAsset||cur(),vm?.userData.viewAsset==='m3'&&state.activeName==='draw'?'m3_draw.wav':file),.26,.08,1250,1);
  }
 }
 function playWeaponAnimation(kind, timing=0, outcome='miss'){
@@ -381,7 +388,7 @@ function mkGun(k){
  g.userData.flash=flash;weaponInstances[asset]=g;if(k==='shield')weaponInstances.shield=g;return g;
 }
 function refreshWeaponChips(){
- const box=$('chips');box.innerHTML='';const choices=Phase14C.allowedIndices(inventory,W);choices.forEach((i,slot)=>{const k=inventory[i],d=document.createElement('div');d.className='chip'+(i===wi?' on':'');d.dataset.index=String(i);d.textContent=(slot+1)+' '+(k==='shield'?W[Phase14C.pistol(inventory)||'usp'].n+' + SHIELD':W[k].n);d.addEventListener('pointerdown',e=>{e.stopPropagation();setW(i)});GoldSrcSprites.chip(d,k,i===wi);box.appendChild(d)});const c4=document.createElement('button');c4.id='c4Chip';c4.type='button';c4.className='chip c4-chip'+(BombMode.hasHumanC4?.()?'':' hidden');c4.setAttribute('aria-label','Equip C4');c4.textContent='C4';c4.addEventListener('pointerdown',e=>{e.stopPropagation();BombMode.selectC4?.()});GoldSrcSprites.chip(c4,'c4',false);if(!c4.querySelector('img')){const icon=document.createElement('img');icon.className='goldsrc-slot';icon.src='assets/ui/icons/c4.png';icon.alt='';c4.prepend(icon);}box.appendChild(c4);
+ const box=$('chips');box.innerHTML='';const choices=Phase14C.allowedIndices(inventory,W);choices.forEach((i,slot)=>{const k=inventory[i],d=document.createElement('div');d.className='chip'+(i===wi?' on':'');d.dataset.index=String(i); d.textContent=(slot+1)+' '+(k==='shield'?W[Phase14C.pistol(inventory)||'usp'].n+' + SHIELD':(WeaponImport.active(k)?.name||W[k].n));d.addEventListener('pointerdown',e=>{e.stopPropagation();setW(i)});GoldSrcSprites.chip(d,k,i===wi);box.appendChild(d)});const c4=document.createElement('button');c4.id='c4Chip';c4.type='button';c4.className='chip c4-chip'+(BombMode.hasHumanC4?.()?'':' hidden');c4.setAttribute('aria-label','Equip C4');c4.textContent='C4';c4.addEventListener('pointerdown',e=>{e.stopPropagation();BombMode.selectC4?.()});GoldSrcSprites.chip(c4,'c4',false);if(!c4.querySelector('img')){const icon=document.createElement('img');icon.className='goldsrc-slot';icon.src='assets/ui/icons/c4.png';icon.alt='';c4.prepend(icon);}box.appendChild(c4);
 }
 function setW(i){
  if(BombMode.locked()||!inventory.length||!viewScene)return false;
@@ -412,6 +419,19 @@ function setW(i){
  viewScene.add(vm);syncAim();refreshWeaponChips();hud();
  return true;
 }
+// Cosmetic imports are isolated from W/Combat12; only rendered models and sound cache are invalidated.
+document.addEventListener('blockstrike:weapon-skin-change',event=>{
+ const asset=event.detail?.id;if(!asset)return;
+ delete weaponModels[asset];delete weaponModelLoads[asset];
+ const instance=weaponInstances[asset];if(instance){if(instance!==vm)instance.userData.weaponAnimation?.mixer.stopAllAction();delete weaponInstances[asset]}
+ for(const key of Object.keys(originalAudio))if(key.startsWith('skin:'+asset+':'))delete originalAudio[key];
+ const selection=cur(),active=weaponAssetName(selection);
+ if(running&&viewScene&&vm&&active===asset){
+  const old=vm;old.userData.weaponAnimation?.mixer.stopAllAction();viewScene.remove(old);vm=null;
+  ensureWeaponAsset(asset).then(()=>{if(running&&cur()===selection)setW(wi)}).catch(err=>{console.warn('Cannot apply imported viewmodel:',err);if(running&&cur()===selection){vm=old;viewScene.add(old)}});
+ }
+ refreshWeaponChips();hudAmmoMarkup=null;if(running)hud();
+});
 /* MODEL LOADING (CT) */
 let loadedClassicCharacterMode=null;
 function classicCharacterMode(){try{return localStorage.getItem('block-strike-classic-characters')!=='off'}catch(e){return true}}
@@ -897,11 +917,12 @@ function humanHitShape(crouch,col=window.bspCol){
  const sh=Math.min(52*unit,height),shield=['shield',26.7*unit,sh,8*unit,0,bottom+height*.62,-width*.47];
  return {boxes,shield,chestY:boxes[3][5]};
 }
-function botTraceBullet(shooter,origin,dir,range,layers=0,travelled=0){
+function botTraceBullet(shooter,origin,dir,range,layers=0,travelled=0,ignored=new Set(),bodyBudget=Combat12.penetrationLayers(shooter.weaponId)){
  ray.set(origin,dir);ray.far=range;
  const wall=ray.intersectObjects(obsM)[0];let limit=wall?.distance??range,hit=null;
  const trace=new THREE.Ray(),box=new THREE.Box3(),point=V();
  const test=(pos,yaw,crouch,team,bot,isP)=>{
+  if(ignored.has(isP?P:bot))return;
   const dx=pos.x-origin.x,dz=pos.z-origin.z;
   if(dx*dx+dz*dz>(limit+2)**2)return;
   const center=pos.clone().add(V(0,1+botBoxOffset('chest',crouch),0));
@@ -931,13 +952,23 @@ function botTraceBullet(shooter,origin,dir,range,layers=0,travelled=0){
  if(P.hp>0)test(P.pos,P.yaw,!!Phase9.crouching,playerTeam,null,true);
  for(const b of bots)if(b!==shooter&&!b.dead)test(b.g.position,b.g.rotation.y,!!b.crouching,b.team,b,false);
  if(hit&&window.bspCol?.pointClip&&BSP.pointLineBlocked(window.bspCol,origin,hit.point))hit=null;
+ if(hit){
+  const chain=[hit],pass=hit.part!=='shield'&&hit.team!==shooter.team&&Combat12.bodyPass(shooter.weaponId,bodyBudget);
+  if(pass&&range-hit.distance>.2){
+   const step=Math.min(.12,range-hit.distance-.01),nextOrigin=hit.point.clone().addScaledVector(dir,step);
+   const nextIgnored=new Set(ignored);nextIgnored.add(hit.isP?P:hit.bot);
+   const next=botTraceBullet(shooter,nextOrigin,dir,(range-hit.distance-step)*pass.remainingFactor,layers,travelled+hit.distance+step,nextIgnored,bodyBudget-1);
+   for(const other of next.hits||[]){chain.push({...other,distance:other.distance+hit.distance+step,damageFactor:(other.damageFactor??1)*pass.damageFactor});}
+  }
+  return {hit,hits:chain,end:hit.point,wallContact:null};
+ }
  if(!hit&&wall&&layers>0&&window.bspCol?.pointClip){
   const pass=Combat12.verifiedWallPass({col:window.bspCol,collision:BSP,hit:wall,origin,dir,range,weaponId:shooter.weaponId,entryDistance:travelled+wall.distance,obstacles:obsM,THREE});
-  if(pass){const next=botTraceBullet(shooter,pass.exit,dir,pass.remaining,layers-1,travelled+pass.travel);
-   if(next.hit){next.hit.distance+=pass.travel;next.hit.damageFactor=(next.hit.damageFactor??1)*pass.damageFactor;return {...next,wallContact:wall};}
+  if(pass){const next=botTraceBullet(shooter,pass.exit,dir,pass.remaining,layers-1,travelled+pass.travel,ignored,bodyBudget);
+   if(next.hit){const hits=(next.hits||[next.hit]).map(h=>({...h,distance:h.distance+pass.travel,damageFactor:(h.damageFactor??1)*pass.damageFactor}));return {...next,hit:hits[0],hits,wallContact:wall};}
   }
  }
- return {hit,end:hit?.point||wall?.point||origin.clone().addScaledVector(dir,range),wallContact:hit?null:wall||null};
+ return {hit,hits:[],end:wall?.point||origin.clone().addScaledVector(dir,range),wallContact:wall||null};
 }
 function botSilenced(b){return (b.weaponId==='usp'||b.weaponId==='m4a1')&&b.silenced===true;}
 function updateBotSilencer(b,order,hasEnemy){
@@ -1194,22 +1225,35 @@ function botShot(b,tg){
   const [sx,sy]=Combat12.spreadOffset(b.weaponId,spread,rnd);
   const dir=aim.clone().addScaledVector(right,sx).addScaledVector(up,sy).normalize();
   if(tg.obstacle&&!BSPBreakables.active(tg.obstacle))break;
-  const {hit,end,wallContact}=botTraceBullet(b,o,dir,maxRange,tg.obstacle?0:Combat12.penetrationLayers(b.weaponId));
+  const {hit,hits,end,wallContact}=botTraceBullet(b,o,dir,maxRange,tg.obstacle?0:Combat12.penetrationLayers(b.weaponId));
   // An obstacle volley must never damage unrelated brushes or actors.
   if(tg.obstacle&&(hit||wallContact?.object?.userData?.breakable!==tg.obstacle)){if(n===0)tracer(o,end,b.team==='CT'?0x66aaff:0xffcc55);continue;}
-  if(wallContact)BSPBreakables.hit(wallContact.object,Combat12.rangeDamage(b.weaponId,raw,wallContact.distance,{silenced,scale}),wallContact.point);
+  const glassBroken=wallContact&&BSPBreakables.hit(wallContact.object,Combat12.rangeDamage(b.weaponId,raw,wallContact.distance,{silenced,scale}),wallContact.point);
   if(wallContact&&typeof Phase13!=='undefined')Phase13.wallHit?.(wallContact,dir,o);
   if(n===0)tracer(o,end,b.team==='CT'?0x66aaff:0xffcc55);
-  if(!hit||hit.team===b.team)continue;
-  if(hit.part==='shield'){if(hit.isP)Phase9.shieldImpact();else playOriginalSound('ric_metal-1.wav',.17);continue;}
-  if(pellets>1){const victim=hit.isP?P:hit.bot;if(!volley.has(victim))volley.set(victim,[]);volley.get(victim).push({raw,part:hit.part,distance:hit.distance,point:hit.point});}
-  else if(hit.isP)hurt(raw*(hit.damageFactor??1),b.g.position,'bullet',b,hit.part,b.weaponId,hit.distance);
-  else damageBot(hit.bot,raw*(hit.damageFactor??1),hit.part,hit.point,false,b,b.weaponId,hit.distance,'bullet',null,o);
+  let impacts=hits||[];
+  // Breaking a shootable glass brush does not consume the whole AWP shot.
+  // Start a fresh trace only if that brush was actually destroyed.
+  if(glassBroken&&Combat12.penetrationLayers(b.weaponId)>0){
+   const advance=scale*.5,remaining=maxRange-wallContact.distance-advance;
+   if(remaining>0){
+    const behind=botTraceBullet(b,wallContact.point.clone().addScaledVector(dir,advance),dir,remaining,Combat12.penetrationLayers(b.weaponId)-1);
+    impacts=[...impacts,...(behind.hits||[]).map(h=>({...h,distance:h.distance+wallContact.distance+advance,damageFactor:(h.damageFactor??1)*.8}))];
+   }
+  }
+  for(const impact of impacts){
+   if(impact.team===b.team)break;
+   if(impact.part==='shield'){if(impact.isP)Phase9.shieldImpact();else playOriginalSound('ric_metal-1.wav',.17);break;}
+   const hitRaw=raw*(impact.damageFactor??1);
+   if(pellets>1){const victim=impact.isP?P:impact.bot;if(!volley.has(victim))volley.set(victim,[]);volley.get(victim).push({raw:hitRaw,part:impact.part,distance:impact.distance,point:impact.point});}
+   else if(impact.isP)hurt(hitRaw,b.g.position,'bullet',b,impact.part,b.weaponId,impact.distance);
+   else damageBot(impact.bot,hitRaw,impact.part,impact.point,false,b,b.weaponId,impact.distance,'bullet',null,o);
+  }
  }
  for(const [victim,hits] of volley){const first=hits[0];if(victim===P)hurt(raw,b.g.position,'bullet',b,first.part,b.weaponId,first.distance,hits);else damageBot(victim,raw,first.part,first.point,false,b,b.weaponId,first.distance,'bullet',hits,o);}
  b.combatRecoil=Combat12.fireRecoil(b.combatRecoil,b.weaponId,{moving:(b.lastMoveSpeed||0)>1*scale,crouch:!!b.crouching,air:b.onGround===false,random:rnd()});
  const sound=b.weaponId==='usp'?(silenced?'usp1.wav':'usp_unsil-1.wav'):b.weaponId==='m4a1'?(silenced?'m4a1-1.wav':'m4a1_unsil-1.wav'):w.sound;
- const audio=botShotAudio(b.g.position);playOriginalSound(sound,audio.volume*(silenced?.65:1),.15,1400,0,audio.pan);
+ const audio=botShotAudio(b.g.position); playOriginalSound(WeaponImport.audioRoute(b.weaponId,sound),audio.volume*(silenced?.65:1),.15,1400,0,audio.pan);
  if(b.weaponId==='elite')b.dualVisualSide=!b.dualVisualSide;
  playBotAction(b,'shoot',b.weaponId,Math.min(b.cd,.30));
  Phase10.soundEvent(b.team,b.g.position,'shot',silenced?.7:1.6);Phase10.muzzleBot(b);b.lastShot={sound,damage:raw,at:performance.now(),cooldown:b.cd};
@@ -1304,7 +1348,7 @@ function shoot(knifeAction='slash',burstContinuation=false){
  }
  if(!burstContinuation)cool=Combat12.fireInterval(k,aiming);
  if(k==='knife'){
-  const stab=knifeAction==='stab'||vm?.userData.viewAsset==='shield_knife';kick=1.5;
+  const stab=knifeAction==='stab';kick=1.5;
   const hit=knifeTrace(stab),outcome=hit?.object.userData.bot?'body':hit?'wall':'miss';
   const now=performance.now()/1000,firstSlash=P.lastKnifeAt==null||now-P.lastKnifeAt>.8;P.lastKnifeAt=now;
   cool=stab?(hit?1.1:1):vm?.userData.viewAsset==='shield_knife'?1:hit?.4:.35;
@@ -1333,10 +1377,57 @@ function shoot(knifeAction='slash',burstContinuation=false){
  tracer(cam.position.clone().add(cam.getWorldDirection(V()).multiplyScalar(.6)),end,0xfff0a0);
  // One sound per actual projectile, including partial bursts. A baked
  // three-shot recording would keep firing after a cancelled/short burst.
- playOriginalSound(Phase9.firingSound(k,{burst:false,shield:display==='shield'}),.5,k==='awp'?.25:.15,k==='usp'||k==='glock18'?2500:1800,1);
- // Shotguns resolve multiple independent pellet rays, each stopped by the closest world/character hit.
+  playOriginalSound(WeaponImport.audioRoute(display==='shield'&&WeaponImport.active(weaponAssetName('shield'))?weaponAssetName('shield'):k,Phase9.firingSound(k,{burst:false,shield:display==='shield'})),.5,k==='awp'?.25:.15,k==='usp'||k==='glock18'?2500:1800,1);
+ // Solid contacts and shield always stop the shot unless a conservative
+ // verified world exit exists. Breakable glass may be destroyed mid-shot,
+ // and each character is damaged at most once even with overlapping hitboxes.
+ function tracePenetratingRound(shotDir){
+  const col=window.bspCol,scale=col?.T.k||.02,alreadyHit=new Set();
+  let point=cam.position.clone(),remaining=maxRange,power=1,budget=Combat12.penetrationLayers(k);
+  const damage=Combat12.baseDamage(k,{silenced,burst:k==='famas'&&burstMode});
+  for(let iteration=0;iteration<9&&remaining>.01&&power>.06;iteration++){
+   const available=allTargets.filter(o=>o.visible!==false&&!o.userData?.breakable?.entry?.destroyed&&!alreadyHit.has(o.userData?.bot));
+   ray.set(point,shotDir);ray.far=remaining;
+   const impact=ray.intersectObjects(available)[0];if(!impact)break;
+   const travelled=cam.position.distanceTo(impact.point);
+   if(impact.object.userData.bot){
+    if(col?.pointClip&&BSP.pointLineBlocked(col,point,impact.point.clone().addScaledVector(shotDir,-Math.min(scale*.25,impact.distance*.5))))break;
+    const victim=impact.object.userData.bot;
+    if(impact.object.userData.part==='shield'){playOriginalSound('ric_metal-1.wav',.17);break;}
+    damageBot(victim,damage*power,impact.object.userData.part,impact.point,true,null,k,travelled);
+    alreadyHit.add(victim);
+    const pass=Combat12.bodyPass(k,budget);if(!pass)break;
+    budget--;power*=pass.damageFactor;
+    const advance=Math.min(scale*.5,Math.max(.005,remaining-impact.distance-.001));
+    point=impact.point.clone().addScaledVector(shotDir,advance);
+    remaining=(remaining-impact.distance-advance)*pass.remainingFactor;
+    continue;
+   }
+   Phase13.wallHit?.(impact,shotDir,point);
+   const destroyed=BSPBreakables.hit(impact.object,Combat12.rangeDamage(k,damage*power,travelled,{silenced,scale}),impact.point);
+   if(destroyed){
+    // This is now visually and physically absent from the ray list. Only
+    // penetrating weapons continue, with the remaining energy reduced.
+    if(budget<=0)break;
+    budget--;power*=.8;
+    const advance=Math.min(scale*.5,Math.max(.005,remaining-impact.distance-.001));
+    point=impact.point.clone().addScaledVector(shotDir,advance);remaining-=impact.distance+advance;
+    continue;
+   }
+   if(!impact.object.userData?.worldSurface||budget<=0)break;
+   if(!GoldSrcSprites.play(S,'fast_wallpuff1',impact.point.clone().addScaledVector(shotDir,-.04),{scale:.008,fps:45}))burst(impact.point,0xe0c090,3);
+   const material=Combat12.materialType(impact.object.userData.textureName);const metal=['M','V','G'].includes(material);
+   playWorldSound('ric_'+(metal?'metal':'conc')+'-1.wav',impact.point,.10,.08,1300);
+   const pass=Combat12.verifiedWallPass({col,collision:BSP,hit:impact,origin:point,dir:shotDir,range:remaining,weaponId:k,entryDistance:travelled,obstacles:obsM,THREE});
+   if(!pass)break;
+   power*=pass.damageFactor;budget--;
+   point=pass.exit;remaining=pass.remaining;
+  }
+ }
+ // Shotguns continue to use per-pellet rays; one bullet uses the shared impact chain.
  const pellets=Combat12.TABLE[k]?.pellets||1,volley=new Map();
- for(let n=0;n<pellets;n++){
+ if(pellets===1)tracePenetratingRound(dir);
+ else for(let n=0;n<pellets;n++){
   const shotDir=n===0?dir:spreadRay();
   ray.set(cam.position,shotDir);ray.far=maxRange;
   const hit=n===0?h:ray.intersectObjects(allTargets)[0];
@@ -1438,7 +1529,7 @@ function hud(){
  const k=cur()==='shield'?Phase9.shieldPistol():cur(),st=A[k],enemyTeam=playerTeam==='CT'?'T':'CT',alive=bots.filter(b=>!b.dead&&b.team===enemyTeam).length;
  $('top').textContent='RONDE '+round+'  |  CT '+(bots.filter(b=>b.team==='CT'&&!b.dead).length+(playerTeam==='CT'&&P.hp>0?1:0))+'  |  T '+(bots.filter(b=>b.team==='T'&&!b.dead).length+(playerTeam==='T'&&P.hp>0?1:0))+'  |  KILL '+kills;
  $('hpt').textContent=Math.ceil(P.hp);$('hpf').style.width=P.hp+'%';$('hpf').style.background=P.hp>50?'#4f4':P.hp>25?'#fc3':'#f44';
- const ammoMarkup=BombMode.selected?.()?'<small>C4</small>':(k==='knife'?'':reloading?'<b class="rl">RELOAD</b>':'<b>'+st.mag+'</b><i>/'+st.res+'</i>')+'<small>'+W[k].n+'</small>';
+ const ammoMarkup=BombMode.selected?.()?'<small>C4</small>':(k==='knife'?'':reloading?'<b class="rl">RELOAD</b>':'<b>'+st.mag+'</b><i>/'+st.res+'</i>')+'<small>'+(WeaponImport.active(k)?.name||W[k].n)+'</small>';
  if(hudAmmoMarkup!==ammoMarkup){$('ammo').innerHTML=ammoMarkup;hudAmmoMarkup=ammoMarkup;}
  if(sbOpen)renderScoreboard();
  $('economy').textContent='$'+money;$('roundclock').textContent=freezeLeft>0?'FREEZE '+Math.ceil(freezeLeft):BombMode.planted()?'BOMB LIVE':buyTime>0?'BUY '+Math.ceil(buyTime):Math.ceil(roundTime)+'s';$('armor').textContent='ARMOR '+Math.ceil(armor)+(helmet?' · HELMET':'');Phase9.updateHud();BombMode.hud();GoldSrcSprites.hud(BombMode.selected?.()?'c4':k,helmet,armor>0);GoldSrcSprites.equipment(grenades);
@@ -1703,6 +1794,10 @@ async function beginMatch(){
   if(AC?.state==='suspended'||AC?.state==='interrupted')try{AC.resume()?.catch?.(()=>{})}catch(_){}
   loadOriginalSounds();
   RuntimeHealth.stage?.('startup sprites');await GoldSrcSprites.ready();
+  // Prefetch only the five equipped/throw props while BSP and GRAPH are read.
+  // Handle rejection immediately in case map compilation fails first.
+  const viewmodelWarmup=preloadViewmodels(false);
+  viewmodelWarmup.catch(()=>{});
   RuntimeHealth.stage?.('startup map');if(selectedMapId.startsWith('builtin:')||selectedMapId.startsWith('saved:')){
    $('loadStatus').textContent='Memeriksa navigasi peta…';
    const isBundled=selectedMapId.startsWith('builtin:');
@@ -1715,7 +1810,7 @@ async function beginMatch(){
   }else{
    const r=await fetch('assets/maps/'+selectedMapId+'.json');if(!r.ok)throw new Error('Map tidak ditemukan');activeMapData=await r.json();
   }
-  RuntimeHealth.stage?.('startup models');await waitForLoadTasks([new Promise(ok=>preloadCT(ok)),preloadViewmodels(),GrenadeFX15B.preload(),...BOT_POOLS.CT.concat(BOT_POOLS.T).map(loadHeld),loadHeld('shield').catch(()=>null)]);
+  RuntimeHealth.stage?.('startup models');await waitForLoadTasks([new Promise(ok=>preloadCT(ok)),viewmodelWarmup,GrenadeFX15B.preload(),...BOT_POOLS.CT.concat(BOT_POOLS.T).map(loadHeld),loadHeld('shield').catch(()=>null)]);
   if(activeMapData.local?.mode==='bomb'){
    await ensureWeaponModel('c4');
    await waitForLoadTasks([Phase9.loadWorldModel('c4'),Phase9.loadWorldModel('backpack'),Phase9.loadWorldModel('thighpack'),loadCharacterEquipment('bomb-carrier'),loadCharacterEquipment('defuse-kit'),loadHeld('c4').catch(()=>null)]);
@@ -1863,16 +1958,24 @@ function suspendGameplayInput(){
 }
 let inputSuspended=false;
 function resumeGameplayInput(time=performance.now(),force=false){
- if(document.hidden||(!inputSuspended&&!force))return false;
- // Release all owned pointers again before the first fresh gesture; keep match/menu/layout state.
- resetInputs();P.jumpHeld=false;inputSuspended=false;t0=time;if(typeof FrameLimiter!=='undefined')FrameLimiter.reset();
+ if(document.hidden)return false;
+ // Focus/pageshow/visibilitychange can arrive in any order on iOS. A second
+ // resume must not cancel pointers acquired after the first resume.
+ const wasSuspended=inputSuspended;
+ if(!wasSuspended&&!force)return false;
+ if(wasSuspended){resetInputs();P.jumpHeld=false;inputSuspended=false;}
+ t0=time;if(typeof FrameLimiter!=='undefined')FrameLimiter.reset();
  if(R&&cam&&viewCamera)resizeGameViewport();
  return true;
 }
 for(const type of ['blur','pagehide'])addEventListener(type,suspendGameplayInput);
 addEventListener('focus',()=>resumeGameplayInput());
 addEventListener('pageshow',e=>resumeGameplayInput(performance.now(),!!e.persisted));
-addEventListener('orientationchange',()=>{if(!document.hidden)resumeGameplayInput(performance.now(),true)});
+addEventListener('orientationchange',()=>{
+ // Rotation only changes viewport geometry. Do not cancel a new touch when
+ // WebKit sends this event after focus and after the player's first gesture.
+ if(!document.hidden&&R&&cam&&viewCamera)resizeGameViewport();
+});
 document.addEventListener('freeze',suspendGameplayInput);
 document.addEventListener('resume',()=>resumeGameplayInput());
 document.addEventListener('visibilitychange',()=>{if(document.hidden)suspendGameplayInput();else resumeGameplayInput()});
@@ -1885,5 +1988,6 @@ function recoverBeforeInput(e){
  if(e.isTrusted!==false&&AC&&(AC.state==='suspended'||AC.state==='interrupted'))AC.resume().catch(()=>{});
 }
 for(const type of ['pointerdown','keydown','touchstart'])addEventListener(type,recoverBeforeInput,{capture:true,passive:true});
-addEventListener('touchcancel',e=>{if(e.touches.length===0)resetInputs()},{capture:true,passive:true});
+// Per-control touchcancel handlers release only the cancelled pointer. A
+// global reset here can eat an unrelated fresh finger on iOS app resume.
 requestAnimationFrame(loop);

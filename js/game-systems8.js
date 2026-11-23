@@ -3,8 +3,12 @@ const heldModels={},heldLoads={},equipmentLoads={};
 const BOT_POOLS={CT:['m4a1','aug','mp5','usp','awp','famas','p90'],T:['ak47','galil','mac10','glock18','scout','elite','mp5']};
 function loadHeld(id){
  if(heldModels[id])return Promise.resolve(heldModels[id]);
- return heldLoads[id]||(heldLoads[id]=loadMatchModel('assets/models/held/'+id+'.glb').then(g=>{heldModels[id]=g;return g}).catch(e=>{delete heldLoads[id];throw e}));
+ return heldLoads[id]||(heldLoads[id]=(async()=>{
+  const custom=await WeaponImport.modelFor(id,THREE,'held');
+  return custom||await loadMatchModel('assets/models/held/'+id+'.glb');
+ })().then(g=>{heldModels[id]=g;return g}).catch(e=>{delete heldLoads[id];throw e}));
 }
+document.addEventListener('blockstrike:weapon-skin-change',event=>{const id=event.detail?.id;if(id){delete heldModels[id];delete heldLoads[id]}});
 // Attach rigid GoldSrc bone-local geometry, not the source scene/root.
 function botBone(body,name){return name&&(body?.getObjectByName(name)||body?.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name)))}
 function attachHeldMeshes(b,g,accept=()=>true){
@@ -37,7 +41,8 @@ function equipBot(b,i,preferredId=null){
   accuracy:Math.min(.72,Math.max(.10,Math.max(.35,.62-w.sp*5)*(b.skill?.aim||1))),sound:w.sound,ammo:w.mag,reserve:w.res,burst:0,silenced:false,combatRecoil:null,reloadStage:null,reloadLeft:0});
  loadHeld(id).then(g=>{
   if(!b.g.parent||b.dead||!b.body||b.weaponLoadToken!==token)return;
-  b.weaponModel=attachHeldMeshes(b,g);
+  if(g.nativeMdl){const model=THREE.SkeletonUtils.clone(g.scene);b.g.add(model);b.weaponModel=[model]}
+  else b.weaponModel=attachHeldMeshes(b,g);
   if(b.hasBotShield&&w.slot==='pistol'&&id!=='elite'&&heldModels.shield&&b.nativeHitboxes){
    const shield=attachHeldMeshes(b,heldModels.shield,o=>o.userData.attachBone==='Bip01 L Hand');
    b.weaponModel.push(...shield);b.shieldReady=shield.length>0;
@@ -98,7 +103,7 @@ function resetInputs(){
  resetPadPointers();document.dispatchEvent(new Event('blockstrike:reset-controls'));if(typeof Phase9!=='undefined')Phase9.releaseControls();
 }
 function requestLock(){try{const p=$('pad').requestPointerLock?.();p?.catch?.(()=>{})}catch(e){}}
-function inputBlocked(){return document.hidden||!running||RuntimeHealth.blocked()||!$('buyMenu').classList.contains('hidden')||!$('menu').classList.contains('hidden')||(typeof Phase13!=='undefined'&&(Phase13.isSpectating()||Phase13.visibleOverlay()))}
+function inputBlocked(){return document.hidden||!running||RuntimeHealth.blocked()||!$('buyMenu').classList.contains('hidden')||!$('menu').classList.contains('hidden')||!$('weaponImportScreen').classList.contains('hidden')||(typeof Phase13!=='undefined'&&(Phase13.isSpectating()||Phase13.visibleOverlay()))}
 function syncAim(){
  GoldSrcSprites.scope(cur());
  const sniper=aiming&&['awp','scout','g3sg1','sg550'].includes(cur());
@@ -119,7 +124,7 @@ function shotgunPhase(phase){
  const duration=phase==='start'?.55:phase==='insert'?(key==='m3'?.45:.30):clipDuration(name,.3);
  shotgunReload.phase=phase;shotgunReload.time=Math.max(.1,duration);
  if(state){state.queue=[];state.currentKind='idle';if(playWeaponClip(state,name,false))state.activeAction.setEffectiveTimeScale(state.activeAction.getClip().duration/shotgunReload.time)}
- if(phase==='insert'&&!state?.soundCues?.length)playOriginalSound('m3_insertshell.wav',.25);
+ if(phase==='insert'&&!state?.soundCues?.length)playOriginalSound(WeaponImport.audioRoute(key,'m3_insertshell.wav'),.25);
 }
 function updateReload(dt){
  if(shotgunReload){
@@ -134,7 +139,11 @@ function updateReload(dt){
  if(reloading>0){reloading-=dt;if(reloading<=0){reloading=0;const key=cur()==='shield'?Phase9.shieldPistol():cur(),st=A[key],n=Math.max(0,Math.min(W[key].mag-st.mag,st.res));st.mag+=n;st.res-=n;hud()}}
 }
 function pauseToMenu(){LocalMapMedia.pauseAmbient?.();WeaponModes15C.cancel();Phase10.closeRadio();Phase10.resetVoices();resetWeaponVoices();CS16SFX.reset?.();running=false;reloadSfxToken++;resetInputs();aiming=false;syncAim();$('buyMenu').classList.add('hidden');$('menu').classList.remove('hidden');document.body.classList.remove('playing');if(document.pointerLockElement)document.exitPointerLock()}
-document.addEventListener('pointerlockchange',()=>{if(!document.pointerLockElement)resetInputs()});
+let hadPointerLock=false;
+document.addEventListener('pointerlockchange',()=>{
+ if(document.pointerLockElement){hadPointerLock=true;return;}
+ if(hadPointerLock){hadPointerLock=false;resetInputs();}
+});
 
 function disposeFallback(g){if(g&&!g.userData.weaponAnimation)g.traverse(o=>{o.geometry?.dispose();[].concat(o.material||[]).forEach(m=>m.dispose())})}
 

@@ -139,7 +139,13 @@ const Phase10=(()=>{
   const rec=roster.find(r=>r.bot===b);
   if(!rec||!rec.alive)return;
   if(rec&&rec.alive){rec.alive=false;rec.deaths++;if(b.team==='CT'&&b.defuseKit)Phase9.dropDefuseKit?.(b.g.position.clone(),!!b.crouching);b.defuseKit=false;const st=statCache.get(rec.id)||{};Object.assign(st,{kills:rec.kills,deaths:rec.deaths,money:b.money,armor:0,helmet:false,defuseKit:false,loadout:null});statCache.set(rec.id,st)}
-  if(killer&&killer!==b&&killer.botId&&killer.team===b.team)creditBot(killer,-3300,'TEAMKILL');
+  if(killer&&killer!==b&&killer.botId&&killer.team===b.team){
+   // Team-kills must cost the bot a frag as well as the $3300 fine,
+   // just as the existing human team-kill path does.
+   const k=roster.find(r=>r.bot===killer);
+   if(k){k.kills--;const st=statCache.get(k.id)||{};st.kills=k.kills;statCache.set(k.id,st)}
+   creditBot(killer,-3300,'TEAMKILL');
+  }
   if(killer&&killer!==b&&killer.botId&&killer.team!==b.team){
    const k=roster.find(r=>r.bot===killer);if(k){k.kills++;const st=statCache.get(k.id)||{};st.kills=k.kills;statCache.set(k.id,st);creditBot(killer,300,'KILL')}
   }
@@ -149,7 +155,12 @@ const Phase10=(()=>{
   }
   if(sbOpen)renderScoreboard();
  }
- function onPlayerDeath(killer){Phase9.dropPlayerOnDeath?.();if(killer?.botId&&killer.team===playerTeam)creditBot(killer,-3300,'TEAMKILL');
+ function onPlayerDeath(killer){Phase9.dropPlayerOnDeath?.();
+  if(killer?.botId&&killer.team===playerTeam){
+   const rec=roster.find(r=>r.bot===killer);
+   if(rec){rec.kills--;const st=statCache.get(rec.id)||{};st.kills=rec.kills;statCache.set(rec.id,st)}
+   creditBot(killer,-3300,'TEAMKILL');
+  }
   if(playerTeam==='CT'&&defuseKit){Phase9.dropDefuseKit?.(P.pos.clone(),Phase9.crouching);defuseKit=false;}
   playerDeaths++;
   if(killer?.botId&&killer.team!==playerTeam){
@@ -611,7 +622,7 @@ const Phase10=(()=>{
  function roundEnd(winner,payout=null,timedOut=false,reason=''){
   if(roundWinner||!['CT','T'].includes(winner))return;
   roundWinner=winner;
-  payout=Economy45.payout(winner,!BombMode.active()?'ELIMINATION':reason,lossStreak,reason==='BOMB DEFUSED');lossStreak=Economy45.nextStreak(winner,lossStreak);
+  payout=payout||Economy45.payout(winner,reason||'ELIMINATION',lossStreak,reason==='BOMB DEFUSED');lossStreak=Economy45.nextStreak(winner,lossStreak);
   if(!(timedOut&&playerTeam==='T'&&P.hp>0))money=Economy45.clampMoney(money+payout[playerTeam]);
   for(const rec of roster){
    if(timedOut&&rec.team==='T'&&!rec.bot.dead)continue;

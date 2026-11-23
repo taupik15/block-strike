@@ -115,7 +115,7 @@ const GoldSrcSprites=(()=>{
  function radioTexture(){return bank('radio')?.frames[0]||null}
  function radarBomb(ctx,x,y,carrier=false){const sprite=art(carrier?['iplayerc4']:mappings.get('smallc4')||['ic4']);if(!sprite)return false;ctx.drawImage(sprite,x-6,y-6,12,12);return true}
  function chip(el,id,selected){
-  const src=url(weapon(id,selected?'weapon_s':'weapon'));
+  const src=WeaponImport.imageUrl(id)||url(weapon(id,selected?'weapon_s':'weapon'));
   if(!src)return;
   const img=document.createElement('img');img.src=src;img.alt='';img.className='goldsrc-slot';el.prepend(img);
  }

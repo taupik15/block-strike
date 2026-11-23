@@ -6,7 +6,7 @@ const BUY={pistols:['usp','glock18','p228','deagle','elite','fiveseven'],shotgun
  {id:'shield',name:'TACTICAL SHIELD',price:2200,desc:'CT only · uses primary slot'}, {id:'defuse',name:'DEFUSE KIT',price:200,desc:'CT only · defuse in 5 seconds'}, {id:'nightvision',name:'NIGHT VISION',price:1250,desc:'Penglihatan untuk area gelap'}]};
 let activeBuyTab='',playerClass='gign',playerAvatar;
 function ammoWeapon(id){return inventory.find(k=>W[k].slot===(id==='primaryAmmo'?'primary':'pistol'))}
-function getItem(id){if(typeof id!=='string'||id==='knife')return null;if(id==='primaryAmmo'||id==='secondaryAmmo'){const key=ammoWeapon(id),offer=Economy45.ammoOffer(key,A[key]?.res||0);return {id,name:id==='primaryAmmo'?'PRIMARY AMMO':'SECONDARY AMMO',price:offer?.price??0,desc:offer?`+${offer.count} rounds · ${A[key].res}/${offer.max}`:'NO WEAPON'}}if(id==='helmet')return {id,name:'VEST + HELMET',price:Combat12.armorPrice(id,armor,helmet),desc:armor>=100&&!helmet?'HELMET UPGRADE':helmet?'REFILL ARMOR':'Armor 100 + helmet'};if(Object.hasOwn(W,id))return {id,name:W[id].n,price:W[id].price,desc:id==='shield'?'CT · Perisai + pistol':' '+W[id].mag+' rounds · '+(W[id].team||'ALL TEAMS')};return Object.values(BUY).flat().find(x=>typeof x==='object'&&x.id===id)}
+function getItem(id){if(typeof id!=='string'||id==='knife')return null;if(id==='primaryAmmo'||id==='secondaryAmmo'){const key=ammoWeapon(id),offer=Economy45.ammoOffer(key,A[key]?.res||0);return {id,name:id==='primaryAmmo'?'PRIMARY AMMO':'SECONDARY AMMO',price:offer?.price??0,desc:offer?`+${offer.count} rounds · ${A[key].res}/${offer.max}`:'NO WEAPON'}}if(id==='helmet')return {id,name:'VEST + HELMET',price:Combat12.armorPrice(id,armor,helmet),desc:armor>=100&&!helmet?'HELMET UPGRADE':helmet?'REFILL ARMOR':'Armor 100 + helmet'};if(Object.hasOwn(W,id))return {id,name:WeaponImport.active(id)?.name||W[id].n,price:W[id].price,desc:id==='shield'?'CT · Perisai + pistol':' '+W[id].mag+' rounds · '+(W[id].team||'ALL TEAMS')};return Object.values(BUY).flat().find(x=>typeof x==='object'&&x.id===id)}
 function buyReason(item){
  const id=item.id,w=W[id];if(!running||P.hp<=0||Phase13.isSpectating()||roundWait>0||buyTime<=0||!inBuyZone())return 'BUY ZONE CLOSED';
  const shieldRule=Phase14C.guardPurchase(id,inventory,W,playerTeam);if(shieldRule)return shieldRule;
@@ -33,7 +33,7 @@ function renderBuyTab(tab){
   const item=getItem(typeof entry==='string'?entry:entry.id),reason=buyReason(item),b=document.createElement('button');
   b.className='buy-item';b.dataset.item=item.id;b.disabled=!!reason;
   const icon=item.id==='nightvision'?'nightvision.svg':item.id.endsWith('Ammo')?'ammo.svg':item.id==='defuse'?'defuse.png':item.id+'.png';
-  const cs16Icon=CS16VGUI.icon(item.id);
+  const cs16Icon=WeaponImport.imageUrl(item.id)||CS16VGUI.icon(item.id);
   b.innerHTML='<img class="buy-icon" src="'+(cs16Icon||'assets/ui/icons/'+icon)+'" alt="'+item.name+'"><div><strong>'+item.name+'</strong><span>'+item.desc+'</span><small>'+(reason||'BUY')+'</small></div><b>$'+item.price+'</b>';
   b.onclick=()=>purchase(item.id);box.appendChild(b);
  });

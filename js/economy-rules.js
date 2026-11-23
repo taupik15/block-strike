@@ -8,8 +8,25 @@ const Economy45=(()=>{
  function take(pool,id,remaining){const s=spec(id);if(!s||remaining.some(k=>spec(k)?.cal===s.cal))return 0;const n=pool[s.cal]||0;pool[s.cal]=0;return n}
  function ammoOffer(id,res){const s=spec(id);return s?{...s,count:Math.max(0,Math.min(s.pack,s.max-res))}:null}
  function bindBot(b,id,pool){delete b.reserve;const w=state(pool,id,b.ammo);Object.defineProperty(b,'reserve',{configurable:true,enumerable:true,get:()=>w.res,set:n=>{w.res=n}})}
- function payout(winner,reason,streak,planted=false){const loser=winner==='CT'?'T':'CT';const amounts={[winner]:reason==='BOMB EXPLODED'?3500:reason==='ELIMINATION'?3000:3250,[loser]:nextStreak(winner,streak).bonus};if(planted&&winner==='CT'&&reason==='BOMB DEFUSED')amounts.T+=800;return amounts}
- function nextStreak(winner,streak){const loser=winner==='CT'?'T':'CT';let bonus=streak.bonus??1400;if((streak[winner]||0)>1)bonus=1500;const count=(streak[loser]||0)+1;if(count>1&&bonus<3000)bonus+=500;return {[winner]:0,[loser]:count,bonus}}
+ function payout(winner,reason,streak,planted=false){
+  const loser=winner==='CT'?'T':'CT';
+  // ReGameDLL_CS gamerules.h: bombed/defused $3250, standard CT/T win $3000.
+  const objectiveWin=reason==='BOMB EXPLODED'||reason==='BOMB DEFUSED'||reason==='TIME EXPIRED';
+  // TIME EXPIRED on a bomb map is RR_TARGET_BOMB_SAVED ($3250).
+  const amounts={[winner]:objectiveWin?3250:3000,[loser]:nextStreak(winner,streak).bonus};
+  // If CT defuses, T still receives the team bomb-plant reward.
+  if(planted&&winner==='CT'&&reason==='BOMB DEFUSED')amounts.T+=800;
+  return amounts;
+ }
+ function nextStreak(winner,streak){
+  const loser=winner==='CT'?'T':'CT';
+  const count=Math.max(0,streak[loser]||0)+1;
+  let bonus=(streak[winner]||0)>1?1500:streak.bonus??1400;
+  // GoldSrc compares against $3000 *before* the $500 addition: $3400 is
+  // reachable and then capped by the threshold on subsequent losses.
+  if(count>1&&bonus<3000)bonus+=500;
+  return {[winner]:0,[loser]:count,bonus};
+ }
  // No money transfer: coordinate low-budget purchases using a prior-round snapshot.
  function teamSave(members,losses,isPrimary){return losses>=2&&members.length>=2&&members.filter(m=>!isPrimary(m.loadout?.id)&&m.money<3500).length>members.length/2;}
  function tickRound(freeze,buy,time,dt,planted,ended){if(freeze>0)return {freeze:Math.max(0,freeze-dt),buy,time};return {freeze:0,buy:Math.max(0,buy-dt),time:planted||ended?time:Math.max(0,time-dt)}}
