@@ -1,6 +1,12 @@
 /* Local Bomb Defusal uses the same round, HUD, weapon and bot entry points. */
 const BombMode=(()=>{
- const plantTime=3,interactDistance=1.65,blastRadius=12,safeRadius=13.5;
+ const plantTime=3,interactDistance=1.65;
+ // ReGameDLL_CS C4: 500 base damage; the CBaseMonster RadiusDamage overload
+ // uses a 3.5x GoldSrc-unit radius. BSP.T.k maps GoldSrc units to game units.
+ const bombScale=()=>Number.isFinite(window.bspCol?.T?.k)&&window.bspCol.T.k>0?window.bspCol.T.k:.02;
+ const blastRadius=()=>500*3.5*bombScale();
+ const safeRadius=()=>blastRadius()+1;
+ const blastDamage=distance=>Math.max(0,500*(1-distance/blastRadius()));
  let fuse=45;
  let phase='inactive',carrier=null,position=null,site=null,timer=0,beep=0;
  let action=null,held=false,model=null,view=null,serial=0,ctBombKnown=false,selected=false,dropFlight=null,holdSource=null;
@@ -31,7 +37,9 @@ const BombMode=(()=>{
   dot.scale.set(.065,.065,1);dot.position.y=.15;box.add(dot);
   Phase9.loadWorldModel(planted?'c4':'backpack').then(source=>{
    if(!source||token!==serial)return;
-   const item=source.clone(true);Phase9.orientGoldSrcWorld(item);box.add(item);
+   const item=source.native?THREE.SkeletonUtils.clone(source.scene):source.scene.clone(true);
+   if(!source.native)Phase9.orientGoldSrcWorld(item);
+   box.add(item);
    const floor=box.position.y;box.updateWorldMatrix(true,true);const bounds=new THREE.Box3().setFromObject(item);
    if(Number.isFinite(bounds.min.y)){item.position.y+=floor+.015-bounds.min.y;dot.position.y=Math.max(.06,bounds.max.y-bounds.min.y+.025);}
    dot.visible=planted;box.userData.hasModel=true;
@@ -205,7 +213,7 @@ const BombMode=(()=>{
   // legal escape position and to a point within interaction range of C4.
   if(graph){
    const reachable=graph.nodes.filter(n=>n.valid!==false&&n.edges.length);
-   const safe=reachable.filter(n=>V(...n.pos).distanceTo(position)>=safeRadius);
+   const safe=reachable.filter(n=>V(...n.pos).distanceTo(position)>=safeRadius());
    const close=reachable.filter(n=>V(...n.pos).distanceTo(position)<=interactDistance&&LocalBSPNav.walkable(graph.col,n.h,BSP.toHammer(graph.col.T,position.toArray()),100));
    if(!close.length){const node=LocalBSPNav.near(graph,position,graph.col,null,graph.teamAllowed?.CT);if(node)close.push(node)}
    escapeField=Object.fromEntries(['CT','T'].map(team=>[team,LocalBSPNav.distanceField(graph,safe.map(n=>n.id),team)]));
@@ -218,10 +226,12 @@ const BombMode=(()=>{
  }
  function explode(){
   const origin=position.clone();origin.y-=.45;
+  const fxOrigin=model?.position?.clone()||origin.clone();
   window.BSPBreakables?.bombExplode(site?.target);
   finish('T','BOMB EXPLODED');clearMarker();
   if(typeof playWorldSound==='function')playWorldSound('c4_explode1.wav',origin,.82);else playOriginalSound('c4_explode1.wav',.82);
-  GrenadeFX15B.init(S);GrenadeFX15B.burst('c4',origin);
+  GrenadeFX15B.init(S);GrenadeFX15B.burst('c4',fxOrigin);
+  GrenadeFX15B.shakeC4?.(origin,bombScale());
   // CS 1.6 C4 uses RadiusDamage's classic distance falloff rather than
   // requiring line-of-sight. A nearby wall does NOT negate the blast. Water
   // separation still applies, as in the original GoldSrc RadiusDamage path.
@@ -229,7 +239,7 @@ const BombMode=(()=>{
   const wet=!!(col?.pointClip&&BSP.pointWater(col,position));
   const damage=(point,waterLevel=0)=>{
    if(Grenade14D.waterSeparates(wet,waterLevel))return 0;
-   return Math.max(0,390*(1-point.distanceTo(origin)/blastRadius));
+   return blastDamage(point.distanceTo(origin));
   };
   for(const bot of bots)if(alive(bot)){
    const value=damage(bot.g.position,bot.waterLevel||0);
@@ -392,11 +402,11 @@ const BombMode=(()=>{
  }
  function escapeGoal(bot){
   const p=pos(bot),dist=p.distanceTo(position);
-  if(dist>=safeRadius){if(timer<=6)bot.bombEscaping=true;return bot.bombEscaping?{pos:p,radius:.5,mode:'escape-bomb',hold:true,force:true,urgent:true}:null;}
+  if(dist>=safeRadius()){if(timer<=6)bot.bombEscaping=true;return bot.bombEscaping?{pos:p,radius:.5,mode:'escape-bomb',hold:true,force:true,urgent:true}:null;}
   const info=routeInfo(bot);
   // A safe point is outside actual damage radius, plus margin. Start early
   // enough for route travel, including detours, and keep escape sticky.
-  if(!bot.bombEscaping&&(dist<safeRadius?timer<=Math.max(3.5,Number.isFinite(info.escapeTime)?info.escapeTime+3:10):timer<=6))bot.bombEscaping=true;
+  if(!bot.bombEscaping&&(dist<safeRadius()?timer<=Math.max(3.5,Number.isFinite(info.escapeTime)?info.escapeTime+3:10):timer<=6))bot.bombEscaping=true;
   if(!bot.bombEscaping)return null;
   let goal=info.escape;
   if(!goal&&graph&&!info.fallbackChecked){
