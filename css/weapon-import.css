@@ -39,3 +39,10 @@
 .mod-pack-panel select,.mod-pack-panel input{min-width:0;max-width:100%}
 .mod-pack-panel p{overflow-wrap:anywhere}
 @media(max-height:450px){.mod-pack-panel{gap:4px;padding:5px}.mod-pack-actions button{min-height:28px}}
+
+/* 22I.1: fixed header/footer; only the content scrolls on short displays. */
+#characterImportScreen,#weaponImportScreen{padding:max(4px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(4px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));overflow:hidden;touch-action:pan-y}
+#characterImportScreen .weapon-import-window,#weaponImportScreen .weapon-import-window{width:min(700px,100%);max-height:100%;overflow:hidden;min-height:0}
+#characterImportScreen .weapon-import-body,#weaponImportScreen .weapon-import-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+#characterImportScreen .weapon-import-body>*,#weaponImportScreen .weapon-import-body>*{flex-shrink:0}
+#characterImportScreen .cs-actions,#weaponImportScreen .cs-actions{flex:0 0 auto}
