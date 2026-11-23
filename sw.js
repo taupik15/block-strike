@@ -1,3 +1,4 @@
+/* AR11.10.22I.1: startup Phase9 API and import menu scroll hotfix. */
 /* AR11.10.22I-FINAL: validated cumulative release; no new gameplay changes. */
 /* AR11.10.22H: platform lifecycle, touch menus, immersive APK. */
 /* AR11.10.22G: configurable adaptive resolution, character LOD and GPU model preference. */
