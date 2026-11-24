@@ -1,4 +1,4 @@
-/* AR11.10.22I.8-DIAG: arms as 22I.6/7, bot aim as 22I.7, plus shield-visibility diagnostic on the debug chip. */
+/* AR11.10.22I.9-DIAG: diagnostic lists visible meshes on all live CT bots on the debug chip. */
 /* AR11.10.22I.3.1 CHARACTER-AI-HANDS: imported PB arms, bot held-weapon axis, auto hop and combat crouch. */
 /* AR11.10.22I.2: mod character grounding, voices and actual character previews. */
 /* AR11.10.22I.1: startup Phase9 API and import menu scroll hotfix. */
