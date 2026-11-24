@@ -13,17 +13,40 @@ document.addEventListener('blockstrike:weapon-skin-change',event=>{const id=even
 function botBone(body,name){return name&&(body?.getObjectByName(name)||body?.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name)))}
 function attachHeldMeshes(b,g,accept=()=>true){
  const meshes=[];
+ // Resolve character rig scale more reliably (PB / imported models may nest
+ // the armature differently or carry extra parent scale).
+ function rigScale(body){
+  if(!body)return .028;
+  const named=body.getObjectByName('CS16ClassicArmature')||body.getObjectByName('Armature')||body;
+  // Prefer world scale of the rig so nested parents are included.
+  const w=new THREE.Vector3();
+  named.getWorldScale(w);
+  const s=Math.abs(w.x)||Math.abs(named.scale?.x)||.028;
+  return s>1e-6?s:.028;
+ }
+ // Shield GLBs are authored larger than ordinary held weapons. Cap their
+ // final world height so PB skins (different bone scale) cannot produce the
+ // giant riot-shield bug.
+ const SHIELD_MAX_WORLD_H=48; // ~ torso height in CS units after character scale
  g.scene.traverse(o=>{if(!o.isMesh||!o.geometry?.attributes?.position||!accept(o))return;
   const bone=botBone(b.body,o.userData.attachBone);if(!bone)return;
   if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();
   const size=o.geometry.boundingBox.getSize(new THREE.Vector3());
-  const extent=Math.max(size.x,size.y,size.z)*.025;
-  if(!Number.isFinite(extent)||extent<.005||extent>1.5)return;
+  const maxDim=Math.max(size.x,size.y,size.z);
+  const isShield=/shield/i.test(String(o.name||''))||/shield/i.test(String(o.userData?.attachBone||''))||maxDim>80;
+  // Base compensation: held assets share Hammer units; character rig is ~0.028
+  const scale=rigScale(b.body);
+  let factor=.025/scale;
+  // Extra clamp for shield so imported PB characters never spawn a giant plate
+  if(isShield){
+   const worldH=maxDim*factor;
+   if(worldH>SHIELD_MAX_WORLD_H)factor*=SHIELD_MAX_WORLD_H/worldH;
+  }
+  const extent=maxDim*factor;
+  if(!Number.isFinite(extent)||extent<.005||extent>2.5)return;
   const mesh=o.clone();mesh.frustumCulled=!mesh.isSkinnedMesh;mesh.castShadow=true;
-  // Held and dropped p_/w_ assets use the same Hammer scale. The character
-  // rig is authored at .028; compensate once, about the grip's local origin.
-  const rig=b.body.getObjectByName('CS16ClassicArmature')||b.body.getObjectByName('Armature');
-  const scale=Math.abs(rig?.scale.x||.028);mesh.scale.multiplyScalar(.025/scale);
+  mesh.scale.multiplyScalar(factor);
+  mesh.userData.ownedHeldClone=true;
   if(!mesh.isSkinnedMesh){mesh.updateMatrix();mesh.matrixAutoUpdate=false;}
   bone.add(mesh);meshes.push(mesh);
  });return meshes;
@@ -46,7 +69,11 @@ function equipBot(b,i,preferredId=null){
   if(g.nativeMdl){const model=THREE.SkeletonUtils.clone(g.scene);model.userData.ownedHeldClone=true;b.g.add(model);b.weaponModel=[model]}
   else b.weaponModel=attachHeldMeshes(b,g);
   if(b.hasBotShield&&w.slot==='pistol'&&id!=='elite'&&heldModels.shield&&b.nativeHitboxes){
-   const shield=attachHeldMeshes(b,heldModels.shield,o=>o.userData.attachBone==='Bip01 L Hand');
+   // Accept common left-hand bone names used by CS and PB player models
+   const shield=attachHeldMeshes(b,heldModels.shield,o=>{
+    const bone=String(o.userData.attachBone||'');
+    return /Bip0?1\s*L(eft)?\s*Hand/i.test(bone)||bone==='Bip01 L Hand'||/L(eft)?Hand/i.test(bone);
+   });
    b.weaponModel.push(...shield);b.shieldReady=shield.length>0;
   }
   for(const m of b.weaponModel)m.visible=!b.heldOverride;
