@@ -237,18 +237,21 @@
   box.append(title,status,info,sw,toggle);document.body.appendChild(box);
   setInterval(()=>{
    status.textContent=(stats.state||'')+(stats.character?' · '+stats.character:'');info.textContent=stats.palette||'';
-   // 22I.8 diagnostic: list visible meshes that are NOT bot hitboxes on the first shield-carrying bot.
+   // 22I.9 diagnostic: list visible non-hitbox meshes on every live CT bot (no flag dependency), show errors instead of hiding them.
    try{
-    const sb=(typeof bots!=='undefined'&&Array.isArray(bots))?bots.find(b=>b&&!b.dead&&b.hasBotShield&&b.g):null;
-    if(sb){
-     const hit=new Set(sb.parts||[]);if(sb.shieldPart)hit.add(sb.shieldPart);
-     const rows=[];sb.g.traverse(o=>{if(o.isMesh&&o.visible&&!hit.has(o)&&!o.userData?.blockStrikePBArmGeometry){const par=o.parent?.name||'';rows.push((o.name||'(unnamed)')+' @'+par+(o.userData?.texName?' tex:'+o.userData.texName:'')+' v'+(o.geometry?.attributes?.position?.count||0))}});
-     info.textContent=(stats.palette||'')+'\nSHIELD BOT visible non-hitbox meshes ('+rows.length+'):\n'+rows.slice(0,6).join('\n')+(sb.shieldRaised?'\n[raised]':'\n[not raised]');
+    if(typeof bots==='undefined'||!Array.isArray(bots)){info.textContent=(stats.palette||'')+'\nDIAG: bots not visible to patch';}
+    else{
+     const lines=[];let n=0;
+     for(const sb of bots){
+      if(!sb||sb.dead||!sb.g||sb.team!=='CT')continue;n++;
+      if(lines.length>=6)continue;
+      const hit=new Set(sb.parts||[]);if(sb.shieldPart)hit.add(sb.shieldPart);
+      const rows=[];sb.g.traverse(o=>{if(o.isMesh&&o.visible&&!hit.has(o)&&!o.userData?.blockStrikePBArmGeometry){rows.push((o.name||'(unnamed)')+' @'+(o.parent?.name||'?')+(o.userData?.texName?' tex:'+o.userData.texName:'')+' v'+(o.geometry?.attributes?.position?.count||0))}});
+      lines.push('bot '+(sb.botId??'?')+' shield='+(!!sb.hasBotShield)+' raised='+(!!sb.shieldRaised)+' ['+rows.length+'] '+rows.slice(0,3).join(' | '));
+     }
+     info.textContent=(stats.palette||'')+'\nDIAG CT bots alive: '+n+'\n'+lines.join('\n');
     }
-   }catch(_){}
-   const found=activePlayerModel(),pal=found?paletteFor(found.model):null;
-   const css=c=>c?'rgb('+c.map(v=>Math.round(v)).join(',')+')':'#333';
-   if(pal){chips[0].style.background=css(pal.fore);chips[1].style.background=css(pal.skin);chips[2].style.background=css(pal.glove)}
+   }catch(e){info.textContent=(stats.palette||'')+'\nDIAG error: '+(e&&e.message||e)}
   },500);
  }
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mountDebugChip);else mountDebugChip();
