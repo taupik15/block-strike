@@ -4,7 +4,7 @@
  * forearm and hand texels. Anything missing falls back to the original CS textures. Bot combat code is unchanged. */
 (function (global) {
  'use strict';
- const VERSION='AR11.10.22I.6-CS-ARMS-PB-SKIN';
+ const VERSION='AR11.10.22I.7-CS-ARMS-PB-SKIN-BOTS';
  const stats={recolored:0,restored:0,errors:0,weaponAxes:0,autoJumps:0,autoCrouches:0,state:'init',character:'',palette:''};
  const vForward=new THREE.Vector3(1,0,0),vDesired=new THREE.Vector3(),qParent=new THREE.Quaternion(),qBaseWorld=new THREE.Quaternion(),qDelta=new THREE.Quaternion(),qWorld=new THREE.Quaternion(),qInverse=new THREE.Quaternion();
  const tmpA=new THREE.Vector3(),tmpB=new THREE.Vector3();
@@ -237,21 +237,9 @@
   box.append(title,status,info,sw,toggle);document.body.appendChild(box);
   setInterval(()=>{
    status.textContent=(stats.state||'')+(stats.character?' · '+stats.character:'');info.textContent=stats.palette||'';
-   // 22I.9 diagnostic: list visible non-hitbox meshes on every live CT bot (no flag dependency), show errors instead of hiding them.
-   try{
-    if(typeof bots==='undefined'||!Array.isArray(bots)){info.textContent=(stats.palette||'')+'\nDIAG: bots not visible to patch';}
-    else{
-     const lines=[];let n=0;
-     for(const sb of bots){
-      if(!sb||sb.dead||!sb.g||sb.team!=='CT')continue;n++;
-      if(lines.length>=6)continue;
-      const hit=new Set(sb.parts||[]);if(sb.shieldPart)hit.add(sb.shieldPart);
-      const rows=[];sb.g.traverse(o=>{if(o.isMesh&&o.visible&&!hit.has(o)&&!o.userData?.blockStrikePBArmGeometry){rows.push((o.name||'(unnamed)')+' @'+(o.parent?.name||'?')+(o.userData?.texName?' tex:'+o.userData.texName:'')+' v'+(o.geometry?.attributes?.position?.count||0))}});
-      lines.push('bot '+(sb.botId??'?')+' shield='+(!!sb.hasBotShield)+' raised='+(!!sb.shieldRaised)+' ['+rows.length+'] '+rows.slice(0,3).join(' | '));
-     }
-     info.textContent=(stats.palette||'')+'\nDIAG CT bots alive: '+n+'\n'+lines.join('\n');
-    }
-   }catch(e){info.textContent=(stats.palette||'')+'\nDIAG error: '+(e&&e.message||e)}
+   const found=activePlayerModel(),pal=found?paletteFor(found.model):null;
+   const css=c=>c?'rgb('+c.map(v=>Math.round(v)).join(',')+')':'#333';
+   if(pal){chips[0].style.background=css(pal.fore);chips[1].style.background=css(pal.skin);chips[2].style.background=css(pal.glove)}
   },500);
  }
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mountDebugChip);else mountDebugChip();
