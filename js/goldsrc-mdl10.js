@@ -121,7 +121,7 @@ const report={};
   const root=new THREE.Group();root.name=character?'CS16ClassicArmature':'GoldSrc_'+parsed.name;root.userData.nativeMdl=true;
   const matrix=new THREE.Matrix4().set(0,-1,0,0,0,0,1,0,-1,0,0,0,0,0,0,1);
   root.quaternion.setFromRotationMatrix(matrix);root.scale.setScalar(character?.028:PROFILE.globalScale);root.position.set(...PROFILE.globalOffset);
-  const bones=parsed.bones.map((def,i)=>{const b=new THREE.Bone();b.name=character?THREE.PropertyBinding.sanitizeNodeName(def.name):'mdl_b'+i;b.position.set(...def.position);b.quaternion.copy(angleQuat(def.rotation,THREE));return b});
+  const bones=parsed.bones.map((def,i)=>{const b=new THREE.Bone();b.name=character?THREE.PropertyBinding.sanitizeNodeName(def.name):'mdl_b'+i;b.userData.mdlName=def.name;b.position.set(...def.position);b.quaternion.copy(angleQuat(def.rotation,THREE));return b});
   for(let i=0;i<bones.length;i++){const p=parsed.bones[i].parent;if(p<0)root.add(bones[i]);else bones[p].add(bones[i])}
   root.updateMatrixWorld(true);
   const vertexWork=new THREE.Vector3(),normalWork=new THREE.Vector3();
