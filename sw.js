@@ -1,3 +1,4 @@
+/* AR11.10.22I.3.1 CHARACTER-AI-HANDS: imported PB arms, bot held-weapon axis, auto hop and combat crouch. */
 /* AR11.10.22I.2: mod character grounding, voices and actual character previews. */
 /* AR11.10.22I.1: startup Phase9 API and import menu scroll hotfix. */
 /* AR11.10.22I-FINAL: validated cumulative release; no new gameplay changes. */
