@@ -4,7 +4,7 @@
  * forearm and hand texels. Anything missing falls back to the original CS textures. Bot combat code is unchanged. */
 (function (global) {
  'use strict';
- const VERSION='AR11.10.22I.7-CS-ARMS-PB-SKIN-BOTS';
+ const VERSION='AR11.10.22I.6-CS-ARMS-PB-SKIN';
  const stats={recolored:0,restored:0,errors:0,weaponAxes:0,autoJumps:0,autoCrouches:0,state:'init',character:'',palette:''};
  const vForward=new THREE.Vector3(1,0,0),vDesired=new THREE.Vector3(),qParent=new THREE.Quaternion(),qBaseWorld=new THREE.Quaternion(),qDelta=new THREE.Quaternion(),qWorld=new THREE.Quaternion(),qInverse=new THREE.Quaternion();
  const tmpA=new THREE.Vector3(),tmpB=new THREE.Vector3();
@@ -237,6 +237,15 @@
   box.append(title,status,info,sw,toggle);document.body.appendChild(box);
   setInterval(()=>{
    status.textContent=(stats.state||'')+(stats.character?' · '+stats.character:'');info.textContent=stats.palette||'';
+   // 22I.8 diagnostic: list visible meshes that are NOT bot hitboxes on the first shield-carrying bot.
+   try{
+    const sb=(typeof bots!=='undefined'&&Array.isArray(bots))?bots.find(b=>b&&!b.dead&&b.hasBotShield&&b.g):null;
+    if(sb){
+     const hit=new Set(sb.parts||[]);if(sb.shieldPart)hit.add(sb.shieldPart);
+     const rows=[];sb.g.traverse(o=>{if(o.isMesh&&o.visible&&!hit.has(o)&&!o.userData?.blockStrikePBArmGeometry){const par=o.parent?.name||'';rows.push((o.name||'(unnamed)')+' @'+par+(o.userData?.texName?' tex:'+o.userData.texName:'')+' v'+(o.geometry?.attributes?.position?.count||0))}});
+     info.textContent=(stats.palette||'')+'\nSHIELD BOT visible non-hitbox meshes ('+rows.length+'):\n'+rows.slice(0,6).join('\n')+(sb.shieldRaised?'\n[raised]':'\n[not raised]');
+    }
+   }catch(_){}
    const found=activePlayerModel(),pal=found?paletteFor(found.model):null;
    const css=c=>c?'rgb('+c.map(v=>Math.round(v)).join(',')+')':'#333';
    if(pal){chips[0].style.background=css(pal.fore);chips[1].style.background=css(pal.skin);chips[2].style.background=css(pal.glove)}
