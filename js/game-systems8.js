@@ -4,32 +4,56 @@ const BOT_POOLS={CT:['m4a1','aug','mp5','usp','awp','famas','p90'],T:['ak47','ga
 function loadHeld(id){
  if(heldModels[id])return Promise.resolve(heldModels[id]);
  return heldLoads[id]||(heldLoads[id]=(async()=>{
-  const custom=await WeaponImport.modelFor(id,THREE,'held');
+  const custom=await AssetMemory.build(()=>WeaponImport.modelFor(id,THREE,'held'));
   return custom||await loadMatchModel('assets/models/held/'+id+'.glb');
- })().then(g=>{heldModels[id]=g;return g}).catch(e=>{delete heldLoads[id];throw e}));
+ })().then(g=>{heldModels[id]=AssetMemory.compact(g);return heldModels[id]}).finally(()=>{delete heldLoads[id]}));
 }
-document.addEventListener('blockstrike:weapon-skin-change',event=>{const id=event.detail?.id;if(id){delete heldModels[id];delete heldLoads[id]}});
+document.addEventListener('blockstrike:weapon-skin-change',event=>{const id=event.detail?.id;if(id){AssetMemory.releaseSources([heldModels[id]]);delete heldModels[id];delete heldLoads[id]}});
 // Attach rigid GoldSrc bone-local geometry, not the source scene/root.
 function botBone(body,name){return name&&(body?.getObjectByName(name)||body?.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name)))}
 function attachHeldMeshes(b,g,accept=()=>true){
  const meshes=[];
+ // Resolve character rig scale more reliably (PB / imported models may nest
+ // the armature differently or carry extra parent scale).
+ function rigScale(body){
+  if(!body)return .028;
+  const named=body.getObjectByName('CS16ClassicArmature')||body.getObjectByName('Armature')||body;
+  // Prefer world scale of the rig so nested parents are included.
+  const w=new THREE.Vector3();
+  named.getWorldScale(w);
+  const s=Math.abs(w.x)||Math.abs(named.scale?.x)||.028;
+  return s>1e-6?s:.028;
+ }
+ // Shield GLBs are authored larger than ordinary held weapons. Cap their
+ // final world height so PB skins (different bone scale) cannot produce the
+ // giant riot-shield bug.
+ const SHIELD_MAX_WORLD_H=48; // ~ torso height in CS units after character scale
  g.scene.traverse(o=>{if(!o.isMesh||!o.geometry?.attributes?.position||!accept(o))return;
   const bone=botBone(b.body,o.userData.attachBone);if(!bone)return;
   if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();
   const size=o.geometry.boundingBox.getSize(new THREE.Vector3());
-  const extent=Math.max(size.x,size.y,size.z)*.025;
-  if(!Number.isFinite(extent)||extent<.005||extent>1.5)return;
+  const maxDim=Math.max(size.x,size.y,size.z);
+  const isShield=/shield/i.test(String(o.name||''))||/shield/i.test(String(o.userData?.attachBone||''))||maxDim>80;
+  // Base compensation: held assets share Hammer units; character rig is ~0.028
+  const scale=rigScale(b.body);
+  let factor=.025/scale;
+  // Extra clamp for shield so imported PB characters never spawn a giant plate
+  if(isShield){
+   const worldH=maxDim*factor;
+   if(worldH>SHIELD_MAX_WORLD_H)factor*=SHIELD_MAX_WORLD_H/worldH;
+  }
+  const extent=maxDim*factor;
+  if(!Number.isFinite(extent)||extent<.005||extent>2.5)return;
   const mesh=o.clone();mesh.frustumCulled=!mesh.isSkinnedMesh;mesh.castShadow=true;
-  // Held and dropped p_/w_ assets use the same Hammer scale. The character
-  // rig is authored at .028; compensate once, about the grip's local origin.
-  const rig=b.body.getObjectByName('CS16ClassicArmature')||b.body.getObjectByName('Armature');
-  const scale=Math.abs(rig?.scale.x||.028);mesh.scale.multiplyScalar(.025/scale);
+  mesh.scale.multiplyScalar(factor);
+  mesh.userData.ownedHeldClone=true;
+  if(!mesh.isSkinnedMesh){mesh.updateMatrix();mesh.matrixAutoUpdate=false;}
   bone.add(mesh);meshes.push(mesh);
  });return meshes;
 }
 function clearHeldVisual(b){
  b.weaponLoadToken=(b.weaponLoadToken||0)+1;
- for(const mesh of b.weaponModel||[])mesh.parent?.remove(mesh);
+ for(const mesh of b.weaponModel||[]){if(mesh.userData.ownedHeldClone)AssetMemory.skeletons(mesh);mesh.parent?.remove(mesh);}
  b.weaponModel=[];b.shieldReady=false;b.shieldRaised=false;
 }
 function equipBot(b,i,preferredId=null){
@@ -39,12 +63,17 @@ function equipBot(b,i,preferredId=null){
  Object.assign(b,{weaponId:id,damage:w.dmg,fireRate:w.rate,
   effectiveRange:(w.slot==='pistol'?32:Math.max(38,70-w.sp*800))*(b.skill?.range||1),
   accuracy:Math.min(.72,Math.max(.10,Math.max(.35,.62-w.sp*5)*(b.skill?.aim||1))),sound:w.sound,ammo:w.mag,reserve:w.res,burst:0,silenced:false,combatRecoil:null,reloadStage:null,reloadLeft:0});
+ if(b.fallbackRig){b.shieldReady=!!(b.hasBotShield&&w.slot==='pistol'&&id!=='elite');syncFallbackPose(b);return;}
  loadHeld(id).then(g=>{
   if(!b.g.parent||b.dead||!b.body||b.weaponLoadToken!==token)return;
-  if(g.nativeMdl){const model=THREE.SkeletonUtils.clone(g.scene);b.g.add(model);b.weaponModel=[model]}
+  if(g.nativeMdl){const model=THREE.SkeletonUtils.clone(g.scene);model.userData.ownedHeldClone=true;b.g.add(model);b.weaponModel=[model]}
   else b.weaponModel=attachHeldMeshes(b,g);
   if(b.hasBotShield&&w.slot==='pistol'&&id!=='elite'&&heldModels.shield&&b.nativeHitboxes){
-   const shield=attachHeldMeshes(b,heldModels.shield,o=>o.userData.attachBone==='Bip01 L Hand');
+   // Accept common left-hand bone names used by CS and PB player models
+   const shield=attachHeldMeshes(b,heldModels.shield,o=>{
+    const bone=String(o.userData.attachBone||'');
+    return /Bip0?1\s*L(eft)?\s*Hand/i.test(bone)||bone==='Bip01 L Hand'||/L(eft)?Hand/i.test(bone);
+   });
    b.weaponModel.push(...shield);b.shieldReady=shield.length>0;
   }
   for(const m of b.weaponModel)m.visible=!b.heldOverride;
@@ -54,7 +83,7 @@ function loadCharacterEquipment(id){
  return equipmentLoads[id]||(equipmentLoads[id]=loadMatchModel('assets/models/equipment/'+id+'.glb?v=16.4G').then(g=>g.scene).catch(e=>{delete equipmentLoads[id];console.warn('Character equipment unavailable',id,e);return null}));
 }
 function syncBotGear(b){
- if(!b.body)return;
+ if(!b.body||b.fallbackRig)return;
  const planting=!b.dead&&!!BombMode.isPlanting?.(b),wanted=!b.dead&&(b.team==='T'&&BombMode.isCarrier?.(b)&&!planting?'bomb-carrier':b.team==='CT'&&b.defuseKit?'defuse-kit':null);
  if(b.gearWanted!==wanted){
   b.gearWanted=wanted;const token=b.gearToken=(b.gearToken||0)+1;
@@ -64,7 +93,7 @@ function syncBotGear(b){
    source.traverse(o=>{if(!o.isMesh)return;const bone=botBone(b.body,o.userData.attachBone);if(!bone)return;
     // Bodygroup geometry uses exactly the same local coordinates as the
     // existing player skeleton. No weapon scale correction or extra offsets.
-    const m=o.clone();m.castShadow=true;m.frustumCulled=!m.isSkinnedMesh;bone.add(m);b.gearMeshes.push(m);
+    const m=o.clone();m.castShadow=true;m.frustumCulled=!m.isSkinnedMesh;if(!m.isSkinnedMesh){m.updateMatrix();m.matrixAutoUpdate=false;}bone.add(m);b.gearMeshes.push(m);
    });
   });
  }
@@ -93,7 +122,7 @@ function disposeBot(b){
  // Procedural fallback models own all their meshes, including the CT body.
  const geos=new Set(),mats=new Set(),skeletons=new Set();
  const owned=m=>{if(m.geometry)geos.add(m.geometry);for(const mat of [].concat(m.material||[]))mats.add(mat)};
- if(b.body||b.mixer){b.parts.forEach(owned);if(b.shieldPart)owned(b.shieldPart);}else b.g.traverse(owned);
+ if(!b.fallbackRig&&(b.body||b.mixer)){b.parts.forEach(owned);if(b.shieldPart)owned(b.shieldPart);}else b.g.traverse(owned);
  b.g.traverse(o=>{if(o.isSkinnedMesh)skeletons.add(o.skeleton)});
  geos.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());skeletons.forEach(s=>s.dispose());
  b.weaponModel=[];b.gearMeshes=[];b.plantMeshes=[];S.remove(b.g);
@@ -103,7 +132,7 @@ function resetInputs(){
  resetPadPointers();document.dispatchEvent(new Event('blockstrike:reset-controls'));if(typeof Phase9!=='undefined')Phase9.releaseControls();
 }
 function requestLock(){try{const p=$('pad').requestPointerLock?.();p?.catch?.(()=>{})}catch(e){}}
-function inputBlocked(){return document.hidden||!running||RuntimeHealth.blocked()||!$('buyMenu').classList.contains('hidden')||!$('menu').classList.contains('hidden')||!$('weaponImportScreen').classList.contains('hidden')||(typeof Phase13!=='undefined'&&(Phase13.isSpectating()||Phase13.visibleOverlay()))}
+function inputBlocked(){return document.hidden||inputSuspended||!running||RuntimeHealth.blocked()||!$('buyMenu').classList.contains('hidden')||!$('menu').classList.contains('hidden')||!$('weaponImportScreen').classList.contains('hidden')||!$('characterImportScreen').classList.contains('hidden')||(typeof Phase13!=='undefined'&&(Phase13.isSpectating()||Phase13.visibleOverlay()))}
 function syncAim(){
  GoldSrcSprites.scope(cur());
  const sniperWeapon=['awp','scout','g3sg1','sg550'].includes(cur());
