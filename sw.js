@@ -1,4 +1,4 @@
-/* AR11.10.22I.6 CS-ARMS-PB-SKIN: CS-shaped first-person arms re-skinned from the imported character; stock arms fallback. */
+/* AR11.10.22I.7 CS-ARMS-PB-SKIN-BOTS: arms as before; bots no longer twist weapons away from the hand and body faces the aim yaw. */
 /* AR11.10.22I.3.1 CHARACTER-AI-HANDS: imported PB arms, bot held-weapon axis, auto hop and combat crouch. */
 /* AR11.10.22I.2: mod character grounding, voices and actual character previews. */
 /* AR11.10.22I.1: startup Phase9 API and import menu scroll hotfix. */
