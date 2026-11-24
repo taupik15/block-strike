@@ -121,7 +121,7 @@ const report={};
   const root=new THREE.Group();root.name=character?'CS16ClassicArmature':'GoldSrc_'+parsed.name;root.userData.nativeMdl=true;
   const matrix=new THREE.Matrix4().set(0,-1,0,0,0,0,1,0,-1,0,0,0,0,0,0,1);
   root.quaternion.setFromRotationMatrix(matrix);root.scale.setScalar(character?.028:PROFILE.globalScale);root.position.set(...PROFILE.globalOffset);
-  const bones=parsed.bones.map((def,i)=>{const b=new THREE.Bone();b.name=character?THREE.PropertyBinding.sanitizeNodeName(def.name):'mdl_b'+i;b.userData.mdlName=def.name;b.position.set(...def.position);b.quaternion.copy(angleQuat(def.rotation,THREE));return b});
+  const bones=parsed.bones.map((def,i)=>{const b=new THREE.Bone();b.name=character?THREE.PropertyBinding.sanitizeNodeName(def.name):'mdl_b'+i;b.userData.srcName=def.name;b.position.set(...def.position);b.quaternion.copy(angleQuat(def.rotation,THREE));return b});
   for(let i=0;i<bones.length;i++){const p=parsed.bones[i].parent;if(p<0)root.add(bones[i]);else bones[p].add(bones[i])}
   root.updateMatrixWorld(true);
   const vertexWork=new THREE.Vector3(),normalWork=new THREE.Vector3();
@@ -159,7 +159,7 @@ const report={};
     }
    }
    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geo.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geo.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(indices,4));geo.setAttribute('skinWeight',new THREE.Float32BufferAttribute(weights,4));
-   const mesh=new THREE.SkinnedMesh(geo,materials[data.texture]);mesh.name='mdl_mesh_'+root.children.length;mesh.userData.mdlPart=data.part;mesh.frustumCulled=false;root.add(mesh);
+   const mesh=new THREE.SkinnedMesh(geo,materials[data.texture]);mesh.name='mdl_mesh_'+root.children.length;mesh.userData.mdlPart=data.part;mesh.userData.texName=String(t&&t.name||'');mesh.frustumCulled=false;root.add(mesh);
    root.updateMatrixWorld(true);mesh.bind(skeleton,mesh.matrixWorld);
   }
   const clips=[],clipCounts=new Map();

@@ -1,63 +1,122 @@
-/* AR11.10.22I.7 — PB arms: rotation match + skeleton-wide hand bone fallback for mod weapons, generic for any imported mod.
- * Design:
- *  - Only forearm+hand triangles of the imported character are used (like the stock viewmodel), one skeleton
- *    clone per side so each hand can be pinned to its own stock hand.
- *  - Stock viewmodels are authored left-handed and mirrored for right-handed play, so the stock "Righthand"
- *    bone may appear on the LEFT of the screen. Roles are therefore assigned by on-screen position, not name.
- *  - Each imported hand is translated onto the matching LIVE stock hand bone every frame (viewmodel scale, no
- *    per-model constants). Stock hand meshes (bodypart rhand/lhand/hands) are hidden only while imported arms
- *    are anchored; otherwise stock arms stay visible.
- *  - A small on-screen debug line (ARM_DEBUG) reports state, because iPhone has no console.
- * Bot combat presentation below is unchanged from AR11.10.22I.3.1. */
+/* AR11.10.22I.4 — imported character arms anchored to the live viewmodel hand bones, plus bot held-weapon axis and mobility.
+ * Safe by design: if anything needed is missing (hand bones, arm geometry, allowed weapon) the stock CS hands stay visible. */
 (function (global) {
  'use strict';
- const VERSION='AR11.10.22I.7-CHARACTER-ARMS';
- const ARM_DEBUG=true;
- const stats={armsBuilt:0,armsTriangles:0,stockHandMeshesHidden:0,anchorFrames:0,weaponAxes:0,autoJumps:0,autoCrouches:0,errors:0};
- const status={state:'idle',reason:'',anchor:'',clip:'',map:'',hands:0,hidden:0};
- let arms=[],armSource=null,armLastTime=0;
- const hiddenStockHands=new Set();
+ const VERSION='AR11.10.22I.4-PB-ARMS-ANCHORED';
+ const stats={armsBuilt:0,armsTriangles:0,stockArmGroupsHidden:0,weaponAxes:0,autoJumps:0,autoCrouches:0,errors:0,armsActive:false,armsReason:'init'};
+ const UNIT=.02; // GoldSrc unit -> viewmodel metres (same scale as the stock viewmodel group)
+ const PB_WEAPONS=new Set(['ak47','aug','awp','deagle','famas','g3sg1','galil','glock18','m249','m3','m4a1','mac10','mp5','p228','p90','scout','sg552','tmp','usp','xm1014']);
+ const STOCK_ARM_TEXTURE=/^(view[ _-]?glove|view[ _-]?skin|view[ _-]?finger)(\.\w+)?$/i;
  const vForward=new THREE.Vector3(1,0,0),vDesired=new THREE.Vector3(),qParent=new THREE.Quaternion(),qBaseWorld=new THREE.Quaternion(),qDelta=new THREE.Quaternion(),qWorld=new THREE.Quaternion(),qInverse=new THREE.Quaternion();
- const tmpA=new THREE.Vector3(),tmpB=new THREE.Vector3();
+ const tmpA=new THREE.Vector3(),tmpB=new THREE.Vector3(),tmpC=new THREE.Vector3(),qCal=new THREE.Quaternion(),eCal=new THREE.Euler();
  const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
- const boneName=b=>String(b?.name||'').replace(/_/g,' ').replace(/\s+/g,' ').trim();
  const attributeValue=(a,i,k)=>k===0?a.getX(i):k===1?a.getY(i):k===2?a.getZ(i):a.getW(i);
- // --- bone classification (hierarchy based, so any mod's naming works) ---
- const SHOULDER_RE=/Clavicle|UpperArm|Shoulder|bicep/i,FOREARM_RE=/Forearm|Elbow|wrist|knuckle/i,TORSO_RE=/Spine|Neck|Head|Pelvis|Thigh|Calf|Foot|Toe|Butt|Hip/i;
- const chainHas=(b,re)=>{for(let c=b;c;c=c.parent)if(re.test(boneName(c)))return true;return false};
- function sideOf(b){
-  for(let c=b;c;c=c.parent){const n=boneName(c);if(/(^|\s)R(ight)?(\s|$)/i.test(n))return 'R';if(/(^|\s)L(eft)?(\s|$)/i.test(n))return 'L';}
+ // ---- generic bone-name helpers (GoldSrc Biped, Blender-style, Mixamo-ish names) ----
+ const norm=s=>String(s||'').replace(/[_\-.:]+/g,' ').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/\s+/g,' ').trim().toLowerCase();
+ function sideOf(name){
+  const k=' '+norm(name)+' ';
+  if(/ r /.test(k)||/right/.test(k))return 'R';
+  if(/ l /.test(k)||/left/.test(k))return 'L';
   return null;
  }
- const armFlags=(bones,side,re)=>bones.map(b=>!TORSO_RE.test(boneName(b))&&sideOf(b)===side&&chainHas(b,re));
- function armGeometry(source,side,re){
+ const ARM_WORD=/(clavicle|shoulder|upper ?arm|fore ?arm|elbow|wrist|hand|palm|finger|thumb|\barm\b)/;
+ const NOT_ARM=/(handle|thigh|calf|foot|toe|hip|leg|head|neck|spine|breast)/;
+ const isArmName=n=>{const k=norm(n);return ARM_WORD.test(k)&&!NOT_ARM.test(k)};
+ const pbHandName=n=>/(^| )(hand|palm)$/.test(norm(n));
+ // ---- user switches / calibration ----
+ const params=(()=>{try{return new URLSearchParams(global.location?.search||'')}catch(_){return new URLSearchParams('')}})();
+ const enabled=()=>{
+  if(global.BS_PB_ARMS===false||params.get('pbarms')==='0')return false;
+  try{if(global.localStorage?.getItem('bsPbArms')==='0')return false}catch(_){}
+  return true;
+ };
+ const DEFAULT_CAL=Object.freeze({x:0,y:0,z:0,yaw:0,pitch:0,roll:0,scale:100});
+ const calibrations=new Map();
+ function calFor(id){
+  if(calibrations.has(id))return calibrations.get(id);
+  let cal={...DEFAULT_CAL};
+  try{const raw=global.localStorage?.getItem('bsArmCal:'+id);if(raw)cal={...cal,...JSON.parse(raw)}}catch(_){}
+  calibrations.set(id,cal);return cal;
+ }
+ function saveCal(id){try{global.localStorage?.setItem('bsArmCal:'+id,JSON.stringify(calFor(id)))}catch(_){}}
+ // ---- arm geometry: only triangles skinned to the arm bones of ONE side ----
+ function armGeometry(source,side){
   const g=source.geometry,p=g?.getAttribute('position'),si=g?.getAttribute('skinIndex'),sw=g?.getAttribute('skinWeight');
   if(!p||!si||!sw||p.count<3)return null;
-  const flags=armFlags(source.skeleton?.bones||[],side,re),index=g.index,count=index?index.count:p.count,keep=[];
-  const armWeight=i=>{let s=0;for(let k=0;k<4;k++){const w=attributeValue(sw,i,k);if(w>.02&&flags[attributeValue(si,i,k)|0])s+=w}return s};
+  const bones=source.skeleton?.bones||[],mine=bones.map(b=>isArmName(b.name)&&sideOf(b.name)===side),index=g.index,indices=[];
+  const vertexArm=i=>{let score=0;for(let k=0;k<4;k++){const w=attributeValue(sw,i,k);if(w>.02&&mine[attributeValue(si,i,k)|0])score+=w;}return score};
+  const count=index?index.count:p.count;
   for(let i=0;i+2<count;i+=3){
    const a=index?index.getX(i):i,b=index?index.getX(i+1):i+1,c=index?index.getX(i+2):i+2;
-   const wa=armWeight(a),wb=armWeight(b),wc=armWeight(c);
-   if((wa>.5)+(wb>.5)+(wc>.5)>=2||wa+wb+wc>=2.15)keep.push(a,b,c);
+   const wa=vertexArm(a),wb=vertexArm(b),wc=vertexArm(c);
+   if((wa>.5)+(wb>.5)+(wc>.5)>=2||wa+wb+wc>=2.15)indices.push(a,b,c);
   }
-  if(keep.length<3)return null;
+  if(indices.length<3)return null;
   const out=new THREE.BufferGeometry();
   for(const name of ['position','normal','uv','uv2','skinIndex','skinWeight','color']){
    const src=g.getAttribute(name);if(!src)continue;
-   const C=src.array.constructor,arr=new C(keep.length*src.itemSize);
-   for(let i=0;i<keep.length;i++)for(let k=0;k<src.itemSize;k++)arr[i*src.itemSize+k]=attributeValue(src,keep[i],k);
+   const C=src.array.constructor,arr=new C(indices.length*src.itemSize);
+   for(let i=0;i<indices.length;i++)for(let k=0;k<src.itemSize;k++)arr[i*src.itemSize+k]=attributeValue(src,indices[i],k);
    out.setAttribute(name,new THREE.BufferAttribute(arr,src.itemSize,src.normalized));
   }
   out.computeBoundingSphere();
+  stats.armsTriangles+=indices.length/3;
   return out;
  }
+ // ---- one arm rig per side (left / right) ----
+ const rigs={R:null,L:null};let rigSource=null,rigId='',clipKeys={R:'',L:''},actions={R:null,L:null},lastTime=0;
+ function disposeRig(rig){
+  if(!rig)return;
+  try{rig.mixer.stopAllAction()}catch(_){}
+  rig.root.parent?.remove(rig.root);const skeletons=new Set();
+  rig.root.traverse(o=>{if(o.userData?.blockStrikePBArmGeometry)o.geometry?.dispose();if(o.isSkinnedMesh&&o.skeleton)skeletons.add(o.skeleton)});
+  skeletons.forEach(s=>{try{s.dispose()}catch(_){}});
+ }
  function disposeArms(){
-  for(const sd of arms){
-   try{sd.mixer.stopAllAction()}catch(_){}
-   sd.group.parent?.remove(sd.group);
-   sd.group.traverse(o=>{if(o.userData?.blockStrikePBArmGeometry)o.geometry?.dispose();if(o.isSkinnedMesh&&o.skeleton){try{o.skeleton.dispose()}catch(_){}}});
+  disposeRig(rigs.R);disposeRig(rigs.L);rigs.R=rigs.L=null;rigSource=null;rigId='';clipKeys={R:'',L:''};actions={R:null,L:null};lastTime=0;
+ }
+ function buildRig(source,side){
+  const root=THREE.SkeletonUtils.clone(source.scene);root.name='BLOCKSTRIKE_IMPORTED_VIEW_ARM_'+side;
+  const skinned=[];root.traverse(o=>{if(o.isMesh)o.visible=false;if(o.isSkinnedMesh&&o.geometry)skinned.push(o)});
+  let built=0;
+  for(const o of skinned){
+   const geometry=armGeometry(o,side);if(!geometry)continue;
+   const m=new THREE.SkinnedMesh(geometry,o.material);
+   m.name='PB_VIEW_ARM_'+side+'_'+built;m.userData.blockStrikePBArmGeometry=true;
+   m.frustumCulled=false;m.castShadow=false;m.receiveShadow=false;m.renderOrder=3;
+   m.bind(o.skeleton,o.bindMatrix);m.bindMode=o.bindMode||'attached';root.add(m);built++;
   }
-  arms=[];armSource=null;armLastTime=0;
+  let hand=null;
+  root.traverse(o=>{if(!hand&&o.isBone&&sideOf(o.name)===side&&pbHandName(o.name))hand=o});
+  if(!built||!hand){root.traverse(o=>{if(o.isSkinnedMesh)o.skeleton?.dispose()});return null}
+  root.visible=false;root.userData.blockStrikePBViewArms=true;
+  return {root,hand,mixer:new THREE.AnimationMixer(root),baseQuat:root.quaternion.clone()};
+ }
+ // ---- stock viewmodel hands (hidden only while the PB arms are really shown) ----
+ let stockVm=null;const stockRecords=[];
+ function restoreStockHands(){
+  for(const r of stockRecords)if(r.mesh)r.mesh.visible=r.visible;
+  stockRecords.length=0;stockVm=null;
+ }
+ function hideStockHands(model){
+  if(stockVm!==model){restoreStockHands();stockVm=model}
+  if(stockRecords.length)return stockRecords.length;
+  model.traverse(mesh=>{
+   if(mesh.isMesh&&STOCK_ARM_TEXTURE.test(String(mesh.userData?.texName||'').trim())){stockRecords.push({mesh,visible:mesh.visible});mesh.visible=false}
+  });
+  stats.stockArmGroupsHidden+=stockRecords.length;return stockRecords.length;
+ }
+ // ---- anchors: the live viewmodel hand bones ----
+ function findVmHands(model){
+  if(model.userData.blockStrikeHands!==undefined)return model.userData.blockStrikeHands;
+  const out={left:null,right:null};
+  model.traverse(o=>{
+   if(!o.isBone)return;const n=o.userData?.srcName;if(!n)return;const k=norm(n);
+   if(/handle|hand \d/.test(k))return;
+   if(/right ?hand|(^| )r hand$/.test(k))out.right=out.right||o;
+   else if(/left ?hand|(^| )l hand$/.test(k))out.left=out.left||o;
+  });
+  return model.userData.blockStrikeHands=(out.left&&out.right)?out:null;
  }
  function activePlayerModel(){
   const id=playerAvatar?.userData?.characterVoice?.id;
@@ -65,310 +124,72 @@
   const model=(playerTeam==='CT'?CTC:TC)?.[id];
   return model?.scene&&Array.isArray(model.animations)?{id,model}:null;
  }
- const pbHand=(root,side)=>{
-  let h=null;
-  // Prefer exact "R Hand" / "L Hand" (with optional Bip01 prefix), then fall back to any bone containing Hand on that side
-  const preferred=side==='R'?/(Bip0?1\s*)?R(ight)?\s*Hand$/i:/(Bip0?1\s*)?L(eft)?\s*Hand$/i;
-  const fallback=side==='R'?/R(ight)?.*Hand/i:/L(eft)?.*Hand/i;
-  root.traverse(o=>{
-    if(h||!o.isBone)return;
-    const n=boneName(o);
-    if(preferred.test(n))h=o;
-  });
-  if(!h)root.traverse(o=>{
-    if(h||!o.isBone)return;
-    const n=boneName(o);
-    if(fallback.test(n)&&sideOf(o)===side)h=o;
-  });
-  return h;
-};
- // One imported skeleton clone per side; only that side's forearm/hand triangles are kept.
- function buildSide(source,side){
-  const root=THREE.SkeletonUtils.clone(source.scene);root.name='BLOCKSTRIKE_IMPORTED_VIEW_ARM_'+side;
-  const targets=[];root.traverse(o=>{if(o.isMesh)o.visible=false;if(o.isSkinnedMesh&&o.geometry)targets.push(o)});
-  const make=re=>{const out=[];let tris=0;for(const o of targets){const geometry=armGeometry(o,side,re);if(!geometry)continue;const m=new THREE.SkinnedMesh(geometry,o.material);m.name='PB_VIEW_ARM_'+side+out.length;m.userData.blockStrikePBArmGeometry=true;m.frustumCulled=false;m.castShadow=false;m.receiveShadow=false;m.renderOrder=3;m.bind(o.skeleton,o.bindMatrix);m.bindMode=o.bindMode||'attached';out.push(m);tris+=geometry.getAttribute('position').count/3;}return {out,tris}};
-  let made=make(FOREARM_RE),mode='forearm';
-  if(!made.out.length){made=make(SHOULDER_RE);mode='full-arm'}
-  const hand=pbHand(root,side);
-  if(!made.out.length||!hand){root.traverse(o=>{if(o.isSkinnedMesh){try{o.skeleton?.dispose()}catch(_){}}});return null;}
-  made.out.forEach(m=>root.add(m));
-  root.position.set(0,0,0);root.visible=true;
-  const group=new THREE.Group();group.name='BLOCKSTRIKE_PB_ARM_ANCHOR_'+side;group.add(root);viewScene.add(group);
-  stats.armsTriangles+=made.tris;
-  return {side,root,group,hand,mixer:new THREE.AnimationMixer(root),clipKey:'',action:null,tris:Math.round(made.tris),mode};
- }
- function buildArms(source){
-  if(!viewScene||!source?.scene)return false;
-  const built=['R','L'].map(s=>buildSide(source,s)).filter(Boolean);
-  if(!built.length){status.state='no-arm-geometry';status.reason='tidak ada segitiga lengan/tulang tangan pada model import';return false;}
-  arms=built;armSource=source;stats.armsBuilt+=1;return true;
- }
  const familyFor=id=>{
-  if(id==='knife'||id==='knife_r')return 'knife';
-  if(id==='elite')return 'dualpistols_1';
-  if(id==='m3'||id==='xm1014')return 'shotgun';
-  if(id==='m249')return 'm249';
-  if(id==='ak47')return 'ak47';
-  if(id==='mp5')return 'mp5';
+  if(id==='knife')return 'knife';if(id==='elite')return 'onehanded';
+  if(id==='m3'||id==='xm1014')return 'shotgun';if(id==='m249')return 'm249';
+  if(id==='ak47')return 'ak47';if(id==='mp5')return 'mp5';
   if(['m4a1','famas','galil','aug','sg552'].includes(id))return 'carbine';
   if(['usp','glock18','p228','deagle','fiveseven'].includes(id))return 'onehanded';
-  if(id==='awp'||id==='scout'||id==='g3sg1'||id==='sg550')return 'rifle';
   return 'rifle';
  };
- function chooseArmClip(){
-  const model=activePlayerModel();if(!model||!arms.length)return;
+ function chooseClip(side,model){
+  const rig=rigs[side];if(!rig)return;
   const state=vm?.userData?.weaponAnimation,id=cur(),prefix=Phase9?.crouching?'crouch_':'ref_',family=familyFor(id);
-  const kind=state?.currentKind||'idle';
-  // Map engine state → sequence verb used by CS/PB player models
-  let verb='aim';
-  if(kind==='fire'||kind==='shoot')verb='shoot';
-  else if(kind==='reload')verb='reload';
-  else if(kind==='draw'||kind==='holster')verb='aim';
-  // Prefer exact family, then generic rifle, then idle1 as last resort
-  const names=[
-    prefix+verb+'_'+family,
-    'ref_'+verb+'_'+family,
-    prefix+'aim_'+family,
-    'ref_aim_'+family,
-    prefix+'aim_rifle',
-    'ref_aim_rifle',
-    'ref_aim_onehanded',
-    'idle1',
-    'crouch_idle'
-  ];
-  const clips=model.model.animations||[];
-  let clip=null;
-  for(const n of names){clip=clips.find(c=>c.name===n);if(clip)break;}
-  if(!clip){status.clip='none';return;}
-  const oneShot=verb==='shoot'||verb==='reload';
-  const key=clip.name+':'+(oneShot?'once':'loop');
-  for(const sd of arms){
-   if(sd.clipKey===key)continue;
-   const action=sd.mixer.clipAction(clip);action.reset();
-   if(oneShot){action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;}
-   else{action.setLoop(THREE.LoopRepeat,Infinity);action.clampWhenFinished=false;}
-   action.setEffectiveWeight(1);action.play();
-   if(sd.action&&sd.action!==action)sd.action.fadeOut(.08);
-   action.fadeIn(.08);sd.action=action;sd.clipKey=key;
-  }
-  status.clip=clip.name;
+  const kind=state?.currentKind||'idle';let verb=kind==='fire'?'shoot':kind==='reload'?'reload':'aim';
+  const names=[prefix+verb+'_'+family,'ref_'+verb+'_'+family,prefix+'aim_'+family,'ref_aim_'+family,prefix+'aim_rifle','ref_aim_rifle'];
+  const clips=model.animations||[];let clip=null;
+  for(const n of names){clip=clips.find(c=>c.name===n);if(clip)break}
+  if(!clip)return;
+  const oneShot=verb==='shoot'||verb==='reload',key=clip.name+':'+(oneShot?'once':'loop');
+  if(key===clipKeys[side])return;
+  const action=rig.mixer.clipAction(clip);action.reset();
+  if(oneShot){action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true}else{action.setLoop(THREE.LoopRepeat,Infinity);action.clampWhenFinished=false}
+  action.setEffectiveWeight(1);action.play();
+  if(actions[side]&&actions[side]!==action)actions[side].fadeOut(.08);
+  action.fadeIn(.08);actions[side]=action;clipKeys[side]=key;
  }
- // --- stock viewmodel hands ---
- // CS viewmodels use bodyparts "rhand"/"lhand" AND bones named Bone_Righthand / Bone_Lefthand.
- // Many modded weapons only have the bones (no separate hand bodypart) — we must search both.
- const R_HAND_RE=/(^|\s|_)R(ight)?[\s_]?Hand$|Righthand$/i;
- const L_HAND_RE=/(^|\s|_)L(eft)?[\s_]?Hand$|Lefthand$/i;
- const HAND_PART_RE=/^(r|l)?hands?$/i;
- const HAND_BONE_RE=/Righthand|Lefthand|R[\s_]?Hand|L[\s_]?Hand/i;
- let stockCache={vm:null,anchors:null};
- function stockHandMeshes(vmObj){
-  const out=[];
-  vmObj?.traverse(o=>{
-   if(!o.isSkinnedMesh)return;
-   const part=String(o.userData?.mdlPart||'').toLowerCase();
-   if(HAND_PART_RE.test(part))out.push(o);
-  });
-  return out;
- }
- function findHandBonesInTree(root){
-  const found={R:null,L:null};
-  if(!root)return found;
-  root.traverse(o=>{
-   if(!o.isBone)return;
-   const n=String(o.userData?.mdlName||o.name||'').replace(/_/g,' ');
-   if(!found.R&&R_HAND_RE.test(n))found.R=o;
-   if(!found.L&&L_HAND_RE.test(n))found.L=o;
-  });
-  // Secondary pass: Bone_Righthand style without strict end-anchor
-  if(!found.R||!found.L){
-   root.traverse(o=>{
-    if(!o.isBone)return;
-    const n=String(o.name||'').replace(/_/g,' ');
-    if(!found.R&&/Right\s*hand/i.test(n))found.R=o;
-    if(!found.L&&/Left\s*hand/i.test(n))found.L=o;
-   });
-  }
-  return found;
- }
- function stockHandAnchors(vmObj){
-  if(!vmObj)return null;
-  if(stockCache.vm===vmObj&&stockCache.anchors)return stockCache.anchors;
-  const meshes=stockHandMeshes(vmObj);
-  status.hands=meshes.length;
-  const out={R:null,L:null,source:''};
-
-  // 1) Prefer bones that belong to hand bodypart meshes
-  for(const m of meshes){
-   for(const b of m.skeleton?.bones||[]){
-    const n=String(b.userData?.mdlName||b.name||'').replace(/_/g,' ');
-    if(!out.R&&R_HAND_RE.test(n))out.R=b;
-    if(!out.L&&L_HAND_RE.test(n))out.L=b;
-   }
-  }
-  if(out.R||out.L)out.source='mesh-bone';
-
-  // 2) Fallback: search the entire viewmodel skeleton (works for mod weapons with no hand bodyparts)
-  if(!out.R||!out.L){
-   const tree=findHandBonesInTree(vmObj);
-   if(!out.R&&tree.R){out.R=tree.R;out.source=(out.source?out.source+'+':'')+'skel-R';}
-   if(!out.L&&tree.L){out.L=tree.L;out.source=(out.source?out.source+'+':'')+'skel-L';}
-  }
-
-  // 3) BBox center of hand bodypart meshes as last resort for missing side
-  if((!out.R||!out.L)&&meshes.length){
-   for(const m of meshes){
-    const part=String(m.userData.mdlPart||'').toLowerCase();
-    const side=part.startsWith('r')?'R':part.startsWith('l')?'L':null;
-    if(!side||out[side])continue;
-    if(!m.geometry.boundingBox)m.geometry.computeBoundingBox();
-    const c=new THREE.Vector3();
-    m.geometry.boundingBox.getCenter(c);
-    m.updateWorldMatrix(true,false);
-    c.applyMatrix4(m.matrixWorld);
-    out[side]=c;
-    out.source=(out.source?out.source+'+':'')+'bbox';
-   }
-  }
-
-  // 4) Ultimate fallback: use viewmodel root + typical hand offsets (better than nothing)
-  if(!out.R&&!out.L){
-   // Place both hands roughly where CS viewmodel hands sit relative to the weapon root
-   const rootPos=new THREE.Vector3();
-   vmObj.getWorldPosition(rootPos);
-   // These are rough camera-space guesses; placeArms will still apply scale
-   out.R=rootPos.clone().add(new THREE.Vector3(4, -6, 12));
-   out.L=rootPos.clone().add(new THREE.Vector3(-3, -5, 10));
-   out.source='fallback-offset';
-  }
-
-  if(!out.R&&!out.L)return null;
-  stockCache={vm:vmObj,anchors:out};
-  return out;
- }
- const localPoint=(a,scene)=>{const p=a.isObject3D?a.getWorldPosition(new THREE.Vector3()):a.clone();return scene.worldToLocal(p)};
- // Per-frame placement: translate each imported hand onto a stock hand. Stock hands are matched to
- // imported sides by camera-space X (screen-right hand = imported right hand), which stays correct
- // for mirrored (left-authored) viewmodels and for a left-handed setting.
- function placeArms(vmObj){
-  const stock=stockHandAnchors(vmObj);
-  if(!stock){status.state='no-stock-hand';status.reason='viewmodel ini tidak punya mesh tangan terpisah';return false;}
-  viewScene.updateMatrixWorld(true);viewCamera?.updateMatrixWorld(true);
-  // Prefer live bone objects so we can match both position AND rotation.
-  // Fall back to bbox centers only when bones are missing.
-  const boneR = stock.R && stock.R.isObject3D ? stock.R : null;
-  const boneL = stock.L && stock.L.isObject3D ? stock.L : null;
-  const pts=[];
-  if(stock.R) pts.push(localPoint(stock.R,viewScene));
-  if(stock.L) pts.push(localPoint(stock.L,viewScene));
-  const camX=p=>viewCamera?viewCamera.worldToLocal(viewScene.localToWorld(p.clone())).x:p.x;
-  // Map stock anchors to imported sides by camera-space X (screen-right = imported R)
-  let targetPos={R:null,L:null}, targetBone={R:null,L:null};
-  if(pts.length===2){
-    const [a,b]=pts;
-    if(camX(a)>=camX(b)){targetPos.R=a;targetPos.L=b;targetBone.R=boneR||boneL;targetBone.L=boneL||boneR;}
-    else{targetPos.R=b;targetPos.L=a;targetBone.R=boneL||boneR;targetBone.L=boneR||boneL;}
-  }else if(pts.length===1){
-    const side=camX(pts[0])>=0?'R':'L';
-    targetPos[side]=pts[0];
-    targetBone[side]=boneR||boneL;
-  }
-  // Scale: keep character arm roughly the same visual size as stock hands.
-  // PB / CS player models are authored at ~1.0 unit scale; viewmodels use globalScale 0.02.
-  const scaleBase=GoldSrcMDL10.profile?.globalScale||.02;
-  // Slightly larger than pure ratio so PB arms don't look tiny on mobile FOV.
-  const SCALE_BIAS=1.12;
-  let placed=0;
-  for(const sd of arms){
-    const t=targetPos[sd.side];
-    const tb=targetBone[sd.side];
-    sd.group.visible=!!t;
-    if(!t)continue;
-
-    // Reset then re-apply
-    sd.group.position.set(0,0,0);
-    sd.group.quaternion.identity();
-    sd.group.scale.setScalar(1);
-    sd.root.updateMatrixWorld(true);
-
-    // Current world transform of the imported hand bone
-    const handWorldPos=new THREE.Vector3();
-    const handWorldQuat=new THREE.Quaternion();
-    sd.hand.getWorldPosition(handWorldPos);
-    sd.hand.getWorldQuaternion(handWorldQuat);
-
-    // Desired world transform = stock hand bone (or bbox center + identity if no bone)
-    const desiredPos=viewScene.localToWorld(t.clone());
-    let desiredQuat=new THREE.Quaternion();
-    if(tb && tb.isObject3D){
-      tb.getWorldQuaternion(desiredQuat);
-    }else{
-      // No bone orientation available — keep imported hand orientation relative to camera
-      desiredQuat.copy(handWorldQuat);
-    }
-
-    // Delta that takes imported hand -> stock hand
-    // position: desired = deltaPos + scale * R * localHand
-    // We apply transform on the group that contains the root.
-    const s=scaleBase*SCALE_BIAS/Math.max(1e-6, sd.root.scale.x||0.028);
-
-    // Rotation delta in world space: desiredQuat = deltaQuat * handWorldQuat
-    const deltaQuat=desiredQuat.clone().multiply(handWorldQuat.clone().invert());
-
-    // Apply rotation first (around current hand), then translate, then scale
-    sd.group.quaternion.copy(deltaQuat);
-    sd.group.scale.setScalar(s);
-    sd.group.updateMatrixWorld(true);
-
-    // After rotation+scale, hand is at a new world position — correct translation
-    const newHandWorld=new THREE.Vector3();
-    sd.hand.getWorldPosition(newHandWorld);
-    const deltaPos=desiredPos.clone().sub(newHandWorld);
-    // Convert world delta into viewScene local space for the group
-    const parent=sd.group.parent;
-    if(parent){
-      parent.updateMatrixWorld(true);
-      const inv=new THREE.Matrix4().copy(parent.matrixWorld).invert();
-      deltaPos.applyMatrix4(inv);
-    }
-    sd.group.position.add(deltaPos);
-    sd.group.updateMatrixWorld(true);
-    placed++;
-  }
-  if(!placed){status.state='no-target';status.reason='tidak ada pasangan tangan';return false;}
-  stats.anchorFrames++;status.state='anchored';status.reason='';status.anchor=stock.source+'/'+pts.length+'hand+rot';
-  status.map='R@'+(targetPos.R?camX(targetPos.R).toFixed(2):'-')+' L@'+(targetPos.L?camX(targetPos.L).toFixed(2):'-');
-  return true;
-}
-
- function hideStockHands(vmObj){for(const m of stockHandMeshes(vmObj)){if(m.visible){m.visible=false;hiddenStockHands.add(m);stats.stockHandMeshesHidden++}}status.hidden=hiddenStockHands.size}
- function restoreStockHands(){for(const m of hiddenStockHands)m.visible=true;hiddenStockHands.clear();status.hidden=0}
- function setArmsVisible(v){for(const sd of arms)sd.group.visible=v}
- // --- on-screen debug (iPhone has no console) ---
- let dbgEl=null,dbgAt=0;
- function debugLine(){
-  if(!ARM_DEBUG||typeof document==='undefined'||!document.body)return;
-  const now=performance.now();if(now-dbgAt<400)return;dbgAt=now;
-  if(!dbgEl){dbgEl=document.createElement('div');dbgEl.id='arm-debug';dbgEl.style.cssText='position:fixed;left:6px;top:50%;z-index:99999;pointer-events:none;font:10px/1.25 monospace;color:#9f9;background:rgba(0,0,0,.55);padding:2px 5px;border-radius:3px;max-width:44vw;white-space:pre-wrap';document.body.appendChild(dbgEl)}
-  const sd=arms.map(a=>a.side+':'+a.tris+a.mode[0]).join(' ')||'-';
-  dbgEl.textContent='ARM '+VERSION.slice(9)+'\n'+status.state+(status.reason?' ('+status.reason+')':'')+'\nvm:'+(vm?.userData?.viewAsset||'-')+(vm?.userData?.nativeMdl?' mdl':' glb')+' hands:'+status.hands+' hid:'+status.hidden+'\n'+sd+' '+status.anchor+' '+status.map+'\nclip:'+status.clip;
+ function setReason(r){stats.armsReason=r;stats.armsActive=false}
+ function hideAllArms(reason){
+  if(rigs.R)rigs.R.root.visible=false;if(rigs.L)rigs.L.root.visible=false;
+  restoreStockHands();setReason(reason);return false;
  }
  function updatePBArms(){
-  const now=performance.now(),dt=armLastTime?clamp((now-armLastTime)/1000,0,.08):0;armLastTime=now;
-  if(!viewScene||!running||Phase13?.isSpectating?.()){setArmsVisible(false);restoreStockHands();return false;}
+  if(!enabled())return hideAllArms('disabled by switch');
+  if(!viewScene||!running||Phase13?.isSpectating?.())return hideAllArms('spectating or not running');
+  if(!vm||vm.parent!==viewScene||!vm.visible||!vm.userData?.nativeMdl)return hideAllArms('no native viewmodel');
+  if(Phase9?.handlingGrenade?.()||BombMode?.getViewmodel?.()||Phase9?.shieldRaised)return hideAllArms('grenade/bomb/shield view');
+  const asset=vm.userData?.viewAsset||'';
+  if(!PB_WEAPONS.has(asset))return hideAllArms('weapon not supported: '+asset);
+  if(typeof WeaponImport!=='undefined'&&WeaponImport.active?.(asset))return hideAllArms('imported weapon pack');
   const active=activePlayerModel();
-  if(!active){disposeArms();restoreStockHands();status.state='no-model';status.reason='karakter import belum aktif';return false;}
-  if(armSource!==active.model||!arms.length){
-   disposeArms();
-   try{if(!buildArms(active.model)){restoreStockHands();return false}}
-   catch(e){stats.errors++;disposeArms();status.state='build-error';status.reason=String(e?.message||e);restoreStockHands();return false}
+  if(!active){if(rigs.R||rigs.L)disposeArms();return hideAllArms('no imported character')}
+  const hands=findVmHands(vm);
+  if(!hands)return hideAllArms('viewmodel has no hand bones: '+asset);
+  if(rigSource!==active.model){
+   disposeArms();rigSource=active.model;rigId=active.id;
+   try{rigs.R=buildRig(active.model,'R');rigs.L=buildRig(active.model,'L');if(rigs.R&&rigs.L){stats.armsBuilt+=1;for(const s of ['R','L']){viewScene.add(rigs[s].root);rigs[s].root.updateMatrixWorld(true)}}}
+   catch(e){stats.errors++;console.warn('[22I.4] PB arm build:',e)}
   }
-  chooseArmClip();
-  for(const sd of arms)sd.mixer.update(dt);
-  let ok=false;
-  try{ok=placeArms(vm)}catch(e){stats.errors++;status.state='place-error';status.reason=String(e?.message||e)}
-  if(ok)hideStockHands(vm);else{setArmsVisible(false);restoreStockHands()}
-  return ok;
+  if(!rigs.R||!rigs.L)return hideAllArms('character has no usable arm bones');
+  const cal=calFor(rigId),t=performance.now(),delta=lastTime?clamp((t-lastTime)/1000,0,.08):0;lastTime=t;
+  vm.updateMatrixWorld(true);
+  const flipped=vm.matrixWorld.determinant()<0;
+  // The mirrored (right-handed) viewmodel swaps which named bone is the player's right hand.
+  const anchors={R:flipped?hands.left:hands.right,L:flipped?hands.right:hands.left};
+  eCal.set(cal.pitch*Math.PI/180,cal.yaw*Math.PI/180,cal.roll*Math.PI/180,'YXZ');qCal.setFromEuler(eCal);
+  const k=UNIT*(cal.scale/100);
+  for(const side of ['R','L']){
+   const rig=rigs[side];chooseClip(side,active.model);rig.mixer.update(delta);
+   rig.root.quaternion.copy(qCal).multiply(rig.baseQuat);rig.root.scale.setScalar(k);
+   rig.root.position.set(0,0,0);rig.root.updateMatrixWorld(true);
+   rig.hand.getWorldPosition(tmpA);anchors[side].getWorldPosition(tmpB);
+   rig.root.position.copy(tmpB).sub(tmpA).add(tmpC.set(cal.x/100,cal.y/100,cal.z/100));
+   rig.root.updateMatrixWorld(true);rig.root.visible=true;
+  }
+  if(!hideStockHands(vm)){return hideAllArms('no stock hand meshes recognised')}
+  stats.armsActive=true;stats.armsReason='active: '+asset+' on '+rigId;return true;
  }
+
  function markHeldMeshes(meshes){
   for(const mesh of meshes||[]){
    if(!mesh?.userData?.attachBone||!mesh.quaternion)continue;
@@ -445,14 +266,42 @@
    return result;
   };
  }
+ // ---- optional calibration panel: open the game with ?armcal=1 ----
+ function mountCalibrationPanel(){
+  if(params.get('armcal')!=='1'||document.getElementById('bsArmCal'))return;
+  const box=document.createElement('div');box.id='bsArmCal';
+  box.style.cssText='position:fixed;left:8px;bottom:8px;z-index:99999;background:rgba(0,0,0,.72);color:#fff;font:11px/1.3 sans-serif;padding:6px 8px;border-radius:6px;max-width:46vw;max-height:55vh;overflow:auto;touch-action:pan-y';
+  const rows=[['x','X cm',-30,30,.5],['y','Y cm',-30,30,.5],['z','Z cm',-30,30,.5],['yaw','Yaw °',-90,90,1],['pitch','Pitch °',-90,90,1],['roll','Roll °',-90,90,1],['scale','Skala %',50,150,1]];
+  const title=document.createElement('div');title.style.fontWeight='700';title.textContent='Kalibrasi lengan PB';box.appendChild(title);
+  const status=document.createElement('div');status.style.cssText='opacity:.8;margin:2px 0';box.appendChild(status);
+  const sliders={};
+  for(const [key,label,min,max,step] of rows){
+   const line=document.createElement('label');line.style.cssText='display:flex;align-items:center;gap:4px;margin:1px 0';
+   const name=document.createElement('span');name.style.width='46px';name.textContent=label;
+   const input=document.createElement('input');input.type='range';input.min=min;input.max=max;input.step=step;input.style.cssText='flex:1;min-width:90px';
+   const value=document.createElement('span');value.style.width='34px';value.style.textAlign='right';
+   input.addEventListener('input',()=>{const cal=calFor(rigId||'default');cal[key]=Number(input.value);value.textContent=input.value;saveCal(rigId||'default')});
+   sliders[key]={input,value};line.append(name,input,value);box.appendChild(line);
+  }
+  const row=document.createElement('div');row.style.cssText='display:flex;gap:6px;margin-top:4px';
+  const reset=document.createElement('button'),toggle=document.createElement('button');reset.textContent='Reset';toggle.textContent='PB arm ON/OFF';
+  for(const b of [reset,toggle])b.style.cssText='font-size:11px;padding:3px 6px';
+  reset.onclick=()=>{calibrations.set(rigId||'default',{...DEFAULT_CAL});saveCal(rigId||'default')};
+  toggle.onclick=()=>{try{global.localStorage.setItem('bsPbArms',enabled()?'0':'1')}catch(_){}};
+  row.append(reset,toggle);box.appendChild(row);document.body.appendChild(box);
+  setInterval(()=>{
+   const cal=calFor(rigId||'default');status.textContent=(stats.armsActive?'AKTIF · ':'MATI · ')+stats.armsReason+(rigId?' · '+rigId:'');
+   for(const key in sliders){if(document.activeElement!==sliders[key].input){sliders[key].input.value=cal[key];sliders[key].value.textContent=String(cal[key])}}
+  },400);
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mountCalibrationPanel);else mountCalibrationPanel();
  if(typeof renderActiveViewmodel==='function'){
   const originalRender=renderActiveViewmodel;
   renderActiveViewmodel=function(){
-   try{alignBotWeapons();updatePBArms();debugLine()}
-   catch(e){stats.errors++;status.state='error';status.reason=String(e?.message||e);if(stats.errors<4)console.warn('[22I.5] character arms:',e)}
+   try{alignBotWeapons();updatePBArms()}
+   catch(e){stats.errors++;try{hideAllArms('error: '+(e&&e.message||e))}catch(_){};if(stats.errors<4)console.warn('[22I.4] character presentation:',e);if(stats.errors>=6)global.BS_PB_ARMS=false}
    return originalRender.apply(this,arguments);
   };
  }
- const api={version:VERSION,stats,status,refresh:()=>{disposeArms();restoreStockHands();stockCache={vm:null,anchors:null}},dispose:()=>{disposeArms();restoreStockHands();stockCache={vm:null,anchors:null}}};
- global.BlockStrikeCharacterCombat22I3=api;global.BlockStrikeCharacterArms=api;
+ global.BlockStrikeCharacterCombat22I3={version:VERSION,stats,status:()=>({active:stats.armsActive,reason:stats.armsReason,character:rigId}),refresh:()=>{disposeArms();restoreStockHands()},dispose:()=>{disposeArms();restoreStockHands()}};
 })(window);
