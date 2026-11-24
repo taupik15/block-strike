@@ -1145,9 +1145,13 @@ function updateCharacterAnimation(b,moving,hasEnemy){
  if(b.medium==='water')clip=moving?'swim':'treadwater';
  else if(b.medium==='ladder'){clip=b.acts?.walk?'walk':'run';b.characterGait=null;}
  else if(b.onGround===false&&Math.abs(b.vy||0)>.1)clip='jump';
- else if(moving&&!b.nativeLayers)clip=gait||'run';
+ else if(moving&&(!b.nativeLayers||!hasEnemy))clip=gait||'run';
  if(clip&&!b.acts?.[clip])clip=null;
- if(!clip)clip=botAnimationClip(b,'aim')||(b.crouching?'crouch_idle':'idle1');
+ // A bot with no confirmed visible enemy must not retain the authored raised-rifle
+ // ref_aim pose. Keep the weapon at its neutral ready position while idle, and
+ // use the full locomotion clip when moving without a target. Combat still layers
+ // the aimed upper-body pose over gait through the existing native-layer path.
+ if(!clip)clip=hasEnemy?botAnimationClip(b,'aim'):(b.crouching?'crouch_idle':'idle1');
  setAnim(b,clip);
  if(['run','walk','crouchrun'].includes(b.cur)){
   const speed=b.medium==='ladder'?b.vy||0:b.lastMoveSpeed||0;
