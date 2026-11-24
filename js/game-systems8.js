@@ -48,7 +48,7 @@ function equipBot(b,i,preferredId=null){
    shield.forEach(m=>{m.userData.botShield=true});
    b.weaponModel.push(...shield);b.shieldReady=shield.length>0;
   }
-  for(const m of b.weaponModel)m.visible=!b.heldOverride&&(!m.userData.botShield||!!b.shieldRaised);
+  for(const m of b.weaponModel)m.visible=!b.heldOverride;
  }).catch(e=>console.warn('Held model failed',id,e));
 }
 function loadCharacterEquipment(id){
@@ -75,14 +75,13 @@ function syncBotGear(b){
  if(b.heldOverride!==override||b.plantVisual!==planting||b.defuseVisual!==defusing){
   b.plantVisual=planting;b.defuseVisual=defusing;b.heldOverride=override;const token=b.plantVisualToken=(b.plantVisualToken||0)+1;
   for(const m of b.plantMeshes||[])m.parent?.remove(m);b.plantMeshes=[];
-  for(const m of b.weaponModel||[])m.visible=!override&&(!m.userData.botShield||!!b.shieldRaised);
+  for(const m of b.weaponModel||[])m.visible=!override;
   if(override)loadHeld(override).then(g=>{
    if(!b.g.parent||b.dead||b.plantVisualToken!==token)return;
    b.plantMeshes=attachHeldMeshes(b,g);
    if(b.plantMeshes.length)for(const m of b.weaponModel||[])m.visible=false;
   }).catch(e=>console.warn('Held action model unavailable',e));
  }
- for(const m of b.weaponModel||[])if(m.userData.botShield)m.visible=!b.heldOverride&&!!b.shieldRaised;
 }
 function disposeBot(b){
  if(b.disposed)return;b.disposed=true;
