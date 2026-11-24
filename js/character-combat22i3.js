@@ -1,4 +1,4 @@
-/* AR11.10.22I.6 — imported character first-person arms (rotation match + scale bias), generic for any imported mod.
+/* AR11.10.22I.7 — PB arms: rotation match + skeleton-wide hand bone fallback for mod weapons, generic for any imported mod.
  * Design:
  *  - Only forearm+hand triangles of the imported character are used (like the stock viewmodel), one skeleton
  *    clone per side so each hand can be pinned to its own stock hand.
@@ -11,7 +11,7 @@
  * Bot combat presentation below is unchanged from AR11.10.22I.3.1. */
 (function (global) {
  'use strict';
- const VERSION='AR11.10.22I.6-CHARACTER-ARMS';
+ const VERSION='AR11.10.22I.7-CHARACTER-ARMS';
  const ARM_DEBUG=true;
  const stats={armsBuilt:0,armsTriangles:0,stockHandMeshesHidden:0,anchorFrames:0,weaponAxes:0,autoJumps:0,autoCrouches:0,errors:0};
  const status={state:'idle',reason:'',anchor:'',clip:'',map:'',hands:0,hidden:0};
@@ -154,30 +154,93 @@
   status.clip=clip.name;
  }
  // --- stock viewmodel hands ---
- const R_HAND_RE=/(^|\s)R(ight)?\s?Hand$|Righthand$/i,L_HAND_RE=/(^|\s)L(eft)?\s?Hand$|Lefthand$/i,HAND_PART_RE=/^(r|l)?hands?$/i;
+ // CS viewmodels use bodyparts "rhand"/"lhand" AND bones named Bone_Righthand / Bone_Lefthand.
+ // Many modded weapons only have the bones (no separate hand bodypart) — we must search both.
+ const R_HAND_RE=/(^|\s|_)R(ight)?[\s_]?Hand$|Righthand$/i;
+ const L_HAND_RE=/(^|\s|_)L(eft)?[\s_]?Hand$|Lefthand$/i;
+ const HAND_PART_RE=/^(r|l)?hands?$/i;
+ const HAND_BONE_RE=/Righthand|Lefthand|R[\s_]?Hand|L[\s_]?Hand/i;
  let stockCache={vm:null,anchors:null};
- function stockHandMeshes(vmObj){const out=[];vmObj?.traverse(o=>{if(o.isSkinnedMesh&&HAND_PART_RE.test(String(o.userData?.mdlPart||'')))out.push(o)});return out}
+ function stockHandMeshes(vmObj){
+  const out=[];
+  vmObj?.traverse(o=>{
+   if(!o.isSkinnedMesh)return;
+   const part=String(o.userData?.mdlPart||'').toLowerCase();
+   if(HAND_PART_RE.test(part))out.push(o);
+  });
+  return out;
+ }
+ function findHandBonesInTree(root){
+  const found={R:null,L:null};
+  if(!root)return found;
+  root.traverse(o=>{
+   if(!o.isBone)return;
+   const n=String(o.userData?.mdlName||o.name||'').replace(/_/g,' ');
+   if(!found.R&&R_HAND_RE.test(n))found.R=o;
+   if(!found.L&&L_HAND_RE.test(n))found.L=o;
+  });
+  // Secondary pass: Bone_Righthand style without strict end-anchor
+  if(!found.R||!found.L){
+   root.traverse(o=>{
+    if(!o.isBone)return;
+    const n=String(o.name||'').replace(/_/g,' ');
+    if(!found.R&&/Right\s*hand/i.test(n))found.R=o;
+    if(!found.L&&/Left\s*hand/i.test(n))found.L=o;
+   });
+  }
+  return found;
+ }
  function stockHandAnchors(vmObj){
   if(!vmObj)return null;
   if(stockCache.vm===vmObj&&stockCache.anchors)return stockCache.anchors;
-  const meshes=stockHandMeshes(vmObj);status.hands=meshes.length;
-  if(!meshes.length)return null;
+  const meshes=stockHandMeshes(vmObj);
+  status.hands=meshes.length;
   const out={R:null,L:null,source:''};
-  for(const m of meshes)for(const b of m.skeleton?.bones||[]){
-   const n=String(b.userData?.mdlName||b.name||'');
-   if(!out.R&&R_HAND_RE.test(n))out.R=b;
-   if(!out.L&&L_HAND_RE.test(n))out.L=b;
-  }
-  if(out.R||out.L)out.source='bone';
-  if(!out.R||!out.L){
-   for(const m of meshes){
-    const part=String(m.userData.mdlPart||'').toLowerCase(),side=part.startsWith('r')?'R':part.startsWith('l')?'L':null;
-    if(!side||out[side])continue;
-    if(!m.geometry.boundingBox)m.geometry.computeBoundingBox();
-    const c=new THREE.Vector3();m.geometry.boundingBox.getCenter(c);m.updateWorldMatrix(true,false);c.applyMatrix4(m.matrixWorld);
-    out[side]=c;out.source=out.source?out.source+'+bbox':'bbox';
+
+  // 1) Prefer bones that belong to hand bodypart meshes
+  for(const m of meshes){
+   for(const b of m.skeleton?.bones||[]){
+    const n=String(b.userData?.mdlName||b.name||'').replace(/_/g,' ');
+    if(!out.R&&R_HAND_RE.test(n))out.R=b;
+    if(!out.L&&L_HAND_RE.test(n))out.L=b;
    }
   }
+  if(out.R||out.L)out.source='mesh-bone';
+
+  // 2) Fallback: search the entire viewmodel skeleton (works for mod weapons with no hand bodyparts)
+  if(!out.R||!out.L){
+   const tree=findHandBonesInTree(vmObj);
+   if(!out.R&&tree.R){out.R=tree.R;out.source=(out.source?out.source+'+':'')+'skel-R';}
+   if(!out.L&&tree.L){out.L=tree.L;out.source=(out.source?out.source+'+':'')+'skel-L';}
+  }
+
+  // 3) BBox center of hand bodypart meshes as last resort for missing side
+  if((!out.R||!out.L)&&meshes.length){
+   for(const m of meshes){
+    const part=String(m.userData.mdlPart||'').toLowerCase();
+    const side=part.startsWith('r')?'R':part.startsWith('l')?'L':null;
+    if(!side||out[side])continue;
+    if(!m.geometry.boundingBox)m.geometry.computeBoundingBox();
+    const c=new THREE.Vector3();
+    m.geometry.boundingBox.getCenter(c);
+    m.updateWorldMatrix(true,false);
+    c.applyMatrix4(m.matrixWorld);
+    out[side]=c;
+    out.source=(out.source?out.source+'+':'')+'bbox';
+   }
+  }
+
+  // 4) Ultimate fallback: use viewmodel root + typical hand offsets (better than nothing)
+  if(!out.R&&!out.L){
+   // Place both hands roughly where CS viewmodel hands sit relative to the weapon root
+   const rootPos=new THREE.Vector3();
+   vmObj.getWorldPosition(rootPos);
+   // These are rough camera-space guesses; placeArms will still apply scale
+   out.R=rootPos.clone().add(new THREE.Vector3(4, -6, 12));
+   out.L=rootPos.clone().add(new THREE.Vector3(-3, -5, 10));
+   out.source='fallback-offset';
+  }
+
   if(!out.R&&!out.L)return null;
   stockCache={vm:vmObj,anchors:out};
   return out;
