@@ -4,7 +4,7 @@
  * forearm and hand texels. Anything missing falls back to the original CS textures. Bot combat code is unchanged. */
 (function (global) {
  'use strict';
- const VERSION='AR11.10.22I.6-CS-ARMS-PB-SKIN';
+ const VERSION='AR11.10.22I.7-CS-ARMS-PB-SKIN-BOTS';
  const stats={recolored:0,restored:0,errors:0,weaponAxes:0,autoJumps:0,autoCrouches:0,state:'init',character:'',palette:''};
  const vForward=new THREE.Vector3(1,0,0),vDesired=new THREE.Vector3(),qParent=new THREE.Quaternion(),qBaseWorld=new THREE.Quaternion(),qDelta=new THREE.Quaternion(),qWorld=new THREE.Quaternion(),qInverse=new THREE.Quaternion();
  const tmpA=new THREE.Vector3(),tmpB=new THREE.Vector3();
@@ -173,24 +173,10 @@
   return meshes;
  }
  function alignBotWeapons(){
-  if(!Array.isArray(bots))return;
-  for(const b of bots){
-   if(!b||b.dead||!b.g||!b.weaponModel?.length||b.shieldRaised||!['primary','pistol'].includes(W[b.weaponId]?.slot))continue;
-   const yaw=b.g.rotation.y+(b.visualMount?.rotation.y||0),pitch=clamp(Number(b.aimPitch)||0,-.65,.65);
-   const cp=Math.cos(pitch);vDesired.set(-Math.sin(yaw)*cp,Math.sin(pitch),-Math.cos(yaw)*cp).normalize();
-   for(const mesh of b.weaponModel){
-    const bone=mesh?.userData?.attachBone;
-    if(!bone||!mesh.parent||!mesh.userData.blockStrikeAimBaseQuaternion)continue;
-    if(b.weaponId!=='elite'&&!/Bip01[_ ]R[_ ]Hand/i.test(bone))continue;
-    if(b.weaponId==='elite'&&!/Bip01[_ ][LR][_ ]Hand/i.test(bone))continue;
-    mesh.parent.updateWorldMatrix(true,false);mesh.parent.getWorldQuaternion(qParent);
-    qBaseWorld.multiplyQuaternions(qParent,mesh.userData.blockStrikeAimBaseQuaternion);
-    tmpA.copy(vForward).applyQuaternion(qBaseWorld).normalize();
-    qDelta.setFromUnitVectors(tmpA,vDesired);
-    qWorld.multiplyQuaternions(qDelta,qBaseWorld);
-    qInverse.copy(qParent).invert();mesh.quaternion.multiplyQuaternions(qInverse,qWorld);mesh.updateMatrix();stats.weaponAxes++;
-   }
-  }
+  // 22I.7: no forced rotation of the held weapon. The PB aim clips already hold the gun in the model's own frame;
+  // forcing it toward the aim direction twisted it away from the hand (arms spread, guns pointing sideways).
+  // Bot aim is handled by the body facing and the spine pitch only.
+  return;
  }
  // Rigid held assets use local +X as their muzzle direction. Correct only the
  // cosmetic mesh orientation; bot yaw, recoil, rays and hitboxes are untouched.
@@ -203,7 +189,7 @@
  let activeBot=null;
  if(typeof botUpdate==='function'){
   const originalBotUpdate=botUpdate;
-  botUpdate=function(b,dt){activeBot=b;try{return originalBotUpdate.call(this,b,dt)}finally{activeBot=null}};
+  botUpdate=function(b,dt){activeBot=b;try{return originalBotUpdate.call(this,b,dt)}finally{activeBot=null;if(b&&b.visualMount&&!b.dead)b.visualMount.rotation.y=0}};
  }
  if(global.BSP?.moveActor&&global.BSP.pointLineBlocked){
   const originalMoveActor=global.BSP.moveActor;
