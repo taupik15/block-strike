@@ -228,7 +228,7 @@ const LocalBSP=(()=>{
   });
   const hostageEntities=files.filter(e=>['hostage_entity','monster_scientist'].includes(e.classname)).map((e,i)=>{
    const origin=point(e);if(!origin)return null;
-   return {id:i,origin,position:BSP.toGame(T,origin),angles:e.angles||e.angle||'0'};
+   return {id:i,origin,position:BSP.toGame(T,origin),angles:e.angles||e.angle||'0',model:e.model||'models/scientist.mdl',skin:Number(e.skin)||0};
   }).filter(Boolean);
   const vipEntity=files.find(e=>e.classname==='info_vip_start'&&point(e));
   if(mode==='hostage'&&!hostageEntities.length)fail('Hostage map has no hostage with a valid origin.');

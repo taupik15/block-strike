@@ -369,7 +369,8 @@ const LocalMapMedia=(()=>{
   for(const e of data.files.slice(0,4000)){
    const p=position(e.origin,data.col.T);if(!p)continue;
    const key=path(e.model||''),model=data.media.models.get(key),sprite=data.media.sprites.get(key);
-   if(model){
+   // Hostage actors are owned by ObjectiveMode so they can follow a rescuer.
+   if(model&&e.classname!=='hostage_entity'&&e.classname!=='monster_scientist'){
     const group=new THREE.Group();group.position.copy(p);group.rotation.y=(Number(e.angles?.split(/\s+/)[1])||Number(e.angle)||0)*Math.PI/180;scene.add(group);
     if(model.reuse){
      Phase9.loadWorldModel(model.reuse.slice(6)).then(source=>{
