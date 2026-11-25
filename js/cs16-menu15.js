@@ -152,7 +152,7 @@
  let createSnapshot=null,scanToken=0,catalog=null,importing=false,scanning=false;
  const mapSelect=id('createMap'),bspFile=id('bspFile'),bspWads=id('bspWads'),bspWaypoints=id('bspWaypoints');
  let saved=[],showImport=false,overviewToken=0;
- function modeLabel(mode){return mode==='bomb'?'Bomb Defusal':'Team Elimination'}
+ function modeLabel(mode){return ({bomb:'Bomb Defusal',hostage:'Hostage Rescue',vip:'VIP Assassination',escape:'Escape',elimination:'Team Elimination'})[mode]||'Team Elimination'}
  function syncMap(){
   const record=saved.find(m=>m.id===mapSelect.value);
   id('dustMapPreview').classList.toggle('hidden',!!record||showImport);
