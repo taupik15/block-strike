@@ -1,3 +1,4 @@
+/* AR11.10.22I.14-HOSTAGE-MAP: cache/version sync with index.html + offline-assets; no gameplay change. */
 /* Tahap 8: shared weapon presentation, bot loadouts and input lifecycle. */
 const heldModels={},heldLoads={},equipmentLoads={};
 const BOT_POOLS={CT:['m4a1','aug','mp5','usp','awp','famas','p90'],T:['ak47','galil','mac10','glock18','scout','elite','mp5']};
