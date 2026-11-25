@@ -12,7 +12,7 @@ const Phase10=(()=>{
   hard:{label:'Hard',reaction:.36,aim:1.16,range:1.08,speed:1,vision:49,scan:.25,hearing:16},
   expert:{label:'Expert',reaction:.20,aim:1.28,range:1.12,speed:1,vision:53,scan:.20,hearing:19}
  };
- let config={players:16,difficulty:'normal',followers:3},roster=[],statCache=new Map(),playerDeaths=0,roundWinner=null;
+ let config={players:16,difficulty:'normal',followers:5},roster=[],statCache=new Map(),playerDeaths=0,roundWinner=null;
  let lossStreak={CT:0,T:0},teamEco={CT:false,T:false};
  let matchStart=0,grenadeBudget={CT:-100,T:-100},radioMode=null,radioOpen=false,radioLast=-100,botVoiceLast=-100,radioSeq=0,voiceEpoch=0,voiceRequest=0,announcementUntil=0;
  const lastBackupByTeam={CT:-100,T:-100};
@@ -331,13 +331,19 @@ const Phase10=(()=>{
   if(ord&&(now()>ord.expiresAt||P.hp<=0||b.team!==playerTeam))b.radioOrder=null;
   const current=b.radioOrder;
   if(current){
-   if(current.mode==='advance')return BombMode.botGoal(b)||{pos:current.anchor,mode:'advance',radius:2.2};
+   if(current.mode==='advance'){
+    // Go/Move Out must not collapse back to static site defend. Only yield to
+    // bomb goals that are truly time-critical (plant/defuse/escape/guard).
+    const bomb=BombMode.botGoal?.(b);
+    if(bomb&&(bomb.busy||bomb.urgent||['defuse','plant','escape-bomb','guard-bomb','protect-defuser','recover-c4','retake-clear'].includes(bomb.mode)))return bomb;
+    return {pos:current.anchor||P.pos,mode:'advance',radius:2.2,force:true};
+   }
    if(current.mode==='hold')return {pos:current.anchor,mode:'hold',radius:1.2};
-   if(current.mode==='attack')return {pos:current.anchor,mode:'attack',radius:4};
-   if(current.mode==='backup')return {pos:P.pos,mode:'backup',radius:2.1+(b.teamIndex%3)*.8};
-   if(current.mode==='regroup'){const anchor=current.anchor||P.pos;if(b.g.position.distanceTo(anchor)<2.2){b.radioOrder=null;return null}return {pos:anchor,mode:'regroup',radius:2};}
-   if(current.mode==='retreat')return {pos:current.anchor,mode:'retreat',radius:4};
-   if(['follow','cover','stick'].includes(current.mode))return {pos:P.pos,mode:current.mode,radius:2.8+(b.teamIndex%4)*.8+(current.mode==='cover'?1:0)};
+   if(current.mode==='attack')return {pos:current.anchor,mode:'attack',radius:4,force:true};
+   if(current.mode==='backup')return {pos:P.pos,mode:'backup',radius:2.1+(b.teamIndex%3)*.8,force:true};
+   if(current.mode==='regroup'){const anchor=current.anchor||P.pos;if(b.g.position.distanceTo(anchor)<2.2){b.radioOrder=null;return null}return {pos:anchor,mode:'regroup',radius:2,force:true};}
+   if(current.mode==='retreat')return {pos:current.anchor,mode:'retreat',radius:4,force:true};
+   if(['follow','cover','stick'].includes(current.mode))return {pos:P.pos,mode:current.mode,radius:2.8+(b.teamIndex%4)*.8+(current.mode==='cover'?1:0),force:true};
   }
   return null;
  }
@@ -441,7 +447,9 @@ const Phase10=(()=>{
   let changed=0,best=null,closest=Infinity;
   const allies=bots.filter(b=>!b.dead&&b.team===playerTeam).sort((a,b)=>a.g.position.distanceToSquared(P.pos)-b.g.position.distanceToSquared(P.pos));
   const available=allies.filter(b=>!BombMode.radioReserved?.(b));
-  const eligible=['follow','cover','backup'].includes(spec.behavior)?available.slice(0,config.followers):available;
+  // Follow/cover/backup: most of the free team, not a hard cap of 3.
+  const followCap=Math.max(config.followers,Math.min(available.length,Math.ceil(available.length*.65)));
+  const eligible=['follow','cover','backup'].includes(spec.behavior)?available.slice(0,followCap):available;
   // Fixed, distinct rally stations prevent the whole team converging at one point.
   const rally=(activeMapData?.local?.graph?.nodes||[]).filter(n=>n.valid!==false&&n.edges.length).map(n=>V(...n.pos)).filter(p=>p.distanceTo(P.pos)>1.2&&p.distanceTo(P.pos)<6&&Math.abs(p.y-P.pos.y)<1.2).sort((a,b)=>a.distanceToSquared(P.pos)-b.distanceToSquared(P.pos));
   const rallySpots=[];for(const p of rally){if(rallySpots.every(q=>q.distanceTo(p)>1.35))rallySpots.push(p);if(rallySpots.length>=eligible.length)break}
