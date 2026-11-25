@@ -1,3 +1,4 @@
+/* AR11.10.22I.20-HOSTAGE-MDL: Italy hostages render scientist.mdl instead of yellow boxes. */
 /* AR11.10.22I.9-DIAG: diagnostic lists visible meshes on all live CT bots on the debug chip. */
 /* AR11.10.22I.3.1 CHARACTER-AI-HANDS: imported PB arms, bot held-weapon axis, auto hop and combat crouch. */
 /* AR11.10.22I.2: mod character grounding, voices and actual character previews. */
