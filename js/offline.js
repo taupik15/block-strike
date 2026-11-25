@@ -101,13 +101,36 @@
   // Refreshing an active/paused match is destructive. Ask BEFORE asynchronous work.
   if(document.body.classList.contains('playing')&&!confirm('Refresh akan mengakhiri match yang sedang berjalan. Lanjutkan?'))return;
   if(navigator.onLine===false&&!registration?.waiting){showRefresh('Offline: versi baru tidak bisa diperiksa. Game saat ini tetap bisa dimainkan.');return;}
-  refreshing=true;refresh.disabled=true;
+  refreshing=true;if(refresh)refresh.disabled=true;
   try{
    showRefresh('Memeriksa versi terbaru dari GitHub Pages…');
-   const reg=await registrationPromise;
+   let reg=await registrationPromise;
+   // Spec: update() rejects with InvalidStateError when Get Newest Worker is null
+   // (no installing/waiting/active). Safari often surfaces this as "newestWorker is null".
+   // Re-register to recover a broken empty registration, then continue.
+   if(!reg.installing&&!reg.waiting&&!reg.active){
+    showRefresh('Service Worker kosong. Menginstal ulang…');
+    reg=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
+    registration=reg;
+    if(!reg.installing&&!reg.waiting&&!reg.active){
+     showRefresh('Instal SW gagal. Muat ulang halaman, atau hapus data situs taupik15.github.io di Settings Safari.');
+     return;
+    }
+   }
    if(reg.waiting){activate(reg);return;}
    // update() bypasses ordinary HTTP cache for the worker and its imports.
-   await reg.update();
+   try{
+    await reg.update();
+   }catch(updateErr){
+    const msg=String(updateErr?.message||updateErr);
+    // Broken registration or mid-teardown on iOS — recover with hard reload.
+    if(/newestWorker|InvalidStateError|invalid state/i.test(msg)){
+     showRefresh('SW tidak siap update. Memuat ulang halaman…');
+     location.reload();
+     return;
+    }
+    throw updateErr;
+   }
    const installing=reg.installing;
    if(installing){
     showRefresh('Versi baru ditemukan. Menyiapkan file aplikasi…');
@@ -121,9 +144,16 @@
    showRefresh('Tidak ada versi baru. Refresh game sekarang…');
    location.reload();
   }catch(error){
-   showRefresh('Gagal memeriksa update: '+String(error?.message||error).slice(0,120)+'. Game lama tetap aman.');
+   const msg=String(error?.message||error).slice(0,120);
+   // Last-resort recovery: still try a plain reload so the user is not stuck.
+   if(/newestWorker|InvalidStateError|invalid state/i.test(msg)){
+    showRefresh('Update gagal (SW rusak). Memuat ulang… Hapus data situs jika berulang.');
+    setTimeout(()=>location.reload(),600);
+    return;
+   }
+   showRefresh('Gagal memeriksa update: '+msg+'. Game lama tetap aman.');
   }finally{
-   if(!activating){refreshing=false;refresh.disabled=false;}
+   if(!activating){refreshing=false;if(refresh)refresh.disabled=false;}
   }
  }
  if(refresh?.addEventListener)refresh.addEventListener('click',()=>{void checkAndRefresh()});
