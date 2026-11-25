@@ -261,7 +261,7 @@
     <label class="cs-field"><span>Freeze time</span><select id="matchFreezeTime"><option value="0">Off</option><option value="3">3 seconds</option><option value="6" selected>6 seconds</option><option value="10">10 seconds</option></select></label>
     <label class="cs-field"><span>Buy time</span><select id="matchBuyTime"><option value="10">10 seconds</option><option value="15" selected>15 seconds</option><option value="30">30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option></select></label>
     <label class="cs-field"><span>Starting money</span><select id="matchStartMoney"><option value="800" selected>$800</option><option value="1500">$1,500</option><option value="3000">$3,000</option><option value="5000">$5,000</option><option value="8000">$8,000</option><option value="16000">$16,000</option></select></label>
-    <p class="cs-help">Bomb Defusal is available when a compatible local BSP is selected.</p>
+    <p class="cs-help">Game mode is detected automatically from compatible local BSP objectives (Bomb, Hostage, VIP or Escape).</p>
    </section>
    <section data-create-panel="cpu" class="cs-create-panel hidden">
     <label class="cs-field"><span>Number of bots</span><input id="matchBotCount" type="number" min="1" max="31" step="1" value="15" inputmode="numeric"></label>
@@ -319,6 +319,7 @@
 <script src="js/bundled-maps.js?v=AR11.10.22F"></script>
 <script src="js/goldsrc-sprites.js?v=AR11.10.22B"></script>
 <script src="js/modes/bomb.js?v=AR11.10.22F"></script>
+<script src="js/modes/objectives.js?v=HOSTAGE-VIP-ESCAPE-1"></script>
 <script src="js/bsp-doors.js?v=16.4.7-pre26AR.11.10.7"></script>
 <script>window.NAV_BOTS=true; /* Tahap 7B: aktifkan A* nav untuk bot (T→CT sudah jalan, CT→T masih fallback) */</script>
 <script src="js/nav-graph.js?v=AR11.10.22E"></script>
