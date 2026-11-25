@@ -1,8 +1,16 @@
 /* YaPB GRAPH v1/v2 / ULZ. Format references: yapb/yapb inc/graph.h, src/storage.cpp;
  * yapb/ystl ystl/ulz.h (Unlicense). Remote database CC BY-SA 4.0; author retained.
+ *
+ * Offline-first policy (Block Strike):
+ * - bundled() reads assets/yapb-graph/ (index + pack shards) for classic maps.
+ * - download() still exists for opt-in / debug (window.BLOCK_STRIKE_YAPB_ONLINE).
+ * - Custom/imported maps should ship .graph/.pwf alongside the BSP; do not rely
+ *   on the public GitHub graph DB (most custom maps are absent → 404).
  */
 const YaPBWaypoints=(()=>{
  const MAX=2*1024*1024,BASE='https://raw.githubusercontent.com/yapb/graph/refs/heads/master/graph/';
+ // Built-in GoldSrc maps shipped with the game (see js/bundled-maps.js).
+ const BUILTIN_MAPS=new Set(['de_dust','de_chateau','de_aztec','de_luxville']);
  function ulz(input,size){
   if(!Number.isInteger(size)||size<0||size>MAX)throw Error('ULZ output exceeds limit');
   const out=new Uint8Array(size);let i=0,o=0;
@@ -35,7 +43,33 @@ const YaPBWaypoints=(()=>{
   const nodes=Array.from({length:count},(_,id)=>{const p=id*220;if(v.getInt32(p,true)!==id)throw Error('GRAPH index mismatch');const h=[8,12,16].map(x=>v.getFloat32(p+x,true));if(!h.every(x=>Number.isFinite(x)&&Math.abs(x)<32768))throw Error('GRAPH invalid coordinate');const flags=v.getInt32(p+4,true),edges=[],jumps=new Set(),links=[];for(let k=0;k<8;k++){const q=p+56+k*20,idx=v.getInt16(q+18,true),f=v.getUint16(q+16,true);if(idx>=0&&idx<count&&idx!==id&&!(f&~1)){edges.push(idx);if(f&1)jumps.add(idx);const velocity=[0,4,8].map(o=>v.getFloat32(q+o,true)),distance=v.getInt32(q+12,true);links.push({to:idx,flags:f,distance:distance>=0?distance:null,velocity:velocity.every(Number.isFinite)?velocity:null})}}const camp=!!(flags&128),campLooks=camp?[20,32].map(o=>[v.getFloat32(p+o,true),v.getFloat32(p+o+4,true)]).filter(a=>a.every(x=>Number.isFinite(x)&&Math.abs(x)<=360)):[];const radius=v.getFloat32(p+44,true),light=v.getFloat32(p+48,true),display=v.getFloat32(p+52,true);return {id,h,flags,valid:flags!==-1,radius:Number.isFinite(radius)&&radius>=0?radius:null,light:Number.isFinite(light)?light:null,display:Number.isFinite(display)?display:null,links,edges:[...new Set(edges)],jumps,narrow:!!(flags&1024),sniper:!!(flags&(1<<28)),crouch:!!(flags&4),ladder:!!(flags&32),camp,campLooks}});
   return {nodes,author,modified,mapSize,version};
  }
- async function download(name){if(!/^[a-z0-9_][a-z0-9_.-]{0,99}$/i.test(name))throw Error('Invalid map name for remote lookup');const url=BASE+encodeURIComponent(name.toLowerCase())+'.graph';const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),5500);try{const r=await fetch(url,{signal:ctrl.signal,credentials:'omit',referrerPolicy:'no-referrer'});if(!r.ok)throw Error('YaPB HTTP '+r.status);const size=Number(r.headers.get('content-length'));if(size>MAX)throw Error('GRAPH too large');if(!r.body){const b=await r.arrayBuffer();if(b.byteLength>MAX)throw Error('GRAPH too large');return b}const reader=r.body.getReader(),parts=[];let total=0;try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.length;if(total>MAX)throw Error('GRAPH exceeds download limit');parts.push(value)}}finally{reader.cancel().catch(()=>{})}const out=new Uint8Array(total);let off=0;for(const p of parts){out.set(p,off);off+=p.length}return out.buffer}finally{clearTimeout(timer)}}
+ async function download(name){
+  // Opt-in remote only. Prefer bundled() or an imported .graph for production.
+  if(!/^[a-z0-9_][a-z0-9_.-]{0,99}$/i.test(name))throw Error('Invalid map name for remote lookup');
+  const url=BASE+encodeURIComponent(name.toLowerCase())+'.graph';
+  const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),5500);
+  try{
+   const r=await fetch(url,{signal:ctrl.signal,credentials:'omit',referrerPolicy:'no-referrer'});
+   if(!r.ok)throw Error('YaPB HTTP '+r.status);
+   const size=Number(r.headers.get('content-length'));
+   if(size>MAX)throw Error('GRAPH too large');
+   if(!r.body){const b=await r.arrayBuffer();if(b.byteLength>MAX)throw Error('GRAPH too large');return b}
+   const reader=r.body.getReader(),parts=[];let total=0;
+   try{while(true){const {done,value}=await reader.read();if(done)break;total+=value.length;if(total>MAX)throw Error('GRAPH exceeds download limit');parts.push(value)}}
+   finally{reader.cancel().catch(()=>{})}
+   const out=new Uint8Array(total);let off=0;for(const p of parts){out.set(p,off);off+=p.length}
+   return out.buffer;
+  }finally{clearTimeout(timer)}
+ }
+ async function hasBundled(name){
+  if(typeof name!=='string'||!name)return false;
+  try{
+   const index=await (indexPromise??=localFetch('index.json',2*1024*1024,true).then(x=>{
+    if(x.version!==1||!Array.isArray(x.sizes)||!x.maps||typeof x.maps!=='object')throw Error('Invalid bundled GRAPH index');return x;
+   }).catch(e=>{indexPromise=null;throw e}));
+   return Object.prototype.hasOwnProperty.call(index.maps,name.toLowerCase());
+  }catch(_){return false}
+ }
  // Bundled CC BY-SA database. Only the index and one compressed shard are read
  // per lookup; no bulk graph expansion or writes to the imported map library.
  const DB='assets/yapb-graph/',SHARD_MAX=4*1024*1024;
@@ -86,5 +120,5 @@ const YaPBWaypoints=(()=>{
   if(inflater.err||!inflater.ended||written!==raw)throw Error('Invalid bundled GRAPH compression');
   return out.buffer;
  }
- return {ulz,decode,download,bundled};
+ return {ulz,decode,download,bundled,hasBundled,BUILTIN_MAPS};
 })();

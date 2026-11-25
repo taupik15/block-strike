@@ -198,28 +198,37 @@ const MapImporter=(()=>{
    }catch(e){issues.push(origin+': '+e.message);return false}
   }
   // Explicit imports take priority over stale BSP-keyed waypoint cache.
+  // Order: imported .graph/.pwf/.nav → local cache → bundled pack → generate.
+  // Online GitHub fetch is disabled by default (offline-first; avoids 404 noise
+  // on the many custom maps users will import). Enable with:
+  //   window.BLOCK_STRIKE_YAPB_ONLINE = true
   for(const [suffix,type] of [['graph','YaPB GRAPH'],['pwf','PWF'],['nav','NAV v5']]){
    if(data.graph)break;
    const file=source.files.find(f=>ext(f.path)===suffix&&stem(f.path)===mapName);
    if(file)await attempt(file.buffer,type,type+' (imported)',true);
   }
-    let prior=null,priorPreferred=false;
+  let prior=null,priorPreferred=false;
   if(!data.graph)try{prior=await LocalAssetCache.get(cacheKey);priorPreferred=!!prior?.buffer&&!/GitHub/i.test(prior.origin||'');if(priorPreferred)await attempt(prior.buffer,prior.type,(prior.origin||prior.type)+' (cached)');}catch(e){issues.push('Waypoint cache unavailable: '+e.message)}
   if(!data.graph){
    try{const buffer=await YaPBWaypoints.bundled(mapName);if(buffer)await attempt(buffer,'YaPB GRAPH','YaPB GRAPH (bundled)',true)}
    catch(e){issues.push('Bundled YaPB lookup: '+e.message)}
   }
   if(!data.graph&&prior?.buffer&&!priorPreferred)await attempt(prior.buffer,prior.type,(prior.origin||prior.type)+' (cached)');
-  if(!data.graph&&globalThis.navigator?.onLine!==false){
+  // Optional online lookup (opt-in only). Built-in maps are covered by the pack;
+  // custom/imported maps almost always 404 and should ship their own .graph.
+  if(!data.graph&&globalThis.BLOCK_STRIKE_YAPB_ONLINE===true&&globalThis.navigator?.onLine!==false){
    try{const buffer=await YaPBWaypoints.download(mapName);await attempt(buffer,'YaPB GRAPH','YaPB GRAPH (GitHub)',true)}
-   catch(e){issues.push('YaPB lookup: '+e.message)}
+   catch(e){
+    if(/HTTP 404/.test(e.message)) issues.push('No public YaPB graph for this map (optional). Include a .graph/.pwf with the map ZIP.');
+    else issues.push('YaPB lookup: '+e.message);
+   }
   }
   if(!data.graph){
    const generated=LocalBSPNav.build(data.col),check=LocalBSPNav.validate(generated,navTargets);
    if(check.ok||!best||check.edges>best.check.edges){data.graph=generated;data.navValidation=check;data.navSource='generated'}
    else{data.graph=best.graph;data.navSource=best.origin+' (partial)';data.navValidation=best.check}
   }
-  if(!data.navValidation.ok)issues.push('Bot navigation incomplete: spawn/bombsite connectivity not verified. Import matching PWF/GRAPH/NAV.');
+  if(!data.navValidation.ok)issues.push('Bot navigation incomplete: spawn/objective connectivity not verified. Include matching .graph/.pwf/.nav in the map ZIP for best bot routes.');
   await LocalMapMedia.compile(data,info,source.files,issues);
   // WAD declarations can include unused packages; only warn when a texture remains unresolved.
   data.warnings.push(...new Set(issues.filter(issue=>!issue.startsWith('WAD not found:')||(data.missing.length&&!globalUsed.includes(basename(issue.slice(15)))))));
