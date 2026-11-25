@@ -11,11 +11,34 @@ const ObjectiveMode=(()=>{
  const center=z=>BSP.toGame(data.col.T,z.mins.map((n,i)=>(n+z.maxs[i])*.5+z.origin[i]));
  const zoneGoal=(zones,actor=null)=>{if(!zones.length)return null;const zone=actor?zones.slice().sort((a,b)=>pos(actor).distanceToSquared(center(a))-pos(actor).distanceToSquared(center(b)))[0]:zones[0];const mid=center(zone),nodes=data.graph?.nodes?.filter(n=>n.edges?.length&&LocalBSP.inSite(zone,n.h))||[];if(nodes.length){nodes.sort((a,b)=>V(...a.pos).distanceToSquared(mid)-V(...b.pos).distanceToSquared(mid));return V(...nodes[0].pos)}return mid};
  function dispose(){
-  if(group){group.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose()}});group.parent?.remove(group);group=null;}
+  if(group){group.traverse(o=>{
+   // MDL textures belong to the map decoder. Drop the reference before dispose.
+   if(o.userData?.keepMap&&o.material&&!Array.isArray(o.material))o.material.map=null;
+   if(o.geometry)o.geometry.dispose();
+   if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose()}
+  });group.parent?.remove(group);group=null;}
   hostages=[];vip=null;
  }
- // Classic CS scientist look: mustard/yellow lab coat (not gray boxes).
- // Full GoldSrc hostage.mdl rendering can come later; HR stays readable offline.
+ // Yellow boxes only if the map did not ship the hostage mdl.
+ function yawOf(angles){
+  const parts=String(angles??'0').trim().split(/\s+/).map(Number);
+  const deg=parts.length>1&&Number.isFinite(parts[1])?parts[1]:Number.isFinite(parts[0])?parts[0]:0;
+  return deg*Math.PI/180;
+ }
+ function hostageParts(h){
+  const models=data?.media?.models;if(!models)return null;
+  const key=String(h.model||'models/scientist.mdl').replaceAll('\\','/').toLowerCase();
+  const model=models.get(key);
+  return Array.isArray(model)&&model.length&&model[0].positions?model:null;
+ }
+ function mdlHostage(parts){
+  const g=new THREE.Group();g.userData.mdlHostage=true;
+  for(const part of parts){
+   const mesh=BSPVisuals.mesh(part);
+   mesh.matrixAutoUpdate=true;mesh.frustumCulled=false;mesh.userData.keepMap=true;g.add(mesh);
+  }
+  return g;
+ }
  function personMesh(color=0xd7b84a,variant=0){
   const g=new THREE.Group();
   const skin=new THREE.MeshStandardMaterial({color:0xc4a07a,roughness:.95});
@@ -36,19 +59,23 @@ const ObjectiveMode=(()=>{
   if(!active()||!S)return;
   group=new THREE.Group();group.name='objective-actors';S.add(group);
   if(mode==='hostage'){
-   // CS-style yellow coats; slight hue shift so 4 scientists read as distinct.
+   // Box coats are only the fallback when scientist.mdl is not in the map.
    const coats=[0xd7b84a,0xe2c35a,0xc9a83e,0xf0d06a];
    hostages=(data.objectives?.hostages||[]).map((h,i)=>{
-    const mesh=personMesh(coats[i%coats.length],i);mesh.position.copy(V(...h.position));mesh.rotation.y=Number(h.angles)||0;group.add(mesh);
+    const parts=hostageParts(h);
+    const mesh=parts?mdlHostage(parts):personMesh(coats[i%coats.length],i);
+    mesh.position.copy(V(...h.position));mesh.rotation.y=yawOf(h.angles);group.add(mesh);
     return {...h,mesh,following:null,rescued:false};
    });
+   const mdlCount=hostages.filter(h=>h.mesh.userData.mdlHostage).length;
+   console.info('[hostage] actors '+hostages.length+', mdl '+mdlCount+(mdlCount?'':' (yellow box fallback, scientist.mdl missing from the map)'));
   }
  }
  function roundStart(){
   roundEnded=false;lastUse=-10;
   if(!active())return;
   if(mode==='hostage'){
-   for(const h of hostages){h.following=null;h.rescued=false;h.mesh.visible=true;h.mesh.position.copy(V(...h.position));}
+   for(const h of hostages){h.following=null;h.rescued=false;h.mesh.visible=true;h.mesh.position.copy(V(...h.position));h.mesh.rotation.y=yawOf(h.angles);}
   }
   P.isVIP=false;for(const b of bots)b.isVIP=false;
   if(mode==='vip'){
