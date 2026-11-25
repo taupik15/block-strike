@@ -75,7 +75,7 @@ const ObjectiveMode=(()=>{
   roundEnded=false;lastUse=-10;
   if(!active())return;
   if(mode==='hostage'){
-   for(const h of hostages){h.following=null;h.rescued=false;h.mesh.visible=true;h.mesh.position.copy(V(...h.position));h.mesh.rotation.y=yawOf(h.angles);}
+   for(const h of hostages){h.following=null;h.assignedTo=null;h.rescued=false;h.mesh.visible=true;h.mesh.position.copy(V(...h.position));h.mesh.rotation.y=yawOf(h.angles);}
   }
   P.isVIP=false;for(const b of bots)b.isVIP=false;
   if(mode==='vip'){
@@ -142,39 +142,44 @@ const ObjectiveMode=(()=>{
   if(mode==='hostage'){
    const free=hostages.filter(h=>!h.rescued&&!h.following);
    const live=hostages.filter(h=>!h.rescued);
-   // CT: leave spawn, collect assigned hostage, then rescue zone.
-   // Spread targets by teamIndex so the whole CT stack does not path to one scientist.
+   // CT bots reserve different hostages to prevent the entire team stacking on one.
    if(bot.team==='CT'){
+    for(const h of free)if(h.assignedTo&&!alive(h.assignedTo))h.assignedTo=null;
     const carried=hostages.find(h=>h.following===bot&&!h.rescued);
-    if(carried)return {pos:zoneGoal(data.objectives?.hostageRescueZones||[],bot)||carried.mesh.position,radius:1.2,force:true,urgent:true,mode:'hostage-rescue'};
-    if(free.length){
-     const pick=free[(bot.teamIndex||0)%free.length];
+    if(carried)return {pos:zoneGoal(data.objectives?.hostageRescueZones||[],bot,bot.teamIndex||0)||carried.mesh.position,radius:1.2,force:true,urgent:true,mode:'hostage-rescue'};
+    const assigned=free.find(h=>h.assignedTo===bot);
+    if(assigned)return {pos:assigned.mesh.position,radius:.85,force:true,urgent:true,mode:'hostage-collect'};
+    const available=free.filter(h=>!h.assignedTo);
+    if(available.length){
+     available.sort((a,b)=>pos(bot).distanceToSquared(a.mesh.position)-pos(bot).distanceToSquared(b.mesh.position));
+     const pick=available[0];pick.assignedTo=bot;
      return {pos:pick.mesh.position,radius:.85,force:true,urgent:true,mode:'hostage-collect'};
     }
-    // All hostages claimed: push rescue zone / support carriers.
-    const zone=zoneGoal(data.objectives?.hostageRescueZones||[],bot);
+    const zone=zoneGoal(data.objectives?.hostageRescueZones||[],bot,bot.teamIndex||0);
     if(zone)return {pos:zone,radius:1.4,force:true,mode:'hostage-support'};
     const carrier=hostages.find(h=>h.following&&!h.rescued);
     if(carrier)return {pos:carrier.mesh.position,radius:2.5,mode:'hostage-support'};
    }
-   // T: do NOT default to "rush CT spawn" (Phase10.goal). Hold the hostage area,
-   // intercept rescuers, and only peel to enemies when already engaged.
+   // Most Ts leave the hostage room and pressure CT approach routes; a minority guard.
    if(bot.team==='T'&&live.length){
-    if(bot.visibleEnemy)return null; // let combat / Phase10 chase visible CT
-    const idx=(bot.teamIndex||0)%live.length;
-    const h=live[idx];
-    const anchor=h.mesh.position.clone();
-    // Ring of guard posts around hostages so T does not clump on one point.
-    const ang=((bot.teamIndex||0)*1.7)+((bot.patrolIndex||0)*.4);
-    const rad=1.8+((bot.teamIndex||0)%3)*.9;
-    anchor.x+=Math.cos(ang)*rad;anchor.z+=Math.sin(ang)*rad;
-    // Some Ts watch the rescue zone exit instead of camping the scientists.
-    const zones=data.objectives?.hostageRescueZones||[];
-    if(zones.length&&(bot.teamIndex||0)%4===3){
-     const zg=zoneGoal(zones,bot);
-     if(zg)return {pos:zg,radius:2.2,force:true,mode:'deny-rescue'};
+    if(bot.visibleEnemy)return null; // combat AI handles visible enemies
+    const idx=bot.teamIndex||0;
+    if(idx%4===0){
+     const h=live[Math.floor(idx/4)%live.length];
+     const anchor=h.mesh.position.clone();
+     const ang=idx*1.7+Math.floor((bot.patrolIndex||0)/3)*.9;
+     const rad=2.2+(idx%3)*.7;
+     anchor.x+=Math.cos(ang)*rad;anchor.z+=Math.sin(ang)*rad;
+     return {pos:anchor,radius:2,force:true,mode:'guard-hostage'};
     }
-    return {pos:anchor,radius:1.6,force:true,mode:'guard-hostage'};
+    const ctSpawns=data.col?.spawnTeams?.CT||[];
+    if(ctSpawns.length){
+     const spawn=ctSpawns[(idx+Math.floor(idx/4))%ctSpawns.length];
+     return {pos:V(...BSP.toGame(data.col.T,spawn)),radius:2.8,force:true,mode:'attack-ct'};
+    }
+    const zones=data.objectives?.hostageRescueZones||[];
+    const intercept=zoneGoal(zones,bot);
+    if(intercept)return {pos:intercept,radius:2.2,force:true,mode:'deny-rescue'};
    }
   }
   if(mode==='escape'&&bot.team==='CT')return {pos:zoneGoal(data.objectives?.escapeZones||[],bot)||pos(bot),radius:1.2,force:true,urgent:true,mode:'escape-zone'};
