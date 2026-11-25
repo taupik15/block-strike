@@ -362,31 +362,33 @@ const BombMode=(()=>{
   if(!graph||phase!=='carried'||!bot||bot.dead||bot.radioOrder||bot===carrier){if(bot){bot.siteSweep=null;bot.siteClearSince=0;}return null;}
   const t=performance.now()/1000,p=pos(bot),contact=bot.visibleEnemy||bot.obstructedEnemy&&t-bot.obstructedEnemy.t<2.5||
    bot.lastSeen&&t-bot.lastSeen.t<4||bot.threat&&t-bot.threat.t<4||bot.heard&&t-bot.heard.t<3;
-  if(contact){bot.siteSweep=null;bot.siteClearSince=0;bot.siteSweepNext=Math.max(bot.siteSweepNext||0,t+5);return null;}
+  if(contact){bot.siteSweep=null;bot.siteClearSince=0;bot.siteSweepNext=Math.max(bot.siteSweepNext||0,t+3.5);return null;}
   if(bot.siteSweep&&bot.siteSweep.site!==site.id)bot.siteSweep=null;
   const active=bot.siteSweep;
   if(active){
    const node=graph.nodes[active.node];
    if(!node||t>=active.until||p.distanceTo(V(...node.pos))<=1.15){
-    bot.siteSweep=null;bot.siteClearSince=0;bot.siteSweepNext=t+7+(bot.teamIndex%4);
+    bot.siteSweep=null;bot.siteClearSince=0;bot.siteSweepNext=t+4+(bot.teamIndex%4)*.6;
    }else return {pos:V(...node.pos),mode:'site-sweep',radius:.85,stationId:node.id,site:site.id};
   }
   const d=Math.hypot(p.x-guard.pos.x,p.z-guard.pos.z);
   if(d>Math.max(1.55,guard.radius+.65)||Math.abs(p.y-guard.pos.y)>1.3){bot.siteClearSince=0;return null;}
   if(!bot.siteClearSince)bot.siteClearSince=t;
-  if(t-bot.siteClearSince<5.5+(bot.teamIndex%4)*1.1||t<(bot.siteSweepNext||0))return null;
-  // Only one patrol per team/site at once. A lone defender stays near the site.
-  if(bots.some(other=>other!==bot&&!other.dead&&other.team===bot.team&&other.siteSweep?.site===site.id))return null;
+  // Sit briefly, then patrol — CT should not AFK on the bomb tile for half the round.
+  if(t-bot.siteClearSince<2.2+(bot.teamIndex%3)*.45||t<(bot.siteSweepNext||0))return null;
+  // Up to two concurrent patrols per team/site when the site is adequately covered.
+  const sweeping=bots.filter(other=>other!==bot&&!other.dead&&other.team===bot.team&&other.siteSweep?.site===site.id).length;
   const covered=bot.team!=='CT'||bots.some(other=>other!==bot&&!other.dead&&other.team==='CT'&&other.siteAssignment===site.id&&
    !other.siteSweep&&pos(other).distanceTo(site.goal)<9);
+  if(sweeping>=(covered?2:1))return null;
   const possible=(site.sweepNodes?.[bot.team]||[]).filter(id=>{
    const dist=V(...graph.nodes[id].pos).distanceTo(site.goal);
-   return dist<=(covered?(bot.team==='T'?9.5:12):6.5);
+   return dist<=(covered?(bot.team==='T'?9.5:14):7.5);
   });
-  if(!possible.length){bot.siteSweepNext=t+7;return null;}
+  if(!possible.length){bot.siteSweepNext=t+4;return null;}
   const index=((bot.siteSweepIndex||0)*7+(bot.teamIndex||0)*3)%possible.length,node=graph.nodes[possible[index]];
   bot.siteSweepIndex=(bot.siteSweepIndex||0)+1;
-  bot.siteSweep={site:site.id,node:node.id,until:t+12};bot.siteClearSince=0;
+  bot.siteSweep={site:site.id,node:node.id,until:t+14};bot.siteClearSince=0;
   return {pos:V(...node.pos),mode:'site-sweep',radius:.85,stationId:node.id,site:site.id};
  }
  function routeInfo(bot){
@@ -457,7 +459,21 @@ const BombMode=(()=>{
   if(carrier!==human&&carrier){carrier.siteAssignment=attack.id;carrier.objectiveRole='carrier'}
   const a=sites[0],b=sites[1]||a;
   cts.sort((x,y)=>(pos(x).distanceTo(a.goal)-pos(x).distanceTo(b.goal))-(pos(y).distanceTo(a.goal)-pos(y).distanceTo(b.goal)));
-  for(const [i,bot] of cts.entries()){bot.siteAssignment=(i<Math.ceil(cts.length/2)?a:b).id;bot.objectiveRole='defender';bot.siteSlot=i<Math.ceil(cts.length/2)?i:i-Math.ceil(cts.length/2);bot.flexDefense=cts.length>=6;bot.rotateAt=performance.now()/1000+2+(bot.siteSlot%3)*.35}
+  // 1–2 roamers control mid / map instead of AFK on the nearer bombsite (de_dust CT spawn → A).
+  // Remaining CTs split across sites. flexDefense from 4 CTs so rotation works in normal matches.
+  const roamerCount=Math.min(2,Math.max(0,cts.length>=5?2:cts.length>=3?1:0));
+  const defenders=cts.slice(roamerCount);
+  const half=Math.ceil(defenders.length/2)||1;
+  for(const [i,bot] of cts.entries()){
+   if(i<roamerCount){
+    bot.siteAssignment=null;bot.objectiveRole='roamer';bot.siteSlot=i;
+    bot.flexDefense=true;bot.rotateAt=performance.now()/1000+.6+(i%3)*.25;
+    continue;
+   }
+   const di=i-roamerCount;
+   bot.siteAssignment=(di<half?a:b).id;bot.objectiveRole='defender';bot.siteSlot=di<half?di:di-half;
+   bot.flexDefense=cts.length>=4;bot.rotateAt=performance.now()/1000+1.2+(bot.siteSlot%3)*.35;
+  }
  }
   function observe(bot,point,contactId=null){
   if(!active()||phase!=='carried'||!point)return;
@@ -507,10 +523,25 @@ const BombMode=(()=>{
     if(threat&&dist<16&&timer>routeInfo(bot).bombTime+speedTime(bot)+3.5)return {pos:pos(bot),radius:.5,hold:true,urgent:true,force:true,mode:'retake-clear'};
     return {pos:position,radius:canReach(bot)?interactDistance:.25,force:true,urgent:true,mode:'defuse'};
    }
+   // T priority while planted: stop a confirmed defuser before fleeing the blast.
+   // escape-bomb used to win this race, so Ts ran past a visible defuser.
+   // Only abandon the fight when detonation is imminent (not enough time to kill).
+   if(bot.team==='T'){
+    const seeDefuser=bot.visibleEnemy&&isDefuser(bot.visibleEnemy);
+    const heardAge=bot.heard?.type==='defuse'?performance.now()/1000-bot.heard.t:Infinity;
+    const stopDefuse=seeDefuser||heardAge<2.5;
+    const imminent=timer<=1.35;
+    if(stopDefuse&&!imminent){
+     // Stay in the fight; do not keep a sticky escape that suppresses shooting.
+     bot.bombEscaping=false;
+     if(seeDefuser)return {pos:pos(bot),radius:.5,hold:true,urgent:true,mode:'guard-bomb'};
+     if(heardAge<1.4)return {pos:pos(bot),radius:.5,hold:true,urgent:true,mode:'guard-bomb'};
+     if(heardAge<2.5)return {pos:bot.heard.pos,radius:1.5,force:true,urgent:true,mode:'investigate-defuse'};
+    }
+   }
    const flee=escapeGoal(bot);
    if(flee)return flee;
-   // Any T with a visually confirmed defuser fights from a useful position;
-   // no wall vision, no unconditional shared enemy position.
+   // Fallback: no live defuse pressure, hold site cover.
    if(bot.team==='T'&&bot.visibleEnemy&&isDefuser(bot.visibleEnemy))return {pos:pos(bot),radius:.5,hold:true,urgent:true,mode:'guard-bomb'};
    if(bot.team==='T'&&!bot.visibleEnemy&&bot.heard?.type==='defuse'){
     const age=performance.now()/1000-bot.heard.t;
@@ -534,8 +565,24 @@ const BombMode=(()=>{
    if(bot===carrier){const target=sites.find(s=>s.id===plan?.attack)||sites[0];return target?{pos:target.goal,radius:.65,force:true,urgent:roundTime<24,mode:'plant'}:null}
    if(carrier===human&&alive(human)&&bot.objectiveRole==='escort'&&bot.radioOrder?.mode!=='advance')return {pos:P.pos,radius:3.1+(bot.teamIndex%3),mode:'escort'};
   }
+  // Roamers: map control between sites (mid / connectors), not AFK on CT-near bombsite.
+  if(bot.team==='CT'&&bot.objectiveRole==='roamer'&&phase==='carried'&&!bot.radioOrder){
+   const a=sites[0],b=sites[1]||a;
+   const mid=a.goal.clone().lerp(b.goal,.5);
+   mid.x+=((bot.teamIndex||0)%5-2)*1.1;
+   mid.z+=(((bot.teamIndex||0)>>1)%3-1)*1.1;
+   // Late round or strong pressure: fall back to the hotter site.
+   const t=performance.now()/1000;
+   const pressure=id=>{const contacts=ctPressure.get(id);return contacts?[...contacts.values()].filter(at=>t-at<8).length:0};
+   const hot=sites.slice().sort((x,y)=>pressure(y.id)-pressure(x.id))[0];
+   if(hot&&(pressure(hot.id)>=2||roundTime<35)){
+    bot.siteAssignment=hot.id;bot.objectiveRole='defender';bot.localRoute=null;
+   }else{
+    return {pos:mid,radius:2.6,mode:'advance',force:true};
+   }
+  }
   // Only a limited flexible defender may rotate toward recent sightings.
-  if(bot.team==='CT'&&bot.flexDefense&&!bot.radioOrder&&performance.now()/1000>=(bot.rotateAt||0)){
+  if(bot.team==='CT'&&bot.flexDefense&&bot.siteAssignment&&!bot.radioOrder&&performance.now()/1000>=(bot.rotateAt||0)){
    const t=performance.now()/1000;bot.rotateAt=t+2.5;
    const pressure=id=>{const contacts=ctPressure.get(id);return contacts?[...contacts.values()].filter(at=>t-at<8).length:0};
    const other=sites.find(s=>s.id!==bot.siteAssignment&&pressure(s.id)>=pressure(bot.siteAssignment)+2);

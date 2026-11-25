@@ -14,20 +14,32 @@ const ObjectiveMode=(()=>{
   if(group){group.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose()}});group.parent?.remove(group);group=null;}
   hostages=[];vip=null;
  }
- function personMesh(color=0xb4a17a){
-  const g=new THREE.Group(),skin=new THREE.MeshStandardMaterial({color:0xb88e70,roughness:1}),shirt=new THREE.MeshStandardMaterial({color,roughness:1}),pants=new THREE.MeshStandardMaterial({color:0x343b42,roughness:1});
-  const torso=new THREE.Mesh(new THREE.BoxGeometry(.34,.48,.2),shirt);torso.position.y=.88;g.add(torso);
-  const head=new THREE.Mesh(new THREE.SphereGeometry(.115,8,6),skin);head.position.y=1.23;g.add(head);
-  for(const x of [-.105,.105]){const leg=new THREE.Mesh(new THREE.BoxGeometry(.12,.42,.13),pants);leg.position.set(x,.43,0);g.add(leg);const arm=new THREE.Mesh(new THREE.BoxGeometry(.1,.38,.12),shirt);arm.position.set(x*2,.91,0);g.add(arm);}
-  g.userData.materials=[skin,shirt,pants];return g;
+ // Classic CS scientist look: mustard/yellow lab coat (not gray boxes).
+ // Full GoldSrc hostage.mdl rendering can come later; HR stays readable offline.
+ function personMesh(color=0xd7b84a,variant=0){
+  const g=new THREE.Group();
+  const skin=new THREE.MeshStandardMaterial({color:0xc4a07a,roughness:.95});
+  const shirt=new THREE.MeshStandardMaterial({color,roughness:.9});
+  const pants=new THREE.MeshStandardMaterial({color:variant%2?0x3a4550:0x2e3842,roughness:.95});
+  const shoes=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:1});
+  const torso=new THREE.Mesh(new THREE.BoxGeometry(.36,.5,.22),shirt);torso.position.y=.9;g.add(torso);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),skin);head.position.y=1.26;g.add(head);
+  for(const x of [-.11,.11]){
+   const leg=new THREE.Mesh(new THREE.BoxGeometry(.12,.44,.13),pants);leg.position.set(x,.42,0);g.add(leg);
+   const foot=new THREE.Mesh(new THREE.BoxGeometry(.13,.08,.18),shoes);foot.position.set(x,.18,.02);g.add(foot);
+   const arm=new THREE.Mesh(new THREE.BoxGeometry(.1,.4,.12),shirt);arm.position.set(x*2.05,.92,0);g.add(arm);
+  }
+  g.userData.materials=[skin,shirt,pants,shoes];return g;
  }
  function prepare(mapData){
   dispose();data=mapData||null;mode=data?.mode||'elimination';roundEnded=false;
   if(!active()||!S)return;
   group=new THREE.Group();group.name='objective-actors';S.add(group);
   if(mode==='hostage'){
+   // CS-style yellow coats; slight hue shift so 4 scientists read as distinct.
+   const coats=[0xd7b84a,0xe2c35a,0xc9a83e,0xf0d06a];
    hostages=(data.objectives?.hostages||[]).map((h,i)=>{
-    const mesh=personMesh(0x9b9a83);mesh.position.copy(V(...h.position));mesh.rotation.y=Number(h.angles)||0;group.add(mesh);
+    const mesh=personMesh(coats[i%coats.length],i);mesh.position.copy(V(...h.position));mesh.rotation.y=Number(h.angles)||0;group.add(mesh);
     return {...h,mesh,following:null,rescued:false};
    });
   }
@@ -100,11 +112,43 @@ const ObjectiveMode=(()=>{
    if(bot===vip.actor)return {pos:zoneGoal(data.objectives?.vipSafetyZones||[],bot)||vip.position,radius:1.25,force:true,urgent:true,mode:'vip-escape'};
    if(bot.team==='CT'&&vip.actor&&alive(vip.actor)&&vip.actor!==human)return {pos:pos(vip.actor),radius:3.5,mode:'vip-escort'};
   }
-  if(mode==='hostage'&&bot.team==='CT'){
-   const carried=hostages.find(h=>h.following===bot&&!h.rescued);
-   if(carried)return {pos:zoneGoal(data.objectives?.hostageRescueZones||[],bot)||carried.mesh.position,radius:1.2,force:true,urgent:true,mode:'hostage-rescue'};
-   const target=hostages.filter(h=>!h.rescued&&!h.following).sort((a,b)=>pos(bot).distanceToSquared(a.mesh.position)-pos(bot).distanceToSquared(b.mesh.position))[0];
-   if(target)return {pos:target.mesh.position,radius:.8,force:true,mode:'hostage-collect'};
+  if(mode==='hostage'){
+   const free=hostages.filter(h=>!h.rescued&&!h.following);
+   const live=hostages.filter(h=>!h.rescued);
+   // CT: leave spawn, collect assigned hostage, then rescue zone.
+   // Spread targets by teamIndex so the whole CT stack does not path to one scientist.
+   if(bot.team==='CT'){
+    const carried=hostages.find(h=>h.following===bot&&!h.rescued);
+    if(carried)return {pos:zoneGoal(data.objectives?.hostageRescueZones||[],bot)||carried.mesh.position,radius:1.2,force:true,urgent:true,mode:'hostage-rescue'};
+    if(free.length){
+     const pick=free[(bot.teamIndex||0)%free.length];
+     return {pos:pick.mesh.position,radius:.85,force:true,urgent:true,mode:'hostage-collect'};
+    }
+    // All hostages claimed: push rescue zone / support carriers.
+    const zone=zoneGoal(data.objectives?.hostageRescueZones||[],bot);
+    if(zone)return {pos:zone,radius:1.4,force:true,mode:'hostage-support'};
+    const carrier=hostages.find(h=>h.following&&!h.rescued);
+    if(carrier)return {pos:carrier.mesh.position,radius:2.5,mode:'hostage-support'};
+   }
+   // T: do NOT default to "rush CT spawn" (Phase10.goal). Hold the hostage area,
+   // intercept rescuers, and only peel to enemies when already engaged.
+   if(bot.team==='T'&&live.length){
+    if(bot.visibleEnemy)return null; // let combat / Phase10 chase visible CT
+    const idx=(bot.teamIndex||0)%live.length;
+    const h=live[idx];
+    const anchor=h.mesh.position.clone();
+    // Ring of guard posts around hostages so T does not clump on one point.
+    const ang=((bot.teamIndex||0)*1.7)+((bot.patrolIndex||0)*.4);
+    const rad=1.8+((bot.teamIndex||0)%3)*.9;
+    anchor.x+=Math.cos(ang)*rad;anchor.z+=Math.sin(ang)*rad;
+    // Some Ts watch the rescue zone exit instead of camping the scientists.
+    const zones=data.objectives?.hostageRescueZones||[];
+    if(zones.length&&(bot.teamIndex||0)%4===3){
+     const zg=zoneGoal(zones,bot);
+     if(zg)return {pos:zg,radius:2.2,force:true,mode:'deny-rescue'};
+    }
+    return {pos:anchor,radius:1.6,force:true,mode:'guard-hostage'};
+   }
   }
   if(mode==='escape'&&bot.team==='CT')return {pos:zoneGoal(data.objectives?.escapeZones||[],bot)||pos(bot),radius:1.2,force:true,urgent:true,mode:'escape-zone'};
   return null;
