@@ -56,7 +56,7 @@ const MapImporter=(()=>{
   const location=entry=>{
    const parts=pathKey(entry.path).split('/').slice(0,-1);
    let common=0;
-   while(common<base.length&&common<parts.length&&parts[common]===base[common])common++;
+   while(common<base.length&&common<parts.length&&base[common]===parts[common])common++;
    return common*4-Math.abs(base.length-parts.length);
   };
   return (name,extensions)=>{
@@ -184,11 +184,12 @@ const MapImporter=(()=>{
   async function attempt(buffer,type,origin,cache=false){
    try{
     const graph=type==='PWF'?LocalBSPNav.fromPwf(buffer,data.col,mapName):type==='NAV v5'?LocalBSPNav.fromNav(buffer,data.col,bsp.buffer.byteLength):LocalBSPNav.fromGraph(buffer,data.col,bsp.buffer.byteLength);
-    // Only the owner's verified original CS 1.6 Chateau BSP receives the
-    // bounded physical validation for dropped source GRAPH stair/spawn edges.
-    // Never apply this correction to another map or similarly named BSP.
-    graph.chateauRepair=type==='YaPB GRAPH'&&mapName.toLowerCase()==='de_chateau'&&
-      cacheKey==='nav-v1:2c7988276c3087b52f4709890974b476a62f526955635dd935144e38d1666dce';
+    // Apply bounded source-link repair only to byte-identical, verified stock BSPs.
+    // authoredWalkLink() still checks real collision/ground movement before adding an edge.
+    const bspHash=cacheKey;
+    const verifiedChateau=mapName.toLowerCase()==='de_chateau'&&bspHash==='nav-v1:2c7988276c3087b52f4709890974b476a62f526955635dd935144e38d1666dce';
+    const verifiedItaly=mapName.toLowerCase()==='cs_italy'&&bspHash==='nav-v1:2a5a16044d69481a9fb3c623407fb0ba9d6b8863f30db35451992d2879c1ca9d'&&graph.mapSize===bsp.buffer.byteLength;
+    graph.chateauRepair=type==='YaPB GRAPH'&&(verifiedChateau||verifiedItaly);
     const check=LocalBSPNav.validate(graph,navTargets);
     if(!best||check.edges>best.check.edges)best={graph,check,origin};
     if(!check.ok){issues.push(origin+': incomplete validated routes ('+check.nodes+' nodes, '+check.edges+' links).');return false}
