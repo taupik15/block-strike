@@ -1,5 +1,7 @@
-/* AR.11.10.3: user-triggered Service Worker refresh. Imported BSP/WAD/GRAPH
- * IndexedDB, match options, and local preferences are never cleared. */
+/* AR.11.10.3 + SW-UPDATE-FIX: user-triggered Service Worker refresh.
+ * Imported BSP/WAD/GRAPH IndexedDB, match options, and local preferences are never cleared.
+ * Never call registration.update() when Get Newest Worker would be null.
+ * Never force-reload on a failed/no-op check; keep the current game playable. */
 (()=>{
  'use strict';
  const button=document.getElementById('offlinePrepare');
@@ -8,20 +10,31 @@
  const refreshStatus=document.getElementById('refreshGameStatus');
  const show=s=>{if(status)status.textContent=s};
  const showRefresh=s=>{if(refreshStatus)refreshStatus.textContent=s};
+ const SW_URL='./sw.js';
+ const SW_SCOPE='./';
+ const UPDATE_TIMEOUT_MS=20000;
  const supported='serviceWorker' in navigator && window.isSecureContext;
+
  if(!supported){
   show('Cache offline memerlukan HTTPS dan Service Worker.');
   if(button)button.disabled=true;
-  if(refresh)refresh.addEventListener('click',()=>{showRefresh('Service Worker unavailable; reloading the current page.');location.reload()});
+  if(refresh)refresh.addEventListener('click',()=>{
+   showRefresh('Service Worker tidak tersedia di browser ini.');
+  });
   return;
  }
+
  let busy=false,refreshing=false,activating=false,activeClose=null,registration=null;
+
  const waiting=()=>!!registration?.waiting;
+ const hasAnyWorker=reg=>!!(reg&&(reg.installing||reg.waiting||reg.active));
+
  function updateNotice(){
   show('Update game tersedia. Buka menu utama dan pilih Refresh Game untuk memasangnya.');
   if(button)button.disabled=true;
-  showRefresh('Versi baru siap. Tekan Refresh Game untuk memasang.');
+  showRefresh('Update tersedia.');
  }
+
  function message(type){
   if(waiting()){updateNotice();return;}
   if(activeClose)activeClose();
@@ -41,12 +54,42 @@
   };
   arm();try{target.postMessage({type},[channel.port2])}catch(_){close();show('Cache tidak dapat dihubungi.')}
  }
- if(button){button.disabled=true;button.addEventListener('click',()=>{if(!busy&&!waiting()&&!refreshing){try{navigator.storage?.persist?.().catch(()=>{})}catch(_){}message('OFFLINE_PREPARE')}});}
+
+ if(button){
+  button.disabled=true;
+  button.addEventListener('click',()=>{
+   if(!busy&&!waiting()&&!refreshing){
+    try{navigator.storage?.persist?.().catch(()=>{})}catch(_){}
+    message('OFFLINE_PREPARE');
+   }
+  });
+ }
+
  navigator.serviceWorker.addEventListener('controllerchange',()=>{
-  if(activating){activating=false;showRefresh('Update aktif. Memuat versi baru…');location.reload();return;}
+  // Only reload when the user explicitly activated a waiting worker.
+  if(activating){
+   activating=false;
+   showRefresh('Update aktif. Memuat versi baru…');
+   location.reload();
+   return;
+  }
   if(!refreshing)message('OFFLINE_STATUS');
  });
- const registrationPromise=navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'}).then(reg=>{
+
+ /** Fresh registration lookup. Prefer getRegistration; register only if missing. */
+ async function ensureRegistration(){
+  let reg=null;
+  try{reg=await navigator.serviceWorker.getRegistration(SW_SCOPE)}catch(_){reg=null}
+  if(reg){
+   registration=reg;
+   return reg;
+  }
+  reg=await navigator.serviceWorker.register(SW_URL,{scope:SW_SCOPE,updateViaCache:'none'});
+  registration=reg;
+  return reg;
+ }
+
+ const registrationPromise=ensureRegistration().then(reg=>{
   registration=reg;
   reg.addEventListener('updatefound',()=>{
    const worker=reg.installing;
@@ -63,11 +106,18 @@
  });
  // Avoid an unhandled rejection if the user never presses Refresh Game.
  registrationPromise.catch(()=>{});
+
  function whenInstalled(reg,worker){
-  if(reg.waiting)return Promise.resolve(true);
+  if(!worker)return Promise.resolve(false);
+  if(reg.waiting||worker.state==='installed'||worker.state==='activated')return Promise.resolve(true);
+  if(worker.state==='redundant')return Promise.resolve(false);
   return new Promise(resolve=>{
    let timer;
-   const finish=ready=>{clearTimeout(timer);worker.removeEventListener('statechange',tick);resolve(ready)};
+   const finish=ready=>{
+    clearTimeout(timer);
+    try{worker.removeEventListener('statechange',tick)}catch(_){}
+    resolve(ready);
+   };
    const tick=()=>{
     if(reg.waiting||worker.state==='installed'||worker.state==='activated')finish(true);
     else if(worker.state==='redundant')finish(false);
@@ -77,84 +127,197 @@
    tick();
   });
  }
+
  function activate(reg){
-  const worker=reg.waiting;
-  if(!worker)return false;
+  const worker=reg&&reg.waiting;
+  if(!worker){
+   showRefresh('Tidak ada update yang menunggu aktivasi.');
+   return false;
+  }
   activating=true;
   showRefresh('Mengaktifkan update. Game akan dimuat ulang…');
   // Prevent a silent no-op if a browser loses the controllerchange event.
-  setTimeout(()=>{if(activating){activating=false;refreshing=false;refresh.disabled=false;showRefresh('Update menunggu aktivasi. Tekan Refresh Game lagi atau muat ulang halaman.')}},20000);
+  setTimeout(()=>{
+   if(activating){
+    activating=false;
+    refreshing=false;
+    if(refresh)refresh.disabled=false;
+    showRefresh('Update menunggu aktivasi. Tekan Refresh Game lagi atau muat ulang halaman.');
+   }
+  },20000);
   const channel=new MessageChannel();
   channel.port1.onmessage=({data})=>{
    channel.port1.close();
    if(data?.type==='blocked'){
-    activating=false;refreshing=false;refresh.disabled=false;
+    activating=false;refreshing=false;if(refresh)refresh.disabled=false;
     showRefresh(`Ada ${data.tabs} tab game terbuka. Tutup tab BLOCK STRIKE lainnya sebelum mengaktifkan update agar match tidak rusak.`);
    }
   };
   try{worker.postMessage({type:'ACTIVATE_UPDATE'},[channel.port2])}
-  catch(error){activating=false;refreshing=false;refresh.disabled=false;channel.port1.close();showRefresh('Aktivasi update gagal: '+String(error?.message||error).slice(0,90));}
+  catch(error){
+   activating=false;refreshing=false;if(refresh)refresh.disabled=false;channel.port1.close();
+   showRefresh('Aktivasi update gagal: '+String(error?.message||error).slice(0,90));
+  }
   return true;
  }
+
+ function isUpdateStateError(err){
+  const msg=String(err?.message||err||'');
+  const name=String(err?.name||'');
+  return name==='InvalidStateError'
+   ||/newestWorker/i.test(msg)
+   ||/InvalidStateError/i.test(msg)
+   ||/invalid state/i.test(msg)
+   ||/null\/nonexistent/i.test(msg)
+   ||/Cannot update/i.test(msg)
+   ||/nonexistent service worker/i.test(msg);
+ }
+
+ async function safeUpdate(reg){
+  // Spec: update() rejects when Get Newest Worker is null.
+  if(!hasAnyWorker(reg)){
+   const err=new Error('Cannot update a null/nonexistent service worker registration');
+   err.name='InvalidStateError';
+   throw err;
+  }
+  let timedOut=false;
+  const timeout=new Promise((_,reject)=>{
+   setTimeout(()=>{timedOut=true;reject(Object.assign(new Error('Update check timed out'),{name:'TimeoutError'}))},UPDATE_TIMEOUT_MS);
+  });
+  try{
+   await Promise.race([reg.update(),timeout]);
+  }catch(e){
+   if(timedOut)throw Object.assign(new Error('Update check timed out'),{name:'TimeoutError'});
+   throw e;
+  }
+ }
+
+ /**
+  * User-triggered update check.
+  * - Never calls update() without a worker on the registration.
+  * - Never force-reloads on failed/no-op checks (old game stays playable).
+  * - Only reloads after the user activates a waiting worker (controllerchange).
+  */
  async function checkAndRefresh(){
   if(refreshing||busy)return;
-  // Refreshing an active/paused match is destructive. Ask BEFORE asynchronous work.
   if(document.body.classList.contains('playing')&&!confirm('Refresh akan mengakhiri match yang sedang berjalan. Lanjutkan?'))return;
-  if(navigator.onLine===false&&!registration?.waiting){showRefresh('Offline: versi baru tidak bisa diperiksa. Game saat ini tetap bisa dimainkan.');return;}
-  refreshing=true;if(refresh)refresh.disabled=true;
+
+  if(navigator.onLine===false){
+   // Offline: can still activate a worker that already finished downloading.
+   try{
+    const reg=await ensureRegistration();
+    if(reg.waiting){activate(reg);return;}
+   }catch(_){}
+   showRefresh('Tidak dapat memeriksa update. Versi game saat ini tetap aman.');
+   return;
+  }
+
+  refreshing=true;
+  if(refresh)refresh.disabled=true;
+
   try{
-   showRefresh('Memeriksa versi terbaru dari GitHub Pages…');
-   let reg=await registrationPromise;
-   // Spec: update() rejects with InvalidStateError when Get Newest Worker is null
-   // (no installing/waiting/active). Safari often surfaces this as "newestWorker is null".
-   // Re-register to recover a broken empty registration, then continue.
-   if(!reg.installing&&!reg.waiting&&!reg.active){
-    showRefresh('Service Worker kosong. Menginstal ulang…');
-    reg=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
-    registration=reg;
-    if(!reg.installing&&!reg.waiting&&!reg.active){
-     showRefresh('Instal SW gagal. Muat ulang halaman, atau hapus data situs taupik15.github.io di Settings Safari.');
+   showRefresh('Memeriksa update…');
+
+   // Always resolve a live registration; do not trust a stale closed-over object alone.
+   let reg=await ensureRegistration();
+
+   // Waiting worker: update already downloaded — offer activation.
+   if(reg.waiting){
+    showRefresh('Update tersedia.');
+    activate(reg);
+    return;
+   }
+
+   // Empty registration (no installing/waiting/active): re-register once, never update().
+   if(!hasAnyWorker(reg)){
+    showRefresh('Memasang Service Worker…');
+    try{
+     reg=await navigator.serviceWorker.register(SW_URL,{scope:SW_SCOPE,updateViaCache:'none'});
+     registration=reg;
+    }catch(_){
+     showRefresh('Tidak dapat memeriksa update. Versi game saat ini tetap aman.');
      return;
     }
+    if(reg.installing){
+     const ready=await whenInstalled(reg,reg.installing);
+     if(!ready){
+      showRefresh('Tidak dapat memeriksa update. Versi game saat ini tetap aman.');
+      return;
+     }
+    }
+    // Re-read after install settles.
+    try{reg=await navigator.serviceWorker.getRegistration(SW_SCOPE)||reg}catch(_){}
+    registration=reg;
+    if(reg.waiting){
+     showRefresh('Update tersedia.');
+     activate(reg);
+     return;
+    }
+    if(!hasAnyWorker(reg)){
+     showRefresh('Tidak dapat memeriksa update. Versi game saat ini tetap aman.');
+     return;
+    }
+    // Fresh install completed to active — this is current, not a pending update.
+    showRefresh('Game sudah menggunakan versi terbaru.');
+    return;
    }
-   if(reg.waiting){activate(reg);return;}
-   // update() bypasses ordinary HTTP cache for the worker and its imports.
+
+   // Safe path: registration has at least one worker → update() is legal per spec.
    try{
-    await reg.update();
+    await safeUpdate(reg);
    }catch(updateErr){
-    const msg=String(updateErr?.message||updateErr);
-    // Broken registration or mid-teardown on iOS — recover with hard reload.
-    if(/newestWorker|InvalidStateError|invalid state/i.test(msg)){
-     showRefresh('SW tidak siap update. Memuat ulang halaman…');
-     location.reload();
+    if(isUpdateStateError(updateErr)||updateErr?.name==='TimeoutError'){
+     showRefresh('Tidak dapat memeriksa update. Versi game saat ini tetap aman.');
      return;
     }
     throw updateErr;
    }
-   const installing=reg.installing;
-   if(installing){
-    showRefresh('Versi baru ditemukan. Menyiapkan file aplikasi…');
-    const ready=await whenInstalled(reg,installing);
-    if(!ready){showRefresh('Update belum siap. Cek koneksi atau penyimpanan, lalu coba lagi.');return;}
-    // A Safari statechange can precede the registration.waiting getter update.
-    if(installing.state==='installed'&&!reg.waiting)await new Promise(resolve=>setTimeout(resolve,80));
-   }
-   if(reg.waiting){activate(reg);return;}
-   // A first install may become active without a previous controller.
-   showRefresh('Tidak ada versi baru. Refresh game sekarang…');
-   location.reload();
-  }catch(error){
-   const msg=String(error?.message||error).slice(0,120);
-   // Last-resort recovery: still try a plain reload so the user is not stuck.
-   if(/newestWorker|InvalidStateError|invalid state/i.test(msg)){
-    showRefresh('Update gagal (SW rusak). Memuat ulang… Hapus data situs jika berulang.');
-    setTimeout(()=>location.reload(),600);
+
+   // Refresh registration object after update() — installing may have appeared.
+   try{reg=await navigator.serviceWorker.getRegistration(SW_SCOPE)||reg}catch(_){}
+   registration=reg;
+
+   if(reg.waiting){
+    showRefresh('Update tersedia.');
+    activate(reg);
     return;
    }
-   showRefresh('Gagal memeriksa update: '+msg+'. Game lama tetap aman.');
+
+   if(reg.installing){
+    showRefresh('Update tersedia.');
+    const ready=await whenInstalled(reg,reg.installing);
+    if(!ready){
+     showRefresh('Tidak dapat memeriksa update. Versi game saat ini tetap aman.');
+     return;
+    }
+    // Safari can lag registration.waiting behind worker.state === 'installed'.
+    if(reg.installing&&reg.installing.state==='installed'&&!reg.waiting){
+     await new Promise(r=>setTimeout(r,100));
+    }
+    try{reg=await navigator.serviceWorker.getRegistration(SW_SCOPE)||reg}catch(_){}
+    registration=reg;
+    if(reg.waiting){
+     showRefresh('Update tersedia.');
+     activate(reg);
+     return;
+    }
+   }
+
+   // update() completed and no waiting worker → already on latest.
+   showRefresh('Game sudah menggunakan versi terbaru.');
+  }catch(error){
+   if(isUpdateStateError(error)){
+    showRefresh('Tidak dapat memeriksa update. Versi game saat ini tetap aman.');
+   }else{
+    showRefresh('Tidak dapat memeriksa update. Versi game saat ini tetap aman.');
+   }
   }finally{
-   if(!activating){refreshing=false;if(refresh)refresh.disabled=false;}
+   if(!activating){
+    refreshing=false;
+    if(refresh)refresh.disabled=false;
+   }
   }
  }
+
  if(refresh?.addEventListener)refresh.addEventListener('click',()=>{void checkAndRefresh()});
 })();
