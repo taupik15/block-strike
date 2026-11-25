@@ -179,6 +179,7 @@ const MapImporter=(()=>{
   const digest=await crypto.subtle.digest('SHA-256',bsp.buffer);
   const cacheKey='nav-v1:'+Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');
   const mapName=stem(bsp.path);
+  const navTargets=[...data.sites,...(data.objectives?.hostageRescueZones||[]),...(data.objectives?.vipSafetyZones||[]),...(data.objectives?.escapeZones||[]),...(data.objectives?.hostages||[]).map((h,i)=>({origin:h.origin,mins:[-48,-48,-48],maxs:[48,48,48],id:'hostage-'+i}))].map((z,i)=>({...z,id:z.id||'objective-'+i}));
   let best=null;
   async function attempt(buffer,type,origin,cache=false){
    try{
@@ -188,7 +189,7 @@ const MapImporter=(()=>{
     // Never apply this correction to another map or similarly named BSP.
     graph.chateauRepair=type==='YaPB GRAPH'&&mapName.toLowerCase()==='de_chateau'&&
       cacheKey==='nav-v1:2c7988276c3087b52f4709890974b476a62f526955635dd935144e38d1666dce';
-    const check=LocalBSPNav.validate(graph,data.sites);
+    const check=LocalBSPNav.validate(graph,navTargets);
     if(!best||check.edges>best.check.edges)best={graph,check,origin};
     if(!check.ok){issues.push(origin+': incomplete validated routes ('+check.nodes+' nodes, '+check.edges+' links).');return false}
     data.graph=graph;data.navSource=origin+(graph.author?' · '+graph.author:'');data.navValidation=check;
@@ -214,7 +215,7 @@ const MapImporter=(()=>{
    catch(e){issues.push('YaPB lookup: '+e.message)}
   }
   if(!data.graph){
-   const generated=LocalBSPNav.build(data.col),check=LocalBSPNav.validate(generated,data.sites);
+   const generated=LocalBSPNav.build(data.col),check=LocalBSPNav.validate(generated,navTargets);
    if(check.ok||!best||check.edges>best.check.edges){data.graph=generated;data.navValidation=check;data.navSource='generated'}
    else{data.graph=best.graph;data.navSource=best.origin+' (partial)';data.navValidation=best.check}
   }

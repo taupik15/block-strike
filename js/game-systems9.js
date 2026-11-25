@@ -239,12 +239,13 @@ const Phase9=(()=>{
    if(d)$('pickupName').textContent=W[d.id].n;
   }
   if(d){const rule=Phase14C.guardPickup(d.id,inventory,W,playerTeam);$('pickupDesc').textContent=rule||'E / AMBIL';$('pickupAccept').disabled=!!rule}
-  const doorUse=P.hp>0&&!roundWait&&window.bspCol&&BSPDoors.useButton(bspCol,BSP.toHammer(bspCol.T,P.pos.toArray()),false);
+  const doorUse=P.hp>0&&!roundWait&&((window.bspCol&&BSPDoors.useButton(bspCol,BSP.toHammer(bspCol.T,P.pos.toArray()),false))||window.ObjectiveMode?.canUseNearby?.());
   $('pickupBtn').classList.toggle('unavailable',!d&&!doorUse);
  }
  function useNearby(){
   if(blocked()||P.hp<=0||roundWait||BombMode.locked())return false;
   if(window.bspCol&&BSPDoors.useButton(bspCol,BSP.toHammer(bspCol.T,P.pos.toArray())))return true;
+  if(window.ObjectiveMode?.useNearby?.())return true;
   return pickupNearest();
  }
  function pickupNearest(){

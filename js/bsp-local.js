@@ -81,17 +81,28 @@ const LocalBSP=(()=>{
   });
  }
  const bombTargets=files=>files.filter(e=>['func_bomb_target','info_bomb_target'].includes(e.classname));
+ function objectiveMode(files){
+  const hostages=files.filter(e=>['hostage_entity','monster_scientist'].includes(e.classname));
+  const hostageZones=files.filter(e=>['func_hostage_rescue','info_hostage_rescue'].includes(e.classname));
+  const vipStart=files.find(e=>e.classname==='info_vip_start');
+  const vipZones=files.filter(e=>e.classname==='func_vip_safetyzone');
+  const escapeZones=files.filter(e=>e.classname==='func_escapezone');
+  const bomb=bombTargets(files);
+  if(vipStart||vipZones.length){if(!vipStart||!vipZones.length)fail('VIP map needs info_vip_start and func_vip_safetyzone.');return 'vip';}
+  if(hostages.length||hostageZones.length){if(!hostages.length||!hostageZones.length)fail('Hostage map needs hostages and a hostage rescue zone.');return 'hostage';}
+  if(escapeZones.length)return 'escape';
+  if(bomb.length===1)fail('Bomb Defusal needs two bombsite entities.');
+  return bomb.length?'bomb':'elimination';
+ }
  function inspect(buffer){
   const lumps=lumpsOf(buffer),files=entities(lumps[0]);
   const world=files.find(e=>e.classname==='worldspawn')||{};
   if(!files.some(e=>e.classname==='info_player_start')||!files.some(e=>e.classname==='info_player_deathmatch'))fail('BSP needs CT and T spawn entities.');
-  const targets=bombTargets(files).length;
-  if(targets===1)fail('Bomb Defusal needs two bombsite entities.');
-  if(!targets&&files.some(e=>/^(hostage_entity|monster_scientist|func_hostage_rescue|info_vip_start|func_vip_safetyzone|func_escapezone)$/.test(e.classname)))fail('Hostage, VIP and Escape objectives are unsupported.');
+  const mode=objectiveMode(files);
   const models=[...new Set(files.map(e=>['env_lightning','env_beam'].includes(e.classname)?e.texture:e.model).filter(p=>/\.(mdl|spr)$/i.test(p||'')))];
   const sounds=[...new Set(files.filter(e=>e.classname==='ambient_generic').map(e=>e.message).filter(p=>/\.(wav|mp3|ogg)$/i.test(p||'')))];
   const textures=texturesOf(lumps[2]).filter(Boolean);
-  return {mode:targets?'bomb':'elimination',wad:(world.wad||'').split(';').map(p=>p.trim()).filter(Boolean),
+  return {mode,wad:(world.wad||'').split(';').map(p=>p.trim()).filter(Boolean),
    sky:/^[a-z0-9_-]+$/i.test(world.skyname||'')?world.skyname.toLowerCase():'',
    textures:textures.map(t=>t.name.toLowerCase()),
    externalTextures:textures.filter(t=>integer(t.view,24)<=0).map(t=>t.name.toLowerCase()),
@@ -199,8 +210,7 @@ const LocalBSP=(()=>{
    }
    return {origin,mins:[-96,-96,-48],maxs:[96,96,80]};
   }
-  const targets=bombTargets(files);
-  if(targets.length===1)fail('Bomb Defusal needs two bombsite entities.');
+  const targets=bombTargets(files),mode=objectiveMode(files);
   const sites=targets.map(e=>{
    const hint=[e.targetname,e.target].filter(Boolean).map(s=>s.match(/(?:site|target|^|[_ -])([ab])(?:$|[_ -])/i)).find(Boolean);
    const zone=bounds(e);if(zone.hull1>=0)validateNode(zone.hull1);
@@ -212,6 +222,24 @@ const LocalBSP=(()=>{
    candidate.id=id;
   }
   sites.forEach(s=>{s.id||='B'});
+  const zoneData=(classes)=>files.filter(e=>classes.includes(e.classname)).map(e=>{
+   const zone=bounds(e);if(zone.hull1>=0)validateNode(zone.hull1);
+   return {...zone,classname:e.classname,target:e.target||null,triggerClip:zone.hull1>=0?clip:null};
+  });
+  const hostageEntities=files.filter(e=>['hostage_entity','monster_scientist'].includes(e.classname)).map((e,i)=>{
+   const origin=point(e);if(!origin)return null;
+   return {id:i,origin,position:BSP.toGame(T,origin),angles:e.angles||e.angle||'0'};
+  }).filter(Boolean);
+  const vipEntity=files.find(e=>e.classname==='info_vip_start'&&point(e));
+  if(mode==='hostage'&&!hostageEntities.length)fail('Hostage map has no hostage with a valid origin.');
+  if(mode==='vip'&&!vipEntity)fail('VIP map has no info_vip_start with a valid origin.');
+  const objectives={
+   hostages:hostageEntities,
+   hostageRescueZones:zoneData(['func_hostage_rescue','info_hostage_rescue']),
+   vipStart:vipEntity?{origin:point(vipEntity),position:BSP.toGame(T,point(vipEntity))}:null,
+   vipSafetyZones:zoneData(['func_vip_safetyzone']),
+   escapeZones:zoneData(['func_escapezone'])
+  };
   const solids=files.filter(e=>/^\*\d+$/.test(e.model||'')&&/^(func_(wall|breakable|door|door_rotating|illusionary|water|button))$/.test(e.classname));
   const brushCollision=new Map(solids.filter(e=>!['func_illusionary','func_water'].includes(e.classname)).map(e=>[e,bounds(e)]).filter(([,b])=>b.hull1>=0));
   const breakables=[...brushCollision.values()];
@@ -318,7 +346,7 @@ const LocalBSP=(()=>{
    meshes.push({name,positions:new Float32Array(positions),uvs:new Float32Array(uvs),
     uv2:uv2.length?new Float32Array(uv2):null,map,lightmap:lightmaps[page],door,opacity,worldSurface,destructible,nonSolid});
   }
-  return {col,sites,mode:sites.length?'bomb':'elimination',meshes,doors,destructibles,warnings,files,missing:[...missing],
+  return {col,sites,mode,objectives,meshes,doors,destructibles,warnings,files,missing:[...missing],
    spawn:{ct:BSP.toGame(T,spawnTeams.CT[0]),t:BSP.toGame(T,spawnTeams.T[0])}};
  }
  function mount(data,scene){

@@ -669,7 +669,7 @@ function startRound(){
  const spawn=activeMapData?.spawn?.[playerTeam==='CT'?'ct':'t'];P.pos.set(spawn?.[0]??0,spawn?.[1]??0,spawn?.[2]??(playerTeam==='CT'?26:-26));
  if(window.bspCol)P.pos.y=BSP.snapSpawn(bspCol,P.pos.x,P.pos.z);P.yaw=playerTeam==='CT'?0:Math.PI;
  P.hp=100;P.nextBotFootstep=0;buyTime=window.PhaseMenu15?.rules.buyTime??15;roundTime=window.PhaseMenu15?.rules.roundSeconds??120;freezeLeft=window.PhaseMenu15?.rules.freezeTime??6;
- P.vy=0;P.vel=[0,0];P.viewMotion={};P.waterLevel=0;P.recoil=null;P.hitSlow=1;P.lastKnifeAt=null;P.resumeZoom=null;P.jumpHeld=false;P.ladderDetach=0;P.on=false;placeMapSpawns();primeSpawnCamera();staggerBotTicks();BombMode.roundStart();say('ROUND '+round+' · '+Phase10.config.players+' PLAYERS · '+Phase10.config.difficulty.toUpperCase());hud();
+ P.vy=0;P.vel=[0,0];P.viewMotion={};P.waterLevel=0;P.recoil=null;P.hitSlow=1;P.lastKnifeAt=null;P.resumeZoom=null;P.jumpHeld=false;P.ladderDetach=0;P.on=false;placeMapSpawns();primeSpawnCamera();staggerBotTicks();BombMode.roundStart();ObjectiveMode.roundStart();say('ROUND '+round+' · '+Phase10.config.players+' PLAYERS · '+Phase10.config.difficulty.toUpperCase());hud();
 }
 
 // Establish a valid camera even before the first gameplay tick (and after a round reset).
@@ -738,7 +738,7 @@ function botUpdate(b,dt){
  if(roundWait||(typeof freezeLeft!=='undefined'&&freezeLeft>0))return;
  b.cd=Math.max(0,(b.cd||0)-step);b.combatRecoil=Combat12.recoverRecoil(b.combatRecoil,step,!!(b.burst&&b.visibleEnemy));
  if(b.reloadLeft>0)Combat12.advanceBotReload(b,W[b.weaponId],step);
- const objective=BombMode.botGoal(b),radio=Phase10.radioGoal(b);
+ const objective=ObjectiveMode.botGoal(b)||BombMode.botGoal(b),radio=Phase10.radioGoal(b);
  const alertFacing=Phase10.orientAwareness(b,objective?.urgent?objective:radio||objective,step);
  const tg=Phase10.seenEnemy(b,step),hasEnemy=!!tg;
  if(hasEnemy&&Combat12.interruptBotReload(b))b.animHoldUntil=0;
@@ -1599,7 +1599,7 @@ function hud(){
  const ammoMarkup=BombMode.selected?.()?'<small>C4</small>':(k==='knife'?'':reloading?'<b class="rl">RELOAD</b>':'<b>'+st.mag+'</b><i>/'+st.res+'</i>')+'<small>'+(WeaponImport.active(k)?.name||W[k].n)+'</small>';
  if(hudAmmoMarkup!==ammoMarkup){$('ammo').innerHTML=ammoMarkup;hudAmmoMarkup=ammoMarkup;}
  if(sbOpen)renderScoreboard();
- $('economy').textContent='$'+money;$('roundclock').textContent=freezeLeft>0?'FREEZE '+Math.ceil(freezeLeft):BombMode.planted()?'BOMB LIVE':buyTime>0?'BUY '+Math.ceil(buyTime):Math.ceil(roundTime)+'s';$('armor').textContent='ARMOR '+Math.ceil(armor)+(helmet?' · HELMET':'');Phase9.updateHud();BombMode.hud();GoldSrcSprites.hud(BombMode.selected?.()?'c4':k,helmet,armor>0);GoldSrcSprites.equipment(grenades);
+ $('economy').textContent='$'+money;$('roundclock').textContent=freezeLeft>0?'FREEZE '+Math.ceil(freezeLeft):BombMode.planted()?'BOMB LIVE':buyTime>0?'BUY '+Math.ceil(buyTime):Math.ceil(roundTime)+'s';$('armor').textContent='ARMOR '+Math.ceil(armor)+(helmet?' · HELMET':'');Phase9.updateHud();BombMode.hud();ObjectiveMode.hud();GoldSrcSprites.hud(BombMode.selected?.()?'c4':k,helmet,armor>0);GoldSrcSprites.equipment(grenades);
 }
 function radar(){
  const c=$('radar').getContext('2d');c.clearRect(0,0,96,96);c.fillStyle='rgba(0,0,0,.45)';c.beginPath();c.arc(48,48,47,0,7);c.fill();GoldSrcSprites.radar(c);c.fillStyle='#4f4';c.beginPath();c.moveTo(48,41);c.lineTo(44,52);c.lineTo(52,52);c.fill();
@@ -1731,14 +1731,14 @@ function update(dt){
  }
  RuntimeHealth.stage('effects');GoldSrcSprites.update(dt);Phase9.update(dt);Phase10.updateFX(dt);
  if(!frozen){prepareCharacterLOD(cam,Q,aiming,Phase13.isSpectating());RuntimeHealth.stage('bots');for(const b of bots.slice()){RuntimeHealth.stage('bot '+(b.botId||b.team));botUpdate(b,dt);}}
- RuntimeHealth.stage('objective');if(!frozen)BombMode.update(dt);Phase13.updateSpectator(dt);BombMode.updateProgressHud?.();
+ RuntimeHealth.stage('objective');if(!frozen){BombMode.update(dt);ObjectiveMode.update(dt);}Phase13.updateSpectator(dt);BombMode.updateProgressHud?.();
  for(let i=tr.length-1;i>=0;i--){const t=tr[i];t.t-=dt;if(t.t<=0){removeTracer(t);tr.splice(i,1)}}
  for(let i=pt.length-1;i>=0;i--){const p=pt[i];p.t-=dt;p.v.y-=(p.gravity??12)*dt;p.m.position.addScaledVector(p.v,dt);if(p.spin){p.m.rotation.x+=p.spin*dt;p.m.rotation.z+=p.spin*.6*dt;}if(p.t<=0){removeParticle(p);pt.splice(i,1)}}
  if(!BombMode.active())Phase13.checkRoundEnd();
  if(roundWait>0){roundWait-=dt;if(roundWait<=0){
   $('buyMenu').classList.add('hidden');startRound();
  }}
- if(!BombMode.active()&&roundTime<=0&&roundWait<=0){Phase10.roundEnd('CT',null,true,'TIME EXPIRED');roundWait=2}
+ if(!BombMode.active()&&roundTime<=0&&roundWait<=0&&!ObjectiveMode.checkTimeout()){Phase10.roundEnd('CT',null,true,'TIME EXPIRED');roundWait=2}
  if(dmgA>0){dmgA-=dt;$('dmg').style.opacity=Math.max(0,dmgA)}
  if(hitT>0){hitT-=dt;if(hitT<=0)$('cross').classList.remove('hit')}
  if(msgT>0){msgT-=dt;if(msgT<=0)$('msg').style.opacity=0}
@@ -1869,7 +1869,7 @@ async function beginMatch(){
   // consumer before releasing a source and before reading the next BSP/WAD.
   over=true;$('resumeBtn').classList.add('hidden');pendingWeaponSelection++;
   await Promise.allSettled([...Object.values(weaponModelLoads),...Object.values(heldLoads),worldReady,Phase9.settleWorldModels()]);
-  if(S){Phase13.resetMatch();BombMode.prepare(null);activeMapData=null;BombMode.roundStart();Phase10.resetMatch();releaseWorld();}else activeMapData=null;
+  if(S){Phase13.resetMatch();BombMode.prepare(null);ObjectiveMode.prepare(null);activeMapData=null;BombMode.roundStart();ObjectiveMode.roundStart();Phase10.resetMatch();releaseWorld();}else activeMapData=null;
   for(const instance of new Set(Object.values(weaponInstances))){const mixer=instance.userData.weaponAnimation?.mixer;mixer?.stopAllAction();if(mixer)mixer.uncacheRoot(mixer.getRoot());instance.parent?.remove(instance);AssetMemory.skeletons(instance);}
   for(const key of Object.keys(weaponInstances))delete weaponInstances[key];vm=flash=null;
   await Phase9.releaseWorldModels();
@@ -1895,7 +1895,7 @@ async function beginMatch(){
    const isBundled=selectedMapId.startsWith('builtin:');
    const localMapData=await MapImporter.compile(isBundled?await BundledMaps.load(selectedMapId):await MapLibrary.load(selectedMapId));
    verifyLocalOrientation(localMapData);
-   activeMapData={id:'local_bsp',name:localMapData.name,local:localMapData,spawn:localMapData.spawn};
+   activeMapData={id:'local_bsp',name:localMapData.name,local:localMapData,spawn:localMapData.spawn};$('createMode').value=({bomb:'Bomb Defusal',hostage:'Hostage Rescue',vip:'VIP Assassination',escape:'Escape',elimination:'Team Elimination'})[localMapData.mode]||'Team Elimination';
    // Refresh stale warnings from maps imported before automatic GRAPH support.
    if(!isBundled)MapLibrary.updateReport(selectedMapId,{missing:localMapData.missing,warnings:localMapData.warnings,nav:localMapData.navSource,overview:localMapData.overviewPath||null,globalWads:localMapData.globalWads,navRevision:16}).catch(()=>{});
 
@@ -1912,8 +1912,8 @@ async function beginMatch(){
    await waitForLoadTasks([Phase9.loadWorldModel('c4'),Phase9.loadWorldModel('backpack'),Phase9.loadWorldModel('thighpack'),loadCharacterEquipment('bomb-carrier'),loadCharacterEquipment('defuse-kit'),loadHeld('c4').catch(()=>null)]);
    ['c4_click','c4_plant','c4_beep1','c4_beep2','c4_beep3','c4_beep4','c4_beep5','c4_disarm','c4_disarmed','c4_explode1'].forEach(name=>requestOriginalSound(name+'.wav'));
   }
-  RuntimeHealth.stage?.('startup world');BombMode.prepare(activeMapData.local);
-  if(!S)init();else{build();applyQ()}await worldReady;
+  RuntimeHealth.stage?.('startup world');BombMode.prepare(activeMapData.local);ObjectiveMode.prepare(activeMapData.local);
+  if(!S)init();else{build();applyQ()}await worldReady;ObjectiveMode.prepare(activeMapData.local);
   if(!window.bspCol)LayoutNav.prepare();
   RuntimeHealth.stage?.('startup round');newGame();createPlayerClass();$('loadStatus').textContent='Menyiapkan render pertama…';
   // Give loading UI a paint opportunity; draw the world before exposing the gameplay HUD.
@@ -2043,7 +2043,7 @@ for(const type of ['touchend','touchcancel'])addEventListener(type,e=>{if(e.touc
 addEventListener('pagehide',resetPadPointers);
 document.addEventListener('mousemove',e=>{if(document.pointerLockElement&&!inputBlocked()){P.yaw-=e.movementX*SENS*.5;P.pitch-=e.movementY*SENS*.5}});
 const kmap={KeyW:'w',KeyA:'a',KeyS:'s',KeyD:'d',ArrowUp:'w',ArrowLeft:'a',ArrowDown:'s',ArrowRight:'d'};
-addEventListener('keydown',e=>{if(e.code==='Escape'){if(Phase13.visibleOverlay()||Phase13.isSpectating())return;if(!$('buyMenu').classList.contains('hidden'))closeBuyMenu();else if(running){pauseToMenu();$('resumeBtn').classList.toggle('hidden',over||RuntimeHealth.halted())}return}if(inputBlocked())return;if(kmap[e.code])K[kmap[e.code]]=1;if(e.code==='Space')jmp=true;if(e.code==='ShiftLeft'||e.code==='ShiftRight')walkHeld=true;if(e.code==='KeyR')reload();if(e.code==='KeyB')openBuyMenu();if(e.code==='KeyG'&&!e.repeat)Phase9.throwGrenade(true);if(e.code==='KeyH'&&!e.repeat)Phase9.cycleGrenade();if(e.code==='KeyN')Phase9.toggleNightVision();if(e.code==='KeyE'&&!e.repeat){if(!(BombMode.holdUse?.(true)??BombMode.hold(true)))Phase9.useNearby()}
+addEventListener('keydown',e=>{if(e.code==='Escape'){if(Phase13.visibleOverlay()||Phase13.isSpectating())return;if(!$('buyMenu').classList.contains('hidden'))closeBuyMenu();else if(running){pauseToMenu();$('resumeBtn').classList.toggle('hidden',over||RuntimeHealth.halted())}return}if(inputBlocked())return;if(kmap[e.code])K[kmap[e.code]]=1;if(e.code==='Space')jmp=true;if(e.code==='ShiftLeft'||e.code==='ShiftRight')walkHeld=true;if(e.code==='KeyR')reload();if(e.code==='KeyB')openBuyMenu();if(e.code==='KeyG'&&!e.repeat)Phase9.throwGrenade(true);if(e.code==='KeyH'&&!e.repeat)Phase9.cycleGrenade();if(e.code==='KeyN')Phase9.toggleNightVision();if(e.code==='KeyE'&&!e.repeat){if(!(BombMode.holdUse?.(true)??BombMode.hold(true))&&!ObjectiveMode.useNearby())Phase9.useNearby()}
 if(e.code==='KeyJ'&&!e.repeat)Phase9.dropPlayerWeapon();if(e.code==='Digit5'&&!e.repeat&&BombMode.hasHumanC4?.()){BombMode.selectC4();return;}if(e.code==='ControlLeft'||e.code==='ControlRight')Phase9.setCrouchInput(true);if(e.code==='KeyO'){openBuyMenu();renderBuyTab('equipment')}if(/^Digit[1-5]$/.test(e.code)){const target=Phase14C.keyIndex(inventory,+e.code[5],W);if(target>=0)setW(target)}});
 addEventListener('keyup',e=>{if(e.code==='KeyG')Phase9.commitGrenade();if(e.code==='KeyE'){if(BombMode.holdUse)BombMode.holdUse(false);else BombMode.hold(false)};if(kmap[e.code])K[kmap[e.code]]=0;if(e.code==='Space')jmp=false;if(e.code==='ShiftLeft'||e.code==='ShiftRight')walkHeld=false;if(e.code==='ControlLeft'||e.code==='ControlRight')Phase9.setCrouchInput(false)});
 Phase14E.install(document);
