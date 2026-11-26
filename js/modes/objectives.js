@@ -1,6 +1,8 @@
 /* Hostage Rescue, VIP Assassination and Escape objectives for local GoldSrc BSPs. */
 const ObjectiveMode=(()=>{
  'use strict';
+ // Tuning: CT pickup reach (game units). T non-guards hold near hostages until this many seconds into the round.
+ const HOSTAGE_PICKUP_RADIUS=1.6,RUSH_AFTER_SECONDS=45;
  const human={get team(){return playerTeam},get dead(){return P.hp<=0},get pos(){return P.pos}};
  let data=null,mode='elimination',hostages=[],vip=null,group=null,roundEnded=false,initialCT=0,lastUse=-10;
  const alive=a=>!!a&&(a===human?P.hp>0:!a.dead&&a.hp>0);
@@ -159,7 +161,7 @@ const ObjectiveMode=(()=>{
     if(h.following)followHostage(h,h.following,dt);
     else if(!h.rescued&&h.mesh.visible){
      // A CT bot can collect an unclaimed hostage when it reaches the scientist.
-     const bot=bots.filter(b=>b.team==='CT'&&!b.dead).find(b=>b.g.position.distanceTo(h.mesh.position)<1.15);
+     const bot=bots.filter(b=>b.team==='CT'&&!b.dead).find(b=>b.g.position.distanceTo(h.mesh.position)<HOSTAGE_PICKUP_RADIUS);
      if(bot)h.following=bot;
     }
    }
@@ -219,6 +221,11 @@ const ObjectiveMode=(()=>{
     if(idx%4===0){
      const h=live[Math.floor(idx/4)%live.length];
      return patrolOrder(bot,'hostageGuardPatrol',h.mesh.position,'T',2.3,6.5,'defend');
+    }
+    const elapsed=(window.PhaseMenu15?.rules.roundSeconds??120)-roundTime;
+    if(elapsed<RUSH_AFTER_SECONDS){
+     const h=live[idx%live.length];
+     return patrolOrder(bot,'hostageAttackPatrol',h.mesh.position,'T',3.5,9,'defend');
     }
     const ctSpawns=data.col?.spawnTeams?.CT||[];
     if(ctSpawns.length){
