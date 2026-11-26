@@ -2,7 +2,7 @@
 const ObjectiveMode=(()=>{
  'use strict';
  // Tuning: CT pickup reach (game units). T non-guards hold near hostages until this many seconds into the round.
- const HOSTAGE_PICKUP_RADIUS=1.6,RUSH_AFTER_SECONDS=45;
+ const HOSTAGE_PICKUP_RADIUS=1.6,RUSH_AFTER_SECONDS=0;
  const human={get team(){return playerTeam},get dead(){return P.hp<=0},get pos(){return P.pos}};
  let data=null,mode='elimination',hostages=[],vip=null,group=null,roundEnded=false,initialCT=0,lastUse=-10;
  const alive=a=>!!a&&(a===human?P.hp>0:!a.dead&&a.hp>0);
@@ -11,7 +11,7 @@ const ObjectiveMode=(()=>{
  const hammer=p=>BSP.toHammer(data.col.T,p.toArray());
  const inside=(zones,p)=>!!data&&zones.some(z=>LocalBSP.inSite(z,hammer(p)));
  const center=z=>BSP.toGame(data.col.T,z.mins.map((n,i)=>(n+z.maxs[i])*.5+z.origin[i]));
- const zoneGoal=(zones,actor=null)=>{if(!zones.length)return null;const zone=actor?zones.slice().sort((a,b)=>pos(actor).distanceToSquared(center(a))-pos(actor).distanceToSquared(center(b)))[0]:zones[0];const mid=center(zone),nodes=data.graph?.nodes?.filter(n=>n.edges?.length&&LocalBSP.inSite(zone,n.h))||[];if(nodes.length){nodes.sort((a,b)=>V(...a.pos).distanceToSquared(mid)-V(...b.pos).distanceToSquared(mid));return V(...nodes[0].pos)}return mid};
+ const zoneGoal=(zones,actor=null)=>{if(!zones.length)return null;const zone=actor?zones.slice().sort((a,b)=>pos(actor).distanceToSquared(center(a))-pos(actor).distanceToSquared(center(b)))[0]:zones[0];const mid=center(zone),nodes=data.graph?.nodes?.filter(n=>n.edges?.length&&LocalBSP.inSite(zone,n.h))||[];if(nodes.length){nodes.sort((a,b)=>V(...a.pos).distanceToSquared(mid)-V(...b.pos).distanceToSquared(mid));const slot=nodes[(actor?.teamIndex||0)%Math.min(6,nodes.length)];return V(...slot.pos)}return mid};
  // Choose only collision-validated, team-usable GRAPH nodes for local patrols.
  function patrolNodes(team,anchor,minRange,maxRange){
   const nodes=data?.graph?.nodes||[];
