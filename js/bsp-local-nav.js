@@ -572,7 +572,14 @@ const LocalBSPNav=(()=>{
    // An endpoint can be geometrically close but unreachable on a directed
    // graph. Restrict attachment to nodes reachable from this start.
    const reachable=start&&reachableFrom(graph,start.id,bot.team);
-   const end=stationId==null?near(graph,goal,graph.col,null,reachable):reachable?.has(stationId)?graph.nodes[stationId]:null;
+   let end=stationId==null?near(graph,goal,graph.col,null,reachable):reachable?.has(stationId)?graph.nodes[stationId]:null;
+   // Goal has no node within 450 units inside this team's reachable area: walk to the closest reachable node instead of standing still.
+   if(!end&&stationId==null&&reachable?.size){
+    let best=null,bd=Infinity;
+    for(const id of reachable){const n=graph.nodes[id];if(!n||!n.edges?.length||n.valid===false)continue;const dx=n.h[0]-dest[0],dy=n.h[1]-dest[1],dz=2*(n.h[2]-dest[2]),d=dx*dx+dy*dy+dz*dz;if(d<bd){bd=d;best=n}}
+    end=best;
+    if(best&&bot.team==='CT'&&now-(nav.fallbackSay||-99)>10&&typeof say==='function'){nav.fallbackSay=now;say('CT GOAL FALLBACK · nearest node d='+Math.round(Math.sqrt(bd)));}
+   }
    nav.end=end;
    // Congestion and observed threats affect route cost, not connectivity.
    const teammates=typeof bots==='undefined'?[]:bots.filter(b=>b!==bot&&!b.dead&&b.team===bot.team).map(b=>b.g.position.toArray());
