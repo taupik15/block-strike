@@ -591,6 +591,8 @@ const LocalBSPNav=(()=>{
    // Local traffic must never permanently blacklist the only valid corridor.
    if(!points&&nav.blocked.size){nav.blocked.clear();points=path(graph,start,end,new Set(nav.jumpCooldown?.keys()||[]),weight,bot.team)}
    nav.points=points||[];
+   // Phone-visible diagnostic: a CT without a route says why, at most every 10 s.
+   if(!nav.points.length&&bot.team==='CT'&&now-(nav.failSay||-99)>10&&typeof say==='function'){nav.failSay=now;say('CT ROUTE BLOCKED · '+(start?'START OK':'NO START')+(end?' · END OK':' · NO END'));}
    if(points&&start&&waypointDistanceSq(start.pos,routePos)>.22)nav.points.unshift(start);
    nav.from=start?.id??null;
    nav.until=now+(nav.points.length?3+(bot.teamIndex||0)%4*.13:.9);
