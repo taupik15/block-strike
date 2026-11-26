@@ -575,8 +575,11 @@ const LocalBSPNav=(()=>{
    let end=stationId==null?near(graph,goal,graph.col,null,reachable):reachable?.has(stationId)?graph.nodes[stationId]:null;
    // Goal has no node within 450 units inside this team's reachable area: walk to the closest reachable node instead of standing still.
    if(!end&&stationId==null&&reachable?.size){
-    let best=null,bd=Infinity;
-    for(const id of reachable){const n=graph.nodes[id];if(!n||!n.edges?.length||n.valid===false)continue;const dx=n.h[0]-dest[0],dy=n.h[1]-dest[1],dz=2*(n.h[2]-dest[2]),d=dx*dx+dy*dy+dz*dz;if(d<bd){bd=d;best=n}}
+    const ranked=[];
+    for(const id of reachable){const n=graph.nodes[id];if(!n||!n.edges?.length||n.valid===false)continue;const dx=n.h[0]-dest[0],dy=n.h[1]-dest[1],dz=2*(n.h[2]-dest[2]);ranked.push({n,d:dx*dx+dy*dy+dz*dz})}
+    ranked.sort((a,b)=>a.d-b.d||a.n.id-b.n.id);
+    const pick=ranked[(bot.teamIndex||0)%Math.min(6,ranked.length)]||null;
+    const best=pick?.n??null,bd=pick?.d??Infinity;
     end=best;
     if(best&&bot.team==='CT'&&now-(nav.fallbackSay||-99)>10&&typeof say==='function'){nav.fallbackSay=now;say('CT GOAL FALLBACK · nearest node d='+Math.round(Math.sqrt(bd)));}
    }
@@ -585,13 +588,14 @@ const LocalBSPNav=(()=>{
    const teammates=typeof bots==='undefined'?[]:bots.filter(b=>b!==bot&&!b.dead&&b.team===bot.team).map(b=>b.g.position.toArray());
    const threat=bot.lastSeen&&now-bot.lastSeen.t<4?bot.lastSeen.pos.toArray():null;
    const costs=new Map();
-   const weight=teammates.length||threat?(a,b)=>{
+   const spread=(bot.teamIndex||0)*2654435761;
+   const weight=(a,b)=>{
     if(costs.has(b))return costs.get(b);
-    const p=graph.nodes[b].pos;let cost=1;
+    const p=graph.nodes[b].pos;let cost=1+(((b*2246822519+spread)>>>0)%1000)/1000*.35;
     for(const q of teammates){const dx=p[0]-q[0],dy=p[1]-q[1],dz=p[2]-q[2];if(dx*dx+dz*dz<3&&Math.abs(dy)<1)cost+=(graph.nodes[b].ladder||graph.nodes[b].narrow)? .45 : .18;}
     if(threat&&bot.personality==='defensive'&&Math.hypot(p[0]-threat[0],p[1]-threat[1],p[2]-threat[2])<7)cost+=.5;
     const result=Math.min(2.5,cost);costs.set(b,result);return result;
-   }:null;
+   };
    for(const [edge,until] of nav.jumpCooldown||[])if(until<=now)nav.jumpCooldown.delete(edge);
    const blocked=new Set([...nav.blocked,...(nav.jumpCooldown?.keys()||[])]);
    let points=path(graph,start,end,blocked,weight,bot.team);

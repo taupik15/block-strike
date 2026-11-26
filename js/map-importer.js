@@ -203,10 +203,14 @@ const MapImporter=(()=>{
   // Online GitHub fetch is disabled by default (offline-first; avoids 404 noise
   // on the many custom maps users will import). Enable with:
   //   window.BLOCK_STRIKE_YAPB_ONLINE = true
-  for(const [suffix,type] of [['graph','YaPB GRAPH'],['pwf','PWF'],['nav','NAV v5']]){
+  for(const [suffix,type] of [['pwf','PWF'],['graph','YaPB GRAPH'],['nav','NAV v5']]){
    if(data.graph)break;
    const file=source.files.find(f=>ext(f.path)===suffix&&stem(f.path)===mapName);
    if(file)await attempt(file.buffer,type,type+' (imported)',true);
+  }
+  if(!data.graph){
+   try{const res=await fetch('assets/yapb-pwf/'+mapName.toLowerCase()+'.pwf',{cache:'no-cache'});if(res.ok)await attempt(await res.arrayBuffer(),'PWF','PWF (bundled)')}
+   catch(e){issues.push('Bundled PWF lookup: '+e.message)}
   }
   let prior=null,priorPreferred=false;
   if(!data.graph)try{prior=await LocalAssetCache.get(cacheKey);priorPreferred=!!prior?.buffer&&!/GitHub/i.test(prior.origin||'');if(priorPreferred)await attempt(prior.buffer,prior.type,(prior.origin||prior.type)+' (cached)');}catch(e){issues.push('Waypoint cache unavailable: '+e.message)}
