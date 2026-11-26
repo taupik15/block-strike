@@ -187,15 +187,21 @@ const ObjectiveMode=(()=>{
    const live=hostages.filter(h=>!h.rescued);
    // CT bots reserve different hostages to prevent the entire team stacking on one.
    if(bot.team==='CT'){
-    for(const h of free)if(h.assignedTo&&!alive(h.assignedTo))h.assignedTo=null;
+    const tnow=performance.now()/1000;
+    // Release hostages whose assigned CT cannot make route progress; retarget and tell the player.
+    for(const h of free){
+     if(!h.assignedTo)continue;
+     const who=h.assignedTo,stalled=tnow-(h.assignedAt||0)>5&&!(who.localRoute?.points?.length);
+     if(!alive(who)||stalled){h.assignedTo=null;if(stalled&&alive(who)){h.lockedOut=who;say('HOSTAGE UNREACHABLE · RETARGET');}}
+    }
     const carried=hostages.find(h=>h.following===bot&&!h.rescued);
     if(carried)return {pos:zoneGoal(data.objectives?.hostageRescueZones||[],bot)||carried.mesh.position,radius:1.2,force:true,urgent:true,mode:'hostage-rescue'};
     const assigned=free.find(h=>h.assignedTo===bot);
     if(assigned)return {pos:assigned.mesh.position,radius:.85,force:true,urgent:true,mode:'hostage-collect'};
-    const available=free.filter(h=>!h.assignedTo);
+    const available=free.filter(h=>!h.assignedTo&&h.lockedOut!==bot);
     if(available.length){
      available.sort((a,b)=>pos(bot).distanceToSquared(a.mesh.position)-pos(bot).distanceToSquared(b.mesh.position));
-     const pick=available[0];pick.assignedTo=bot;
+     const pick=available[0];pick.assignedTo=bot;pick.assignedAt=performance.now()/1000;
      return {pos:pick.mesh.position,radius:.85,force:true,urgent:true,mode:'hostage-collect'};
     }
     const zone=zoneGoal(data.objectives?.hostageRescueZones||[],bot);
