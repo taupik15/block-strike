@@ -194,7 +194,7 @@ const ObjectiveMode=(()=>{
     for(const h of free){
      if(!h.assignedTo)continue;
      const who=h.assignedTo,stalled=tnow-(h.assignedAt||0)>5&&!(who.localRoute?.points?.length);
-     if(!alive(who)||stalled){h.assignedTo=null;if(stalled&&alive(who)){h.lockedOut=who;say('HOSTAGE UNREACHABLE · RETARGET');}}
+     if(!alive(who)||stalled){h.assignedTo=null;if(stalled&&alive(who))h.lockedOut=who;}
     }
     const carried=hostages.find(h=>h.following===bot&&!h.rescued);
     if(carried)return {pos:zoneGoal(data.objectives?.hostageRescueZones||[],bot)||carried.mesh.position,radius:1.2,force:true,urgent:true,mode:'hostage-rescue'};
